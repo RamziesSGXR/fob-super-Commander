@@ -3,7 +3,9 @@
 export const VERSION = '0.4';
 
 export const C = {
-  N: 40,                    // the base is N x N tiles; the outer ring is the perimeter wall
+  N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose
+  BOX: 40,                  // the starting wall encloses a BOX x BOX square in the middle
+  WALL: 4,                  // supplies per tile of wall
   DAY: 120,                 // seconds of game time in one day at normal speed
   WEEK: 840,                // a week is seven days; the allocation comes every week
   T: 840 / 150,             // the economy was tuned on a 150 s week; every rate is stretched by this much

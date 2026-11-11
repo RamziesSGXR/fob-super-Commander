@@ -2,7 +2,7 @@
 import * as THREE from './vendor/three.js';
 import { B } from './config.js';
 import { dims } from './sim.js';
-import { makeMats, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
+import { makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
 import { Noise } from './noise.js';
 
@@ -50,8 +50,7 @@ export class View {
     this.pm.clear(); if (this.crowd) for (const c of Object.values(this.crowd)) for (const im of c.ims) { this.world.remove(im); im.dispose(); } this.crowd = {};
     for (const g of this.vm.values()) this.world.remove(g); this.vm.clear();
     this.ghostKey = '';
-    if (this.gate) this.world.remove(this.gate);
-    this.gate = this.buildGate(f); this.world.add(this.gate);
+    this.faction = f; this.roadsV = -1;   // the gate sign carries the base's name
   }
   wx(x) { return x - this.N / 2; }
 
@@ -91,16 +90,8 @@ export class View {
       const a = i / 26 * TAU + nz.v(i, 9), r = 95 + nz.v(9, i) * 50, h = 10 + nz.v(i * 3, 2) * 22;
       const hill = new THREE.Mesh(new THREE.ConeGeometry(h * 1.6, h, 6), rock); hill.position.set(Math.cos(a) * r, h / 2 - 1, Math.sin(a) * r); hill.rotation.y = a; this.world.add(hill);
     }
-    // the road out of the gate
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(4, 60), new THREE.MeshStandardMaterial({ color: '#46443f', roughness: 1 }));
-    road.rotation.x = -Math.PI / 2; road.position.set(0, -0.01, N / 2 + 30); road.receiveShadow = true; this.world.add(road);
-    // the wire: Hesco barriers all round, a watchtower on each corner
-    const m = N / 2, spots = [];
-    for (let i = 0; i < N; i++) { spots.push([i, 0], [0, i], [N - 1, i]); if (i < m - 3 || i > m + 2) spots.push([i, N - 1]); }
-    const hes = new THREE.MeshStandardMaterial({ color: '#b39a6c', roughness: 1 }), hesTop = new THREE.MeshStandardMaterial({ color: '#8b7652', roughness: 1 });
-    const hm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.96, 0.8, 0.96), hes, spots.length), ht = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), hesTop, spots.length);
-    spots.forEach(([x, z], i) => { mx.makeTranslation(this.wx(x + 0.5), 0.4, this.wx(z + 0.5)); hm.setMatrixAt(i, mx); mx.makeTranslation(this.wx(x + 0.5), 0.81, this.wx(z + 0.5)); ht.setMatrixAt(i, mx); });
-    hm.castShadow = hm.receiveShadow = true; this.world.add(hm, ht);
+    this.hes = new THREE.MeshStandardMaterial({ color: '#b39a6c', roughness: 1 }); this.hesTop = new THREE.MeshStandardMaterial({ color: '#8b7652', roughness: 1 });
+    const hes = this.hes, mx2 = mx; void mx2;
     const wood = new THREE.MeshStandardMaterial({ color: '#5a5650', roughness: 0.9 }), roof = new THREE.MeshStandardMaterial({ color: '#3f4440', roughness: 0.8 });
     this.tower = (x, z) => {
       const t = new THREE.Group(); t.position.set(this.wx(x + 0.5), 0, this.wx(z + 0.5));
@@ -109,7 +100,6 @@ export class View {
       const rf = new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.4, 4), roof); rf.position.y = 2.9; rf.rotation.y = Math.PI / 4; rf.castShadow = true; t.add(rf);
       return t;
     };
-    for (const [x, z] of [[0, 0], [N - 1, 0], [0, N - 1], [N - 1, N - 1]]) this.world.add(this.tower(x, z));
     // grid shown while building
     this.grid = new THREE.GridHelper(N - 2, N - 2, '#9dffb8', '#9dffb8'); this.grid.material.transparent = true; this.grid.material.opacity = 0.16; this.grid.position.y = 0.02; this.grid.visible = false; this.world.add(this.grid);
     // selection and range markers
@@ -127,47 +117,94 @@ export class View {
     this.plazaG = new THREE.Group(); this.plazaG.visible = false; this.world.add(this.plazaG);
     this.plazaMat = new THREE.MeshBasicMaterial({ color: '#ffe600', transparent: true, opacity: 0.22, depthWrite: false });
   }
-  buildGate(f) {
-    const N = this.N, m = N / 2, g = new THREE.Group();
-    g.add(this.tower(m - 3, N - 1), this.tower(m + 2, N - 1));
+  // the sign over the main gate, in the faction's colours
+  gateSign(f) {
     const c = document.createElement('canvas'); c.width = 512; c.height = 96; const x = c.getContext('2d');
     x.fillStyle = '#1a1d1a'; x.fillRect(0, 0, 512, 96); x.fillStyle = f.secondary; x.fillRect(0, 0, 512, 6); x.fillRect(0, 90, 512, 6);
     x.fillStyle = '#ffffff'; x.font = 'bold 40px ui-monospace, Menlo, Consolas, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(f.base.toUpperCase().slice(0, 22), 256, 48);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(5, 0.6, 0.1), [this.m.dark, this.m.dark, this.m.dark, this.m.dark, new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.4 }), new THREE.MeshStandardMaterial({ map: t })]);
-    sign.position.set(0, 2.9, m - 0.5); sign.castShadow = true; g.add(sign);
-    const boom = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.4, 0.08), this.m.red); boom.position.set(-1.6, 1.4, m - 0.2); boom.rotation.z = 0.15; g.add(boom);
-    return g;
+    return new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 0.1), [this.m.dark, this.m.dark, this.m.dark, this.m.dark, new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.4 }), new THREE.MeshStandardMaterial({ map: t })]);
   }
 
   syncRoads() {
     const s = this.sim; if (s.roadsV === this.roadsV) return; this.roadsV = s.roadsV;
-    this.roadG.clear();
-    const N = this.N, geo = new THREE.PlaneGeometry(1, 1), mx = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), one = new THREE.Vector3(1, 1, 1);
-    for (const t of [1, 2]) {
-      const tiles = []; for (let i = 0; i < N * N; i++) if (s.roads[i] === t) tiles.push(i);
-      if (!tiles.length) continue;
-      const im = new THREE.InstancedMesh(geo, this.roadMats[t], tiles.length);
-      tiles.forEach((i, k) => { mx.compose(new THREE.Vector3(this.wx(i % N + 0.5), 0.012 + t * 0.002, this.wx(Math.floor(i / N) + 0.5)), q, one); im.setMatrixAt(k, mx); });
-      im.receiveShadow = true; this.roadG.add(im);
-      if (t === 2) {   // a dashed centre line where paved road runs straight
-        const dash = new THREE.MeshBasicMaterial({ color: '#d8c35a' }), dg = new THREE.PlaneGeometry(0.06, 0.32), lines = [];
-        for (const i of tiles) { const x = i % N, z = Math.floor(i / N), up = s.roads[i - N] === 2, dn = s.roads[i + N] === 2, lf = s.roads[i - 1] === 2, rt = s.roads[i + 1] === 2;
-          if ((up || dn) && !lf && !rt) lines.push([x, z, 0]); else if ((lf || rt) && !up && !dn) lines.push([x, z, 1]); }
-        if (lines.length) { const dm = new THREE.InstancedMesh(dg, dash, lines.length); lines.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x + 0.5), 0.02, this.wx(z + 0.5)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, r ? Math.PI / 2 : 0)), one); dm.setMatrixAt(k, mx); }); this.roadG.add(dm); }
+    this.roadG.clear(); this.booms = [];
+    const net = s.net, N = this.N, nd = id => net.nodes.find(n => n.id === id), surf = new THREE.Group();
+    const strip = (g, a, b, w, y, mat, ext = 0) => {   // a flat strip from a to b, w wide
+      const L = Math.hypot(b.x - a.x, b.z - a.z) + ext, geo = new THREE.PlaneGeometry(L, w); geo.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(geo, mat); m.position.set(this.wx((a.x + b.x) / 2), y, this.wx((a.z + b.z) / 2)); m.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x); m.receiveShadow = true; g.add(m); return m;
+    };
+    const dash = this.dashMat ||= new THREE.MeshBasicMaterial({ color: '#d8c35a' });
+    for (const sg of net.segs) {
+      if (sg.k === 'wall') continue;
+      const a = nd(sg.a), b = nd(sg.b), surfK = sg.k === 'paved' ? 2 : 1, y = 0.012 + surfK * 0.002;
+      strip(surf, a, b, sg.w, y, this.roadMats[surfK]);
+      for (const n of [a, b]) { const c = new THREE.Mesh(new THREE.CircleGeometry(sg.w / 2, 16), this.roadMats[surfK]); c.rotation.x = -Math.PI / 2; c.position.set(this.wx(n.x), y - 0.001, this.wx(n.z)); c.receiveShadow = true; surf.add(c); }
+      if (sg.k === 'paved' && sg.w >= 2) {   // a dashed centre line
+        const L = Math.hypot(b.x - a.x, b.z - a.z);
+        for (let t = 0.6; t < L - 0.6; t += 0.9) { const p = { x: a.x + (b.x - a.x) * t / L, z: a.z + (b.z - a.z) * t / L }, q = { x: a.x + (b.x - a.x) * (t + 0.35) / L, z: a.z + (b.z - a.z) * (t + 0.35) / L }; strip(surf, p, q, 0.06, 0.02, dash); }
       }
+    }
+    mergeStatic(surf); this.roadG.add(surf);
+    // walls: HESCO lines with gaps where roads run through, posts at the joints, towers on the corners
+    const wallG = new THREE.Group(), gateAt = (x, z) => { const tx = Math.floor(x), tz = Math.floor(z); return tx >= 0 && tz >= 0 && tx < N && tz < N && s.walls[tz * N + tx] === 2; };
+    const turns = new Map();
+    for (const sg of net.segs) {
+      if (sg.k !== 'wall') continue;
+      const a = nd(sg.a), b = nd(sg.b), L = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(L / 0.25));
+      for (const n of [a, b]) { const t = turns.get(n.id) || []; t.push(Math.atan2((n === a ? b : a).z - n.z, (n === a ? b : a).x - n.x)); turns.set(n.id, t); }
+      let run = null;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t, open = gateAt(x, z);
+        if (!open && !run) run = { x, z };
+        if ((open || i === steps) && run) { const e = open ? { x: a.x + (b.x - a.x) * (i - 1) / steps, z: a.z + (b.z - a.z) * (i - 1) / steps } : { x, z }; if (Math.hypot(e.x - run.x, e.z - run.z) > 0.1 || i === steps) this.wallPiece(wallG, run, e); run = null; }
+      }
+    }
+    mergeStatic(wallG); this.roadG.add(wallG);
+    for (const [id, angs] of turns) {
+      const n = nd(id), bent = angs.length !== 2 || Math.abs(Math.cos(angs[0] - angs[1]) + 1) > 0.1;
+      if (bent && !gateAt(n.x, n.z)) { const t = this.tower(n.x - 0.5, n.z - 0.5); this.roadG.add(t); }
+    }
+    // gates: a boom barrier across the road and a guard hut beside it; the main gate gets the base's sign
+    const main = s.gate();
+    for (const gt of s.gates || []) {
+      const w = net.segs.filter(q => q.k === 'wall').map(q => { const a = nd(q.a), b = nd(q.b); return { q, a, b, d: Math.abs((b.x - a.x) * (a.z - gt.z) - (a.x - gt.x) * (b.z - a.z)) / Math.hypot(b.x - a.x, b.z - a.z) }; }).sort((p, q) => p.d - q.d)[0];
+      const ang = w ? Math.atan2(w.b.z - w.a.z, w.b.x - w.a.x) : 0, half = Math.sqrt(gt.tiles.length) / 2 + 0.5;
+      const g = new THREE.Group(); g.position.set(this.wx(gt.x), 0, this.wx(gt.z)); g.rotation.y = -ang; this.roadG.add(g);
+      for (const sx of [-half, half]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.4, 0.35), this.m.concrete); p.position.set(sx, 0.7, 0); p.castShadow = true; g.add(p); }
+      const boom = new THREE.Group(); boom.position.set(-half + 0.2, 0.75, 0.25); g.add(boom);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(half * 2 - 0.4, 0.07, 0.07), this.m.hazard); arm.position.x = half - 0.2; boom.add(arm);
+      for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.075, 0.075), this.m.red); r.position.x = 0.3 + i * (half * 2 - 0.6) / 4; boom.add(r); }
+      g.userData.boom = boom;
+      const hut = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.7), this.m.wall); hut.position.set(half + 0.75, 0.4, -0.9); hut.castShadow = true; g.add(hut);
+      const hr = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.08, 0.85), this.m.prim); hr.position.set(half + 0.75, 0.84, -0.9); g.add(hr);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.02), this.m.window); win.position.set(half + 0.75, 0.55, -0.54); g.add(win);
+      if (Math.abs(gt.x - main.gx) < 0.01 && Math.abs(gt.z - main.gz) < 0.01 && this.faction) {
+        const sign = this.gateSign(this.faction); sign.position.set(0, 2.5, 0); g.add(sign);
+        for (const sx of [-half, half]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), this.m.dark); p.position.set(sx, 1.9, 0); g.add(p); }
+      }
+      (this.booms ||= []).push(boom);
     }
     this.streetLamps();
   }
+  wallPiece(g, a, b) {
+    const L = Math.hypot(b.x - a.x, b.z - a.z) + 0.9, ang = -Math.atan2(b.z - a.z, b.x - a.x), mx = this.wx((a.x + b.x) / 2), mz = this.wx((a.z + b.z) / 2);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(L, 0.85, 0.9), this.hes); body.position.set(mx, 0.425, mz); body.rotation.y = ang; body.castShadow = body.receiveShadow = true; g.add(body);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(L, 0.05, 0.84), this.hesTop); top.position.set(mx, 0.87, mz); top.rotation.y = ang; g.add(top);
+    // the seams between the baskets
+    for (let t = 0.5; t < L - 0.4; t += 1) { const f = (t - L / 2) / L, x = (a.x + b.x) / 2 + (b.x - a.x) * f, z = (a.z + b.z) / 2 + (b.z - a.z) * f; const sm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.86, 0.92), this.hesTop); sm.position.set(this.wx(x), 0.43, this.wx(z)); sm.rotation.y = ang; g.add(sm); }
+  }
   // street lamps along the roadside every few tiles; their heads and the pools under them light up at night
   streetLamps() {
-    const s = this.sim, N = this.N, spots = [];
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      if (!s.roads[z * N + x] || (x * 3 + z * 5) % 4) continue;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, nz = z + dz;
-        if (nx < 0 || nz < 0 || nx >= N || nz >= N || s.roads[nz * N + nx] || s.occ[nz * N + nx]) continue;
-        spots.push([x + 0.5 + dx * 0.45, z + 0.5 + dz * 0.45, x + 0.5, z + 0.5]); break;
+    const s = this.sim, N = this.N, spots = [], net = s.net, nd = id => net.nodes.find(n => n.id === id);
+    const free = (x, z) => { const tx = Math.floor(x), tz = Math.floor(z); return tx >= 0 && tz >= 0 && tx < N && tz < N && !s.roads[tz * N + tx] && !s.occ[tz * N + tx] && !s.walls[tz * N + tx]; };
+    for (const sg of net.segs) {
+      if (sg.k === 'wall') continue;
+      const a = nd(sg.a), b = nd(sg.b), L = Math.hypot(b.x - a.x, b.z - a.z); if (L < 1) continue;
+      const ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 + 0.3;
+      for (let t = 1.5, k = 0; t < L - 0.5; t += 3.2, k++) {
+        const sd = k % 2 ? 1 : -1, x = a.x + ux * t - uz * off * sd, z = a.z + uz * t + ux * off * sd;
+        if (free(x, z)) spots.push([x, z, a.x + ux * t, a.z + uz * t]);
       }
     }
     if (!this.lampHead) {
@@ -197,11 +234,14 @@ export class View {
     this.roadG.add(pole, head, pool);
   }
   // tiles a road tool is about to lay (green) or clear (red)
-  showRoadGhost(tiles, ok = true) {
-    this.roadGhost.clear(); if (!tiles) return;
-    this.ghostTile.color.set(ok ? '#59ff8a' : '#ff4a4a');
-    const geo = new THREE.PlaneGeometry(0.94, 0.94);
-    for (const [x, z] of tiles) { const p = new THREE.Mesh(geo, this.ghostTile); p.rotation.x = -Math.PI / 2; p.position.set(this.wx(x + 0.5), 0.03, this.wx(z + 0.5)); this.roadGhost.add(p); }
+  showRoadGhost() { this.roadGhost.clear(); }
+  // a line being drawn: a see-through strip, green if it can go there; w: its width
+  showLine(a, b, w, ok, wall) {
+    this.roadGhost.clear(); if (!a || !b) return;
+    this.ghostTile.color.set(ok ? (wall ? '#ffe600' : '#59ff8a') : '#ff4a4a');
+    const L = Math.max(0.2, Math.hypot(b.x - a.x, b.z - a.z)), geo = new THREE.PlaneGeometry(L + w, w); geo.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(geo, this.ghostTile); m.position.set(this.wx((a.x + b.x) / 2), wall ? 0.5 : 0.04, this.wx((a.z + b.z) / 2)); m.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x); this.roadGhost.add(m);
+    for (const p of [a, b]) { const d = new THREE.Mesh(new THREE.CircleGeometry(0.18, 12), this.ghostTile); d.rotation.x = -Math.PI / 2; d.position.set(this.wx(p.x), 0.06, this.wx(p.z)); this.roadGhost.add(d); }
     this.grid.visible = true;
   }
 

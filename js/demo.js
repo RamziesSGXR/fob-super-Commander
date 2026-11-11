@@ -14,9 +14,9 @@ export function demoSim() {
     .forEach(([t, x, z]) => put(t, x, z));
   // a dirt path from every door to the main road
   for (const b of s.b) {
-    const [dx, dz] = s.door(b), tiles = [];
-    for (let x = dx; x !== m && x !== m + 1; x += Math.sign(m - dx) || 1) tiles.push([x, dz]);
-    s.layRoad(tiles, B[b.type].store || B[b.type].need ? 2 : 1);
+    const [dx, dz] = s.door(b), k = B[b.type].store || B[b.type].need ? 'paved' : 'dirt';
+    const a = s.snapLine({ x: dx + 0.5, z: dz + 0.5 }, 'free', k), e = s.snapLine({ x: m + 1, z: dz + 0.5 }, 'free', k, a);
+    s.drawLine(a, e, k);
   }
   for (const b of s.b) { if (B[b.type].store) b.stock = { ...b.stock, ...B[b.type].store }; if (B[b.type].need) b.stock = { ...b.stock, ...B[b.type].need }; }
   for (let i = 0; i < 30; i++) s.addTroop(i % 2 ? 100 : 40);

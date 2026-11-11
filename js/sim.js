@@ -8,6 +8,7 @@
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
+import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -47,10 +48,9 @@ export class Sim {
     this.place('pad', m + 3, m - 3, 0, true);
     this.place('hab', m - 8, m - 2, 0, true);
     this.place('seflag', m - 5, m + 2, 0, true);
-    // the starting road: up from the gate, with branches to the HQ and the pad
-    for (let z = m - 4; z < this.N - 1; z++) { this.roads[z * this.N + m] = 2; this.roads[z * this.N + m + 1] = 2; }
-    for (const x of [m - 2, m - 1, m + 2, m + 3, m + 4]) this.roads[m * this.N + x] = 2;
-    this.roadsV = 1;
+    // the starting wall, and a paved road in from the edge of the map through the gate, with a branch to the HQ and the pad
+    this.startNet([]);
+    this.rebuildNet();
     const hq = this.b.find(b => b.type === 'hq'); hq.stock = { ...B.hq.store };
     for (let i = 0; i < C.START.troops; i++) this.addTroop(i < 3 ? 100 : 30);
     this.newOffers(); this.newOrder();
@@ -65,15 +65,43 @@ export class Sim {
     const N = this.N;
     this.occ = new Int32Array(N * N);
     if (!this.roads) this.roads = new Uint8Array(N * N);
+    if (!this.walls) this.walls = new Uint8Array(N * N);
+    if (!this.inMask) this.inMask = new Uint8Array(N * N);
   }
-  inside(x, z) { return x >= 1 && z >= 1 && x < this.N - 1 && z < this.N - 1; }
-  road(x, z) { return this.inside(x, z) && this.roads[z * this.N + x] > 0; }
-  gate() { return { x: this.N / 2, z: this.N - 1 }; }
-  walkGrid() {   // where people and vehicles can go: open ground and roads, plus the gate
+  // the wall round the starting box, plus the road in. extra: [[ax, az, bx, bz, kind, width]] lines to add
+  startNet(extra) {
+    const N = this.N, o = (N - C.BOX) / 2, lo = o + 0.5, hi = o + C.BOX - 0.5, m = N / 2;
+    this.net = emptyNet();
+    const line = (ax, az, bx, bz, k, w) => addLine(this.net, snap(this.net, { x: ax, z: az }, 'free', w), snap(this.net, { x: bx, z: bz }, 'free', w), k, w);
+    line(lo, lo, hi, lo, 'wall'); line(hi, lo, hi, hi, 'wall'); line(hi, hi, lo, hi, 'wall'); line(lo, hi, lo, lo, 'wall');
+    if (!extra.length) {
+      line(m + 1, N, m + 1, m - 4, 'paved', 2);
+      line(m - 1.5, m + 0.5, m + 4.5, m + 0.5, 'paved', 1);
+    }
+    for (const [ax, az, bx, bz, k, w] of extra) line(ax, az, bx, bz, k, w);
+  }
+  rebuildNet() {
+    const r = raster(this.net, this.N);
+    this.roads = r.roads; this.walls = r.walls; this.inMask = r.inside; this.gates = r.gates; this.area = r.area;
+    this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
+  }
+  inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
+  road(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.roads[z * this.N + x] > 0; }
+  // the main gate: the one nearest the bottom of the map. x, z: just inside it; ox, oz: off the edge of the map beyond it
+  gate() {
+    const N = this.N, gs = this.gates || [];
+    if (!gs.length) return { x: N / 2, z: N / 2 + C.BOX / 2 - 2, ox: N / 2, oz: N + 5, gx: N / 2, gz: N / 2 + C.BOX / 2 };
+    const g = gs.reduce((p, q) => q.z > p.z ? q : p);
+    let cx = 0, cz = 0, n = 0; for (let i = 0; i < N * N; i++) if (this.inMask[i]) { cx += i % N; cz += (i / N) | 0; n++; }
+    cx = n ? cx / n + 0.5 : N / 2; cz = n ? cz / n + 0.5 : N / 2;
+    const dx = g.x - cx, dz = g.z - cz, ax = Math.abs(dx) > Math.abs(dz), sx = ax ? Math.sign(dx) : 0, sz = ax ? 0 : Math.sign(dz) || 1;
+    const far = ax ? (sx > 0 ? N - g.x : g.x) : (sz > 0 ? N - g.z : g.z);
+    return { x: g.x - sx * 1.5, z: g.z - sz * 1.5, ox: g.x + sx * (far + 5), oz: g.z + sz * (far + 5), gx: g.x, gz: g.z };
+  }
+  walkGrid() {   // where people and vehicles can go: anywhere on the map that isn't a building or a wall; gates are open
     if (this._walkV === this.layoutV()) return this._walk;
     const N = this.N, w = new Uint8Array(N * N);
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) w[z * N + x] = this.inside(x, z) && !this.occ[z * N + x] ? 1 : 0;
-    for (let x = N / 2 - 2; x <= N / 2 + 1; x++) w[(N - 1) * N + x] = 1;
+    for (let i = 0; i < N * N; i++) w[i] = !this.occ[i] && this.walls[i] !== 1 ? 1 : 0;
     this._walk = w; this._walkV = this.layoutV(); return w;
   }
   layoutV() { return this.b.length * 7919 + this.nid * 31 + (this.roadsV || 0); }
@@ -100,30 +128,30 @@ export class Sim {
     return [N / 2, N - 2];
   }
 
-  // ---------------------------------------------------------------- roads
-  canRoad(x, z, type) {
-    if (!this.inside(x, z)) return 'Outside the wire';
-    if (this.occ[z * this.N + x]) return 'A building is in the way';
-    if (this.roads[z * this.N + x] >= type) return 'Already a road';
-    return null;
-  }
+  // ---------------------------------------------------------------- roads and walls: one line tool
   roadPrice(type) { return type === 2 && this.hasTech('asphalt') ? Math.ceil(ROADS[2].cost / 2) : ROADS[type].cost; }
-  roadCost(tiles, type) { return tiles.filter(([x, z]) => !this.canRoad(x, z, type)).length * this.roadPrice(type); }
-  layRoad(tiles, type) {
-    let n = 0;
-    for (const [x, z] of tiles) {
-      if (this.canRoad(x, z, type) || this.supplies < this.roadPrice(type)) continue;
-      this.supplies -= this.roadPrice(type); this.roads[z * this.N + x] = type; n++;
-    }
-    if (n) { this.roadsV++; this.events.push({ t: 'roads' }); }
-    return n;
+  linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : 1); }   // per tile of length; paved is two wide
+  snapLine(p, mode, k, from) { return snap(this.net, p, mode, KINDS[k].w, from); }
+  // can this line go here, and what does it cost? a: snapped start, b: snapped end
+  checkLine(a, b, k) {
+    const len = Math.hypot(b.x - a.x, b.z - a.z), cost = Math.ceil(len) * this.linePrice(k);
+    if (len < 0.9) return { ok: false, why: 'Too short', cost };
+    if (a.x < 0 || a.z < 0 || b.x < 0 || b.z < 0 || a.x > this.N || a.z > this.N || b.x > this.N || b.z > this.N) return { ok: false, why: 'Off the map', cost };
+    for (const [x, z] of lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w)) if (this.occ[z * this.N + x]) return { ok: false, why: 'A building is in the way', cost };
+    if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
+    return { ok: true, cost };
   }
-  clearRoad(tiles) {
-    let n = 0;
-    for (const [x, z] of tiles) { const i = z * this.N + x, r = this.roads[i]; if (!r || !this.inside(x, z)) continue; this.supplies += Math.floor(this.roadPrice(r) / 2); this.roads[i] = 0; n++; }
-    if (n) { this.roadsV++; this.events.push({ t: 'roads' }); }
-    return n;
+  drawLine(a, b, k) {
+    const c = this.checkLine(a, b, k); if (!c.ok) return null;
+    const s = addLine(this.net, a, b, k); if (!s) return null;
+    this.supplies -= c.cost; this.rebuildNet(); return s;
   }
+  removeLine(x, z) {
+    const s = nearestSeg(this.net, x, z); if (!s) return null;
+    this.supplies += Math.floor(Math.ceil(segLen(this.net, s)) * this.linePrice(s.k) / 2);
+    removeSeg(this.net, s.id); this.rebuildNet(); return s;
+  }
+  lineAt(x, z) { return nearestSeg(this.net, x, z); }
 
   // ---------------------------------------------------------------- building
   has(type) { return this.b.some(b => b.type === type && b.done); }
@@ -176,7 +204,7 @@ export class Sim {
     const [w, dd] = dims(type, rot);
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) {
       const tx = x + i, tz = z + j;
-      if (!this.inside(tx, tz)) return { ok: false, why: 'Outside the wire' };
+      if (!this.inside(tx, tz)) return { ok: false, why: this.area ? 'Outside the wall' : 'The wall is open: close it to build' };
       if (this.occ[tz * this.N + tx]) return { ok: false, why: 'Something is in the way' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
     }
@@ -702,7 +730,7 @@ export class Sim {
   patrolGo(p) {
     p.brief = 0;
     const g = this.gate();
-    for (const id of p.vids || []) { const v = this.veh.find(v => v.id === id); if (v) { v.go = true; v.path = this.pathTo(v.x, v.z, g.x, g.z - 1); } }
+    for (const id of p.vids || []) { const v = this.veh.find(v => v.id === id); if (v) { v.go = true; v.path = this.pathTo(v.x, v.z, g.x, g.z); } }
     this.events.push({ t: 'patrolGo', id: p.id, members: p.members, leader: p.leader });
   }
   resolve(p) {
@@ -723,7 +751,7 @@ export class Sim {
         this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two days, billed to the base's gratitude.`);
         continue;
       }
-      v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z - 0.5; v.path = h ? this.pathTo(v.x, v.z, ...this.door(h)) : [];
+      v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z; v.path = h ? this.pathTo(v.x, v.z, ...this.door(h)) : [];
     }
     if (back.length === 0 && dead.length) { back.push(dead.pop()); }   // somebody always makes it back to tell it
     for (const t of dead) {
@@ -870,21 +898,26 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', '_walk', '_walkV', '_paths', '_pathV'].includes(k)) o[k] = this[k];
-    o.roadsS = Array.from(this.roads).join('');
-    o.rngS = this.rng.s; o.v = 4;
+    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', '_walk', '_walkV', '_paths', '_pathV'].includes(k)) o[k] = this[k];
+    o.rngS = this.rng.s; o.v = 5;
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
     Object.assign(this, structuredClone(s));
     if (!s.v || s.v < 2) this.wt *= C.T;
     this.rng = new RNG(1); this.rng.s = s.rngS; this.events = [];
-    this.roads = new Uint8Array(C.N * C.N);
+    this.N = s.N || 40; delete this.walls; delete this.inMask; delete this.gates;
+    this.roads = new Uint8Array(this.N * this.N);
     if (s.roadsS) for (let i = 0; i < s.roadsS.length; i++) this.roads[i] = +s.roadsS[i];
     this.genMap();
     if (!s.v || s.v < 3) this.migrate3();
     for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
     if (!s.v || s.v < 3) this.roadsFromGate();
+    if (!this.net) this.migrate5();
+    delete this.roadsS;
+    this.genMap();
+    for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
+    this.rebuildNet();
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
     this.roadsV = 1;
@@ -904,6 +937,37 @@ export class Sim {
     delete this.e710; delete this.shells; delete this.contracts; delete this.cap;
     this.stats = { deployed: 0, trained: 0, delivered: 0, ...this.stats };
     if (old.length) this.say('base', `The Bureau has decommissioned ${old.length} extraction site${old.length > 1 ? 's' : ''}: this is a military base. E-710 now arrives by pelican. Construction costs refunded.`);
+  }
+  // bases saved before roads and walls became lines: the old map moves into the middle of the bigger one, the old perimeter
+  // becomes a wall, and painted road tiles become road lines, one per straight run
+  migrate5() {
+    const old = this.N, o = (C.N - old) / 2, R = this.roads, lines = [];
+    const done = new Uint8Array(old * old);
+    const runs = (t, horiz) => {
+      for (let a = 1; a < old - 1; a++) {
+        let s = -1;
+        for (let b = 1; b <= old - 1; b++) {
+          const on = b < old - 1 && (horiz ? R[a * old + b] : R[b * old + a]) === t;
+          if (on && s < 0) s = b;
+          if (!on && s >= 0) {
+            if (b - s >= 3) { lines.push(horiz ? [s + o + 0.5, a + o + 0.5, b - 1 + o + 0.5, a + o + 0.5] : [a + o + 0.5, s + o + 0.5, a + o + 0.5, b - 1 + o + 0.5]); for (let k = s; k < b; k++) done[horiz ? a * old + k : k * old + a] = 1; }
+            s = -1;
+          }
+        }
+      }
+    };
+    const extra = [];
+    for (const t of [1, 2]) {
+      lines.length = 0; runs(t, true); runs(t, false);
+      for (let i = 0; i < old * old; i++) if (R[i] === t && !done[i]) { const x = i % old + o, z = ((i / old) | 0) + o; lines.push([x + 0.25, z + 0.5, x + 0.75, z + 0.5]); }   // odd tiles left over
+      for (const l of lines) extra.push([...l, t === 2 ? 'paved' : 'dirt', 1]);
+    }
+    // the old road out of the gate, carried on to the edge of the new map
+    extra.push([C.N / 2 + 1, o + old - 1.5, C.N / 2 + 1, C.N, 'paved', 2]);
+    for (const b of this.b) { b.x += o; b.z += o; }
+    for (const v of this.veh) { v.x += o; v.z += o; v.path = []; v.parked = false; }
+    this.N = C.N; this.roads = null;
+    this.startNet(extra);
   }
   roadsFromGate() {   // a dirt road up from the gate on whatever ground is free
     const m = this.N / 2;

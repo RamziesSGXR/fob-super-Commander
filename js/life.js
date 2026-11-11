@@ -50,8 +50,8 @@ export class Life {
     const [cx, cz] = this.centre(b), f = [[0, 1], [1, 0], [0, -1], [-1, 0]][b.rot], h = b.rot % 2 ? b.w / 2 : b.d / 2;
     return [cx + f[0] * (h + dist) + f[1] * side, cz + f[1] * (h + dist) - f[0] * side];
   }
-  out() { return [this.N / 2 + rnd(-1, 1), this.N + 5]; }
-  inGate() { return [this.N / 2 + rnd(-1.5, 1.5), this.N - 3]; }
+  out() { const g = this.sim.gate(); return [g.ox + rnd(-1, 1), g.oz + rnd(-1, 1)]; }
+  inGate() { const g = this.sim.gate(); return [g.x + rnd(-1, 1), g.z + rnd(-1, 1)]; }
 
   person(id, kind, x, z) {
     const a = { id, kind, x, z, yaw: 0, path: [], act: 'idle', wait: 0, then: null, seed: Math.random() * 10, hidden: false, face: null };
@@ -76,12 +76,12 @@ export class Life {
       });
     }
     if (e.t === 'patrolGo') {   // plan given: they move out together, in a column behind the leader
-      const order = [e.leader, ...e.members.filter(id => id !== e.leader)], gx = this.N / 2;
+      const order = [e.leader, ...e.members.filter(id => id !== e.leader)], g = this.sim.gate();
       order.forEach((id, i) => {
         const a = this.actors.get(id); if (!a) return;
         a.briefing = null; a.leaving = true; a.face = null;
         const col = (i % 2) * 0.7 - 0.35, row = Math.floor(i / 2) * 0.7;
-        this.go(a, gx + col, this.N - 3 + row * 0.2, () => { a.path = [[gx + col, this.N + 5 + row]]; a.act = 'walk'; a.then = () => this.actors.delete(id); });
+        this.go(a, g.x + col, g.z, () => { a.path = [[g.gx + col, g.gz], [g.ox + col, g.oz + row]]; a.act = 'walk'; a.then = () => this.actors.delete(id); });
         a.delay = i * 0.35;
       });
     }

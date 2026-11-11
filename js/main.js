@@ -124,23 +124,32 @@ $('b-howto').onclick = () => show('s-howto');
 $('ht-x').onclick = () => show(playing ? null : 's-title');
 
 // ---------------------------------------------------------------- the build bar
-const RTOOLS = { road1: { name: 'Dirt Road', cost: ROADS[1].cost, desc: 'Drag to lay. People walk a little faster, vehicles go 1.6 times as fast.' },
-  road2: { name: 'Paved Road', cost: ROADS[2].cost, desc: 'Drag to lay. Vehicles go 2.4 times as fast, and supplies reach their buildings sooner.' },
-  unroad: { name: 'Remove Road', cost: 0, desc: 'Drag to tear up road. Half the cost back.' } };
+// the line tools: roads and walls are drawn the same way. Drag from one end to the other; ends snap to the grid, to
+// 45 degrees or nowhere (SNAP, or G), and always onto existing roads and walls so they join up
+const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', desc: 'Drag to draw. One tile wide and cheap. Vehicles go 1.6 times as fast as off-road, people a little faster.' },
+  road2: { name: 'Paved Road', k: 'paved', desc: 'Drag to draw. Two tiles wide, with a centre line. Vehicles go 2.4 times as fast, so supplies reach their buildings sooner.' },
+  wall: { name: 'Wall', k: 'wall', desc: 'Drag to draw HESCO wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
+  unroad: { name: 'Bulldoze', k: null, desc: 'Click a road or a wall to take it out. Half the cost back.' } };
+const SNAPS = ['grid', '45', 'free'], SNAPNAME = { grid: 'GRID', 45: '45°', free: 'FREE' };
+let snapMode = 'grid';
+const lineCost = k => k ? sim.linePrice(k) : 0;
 function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[2]; return Object.entries(B).filter(([, d]) => subs.includes(d.group) && !d.fixed); }
 function buildBar() {
   $('b-groups').innerHTML = GROUPS.map(([k, n]) => `<button class="btn ${k === group ? 'on' : ''}" data-g="${k}" type="button">${n}</button>`).join('');
   const items = groupItems(group);
-  $('b-items').innerHTML = (group === 'expansion' ? Object.entries(RTOOLS).map(([k, d]) => `<button class="btn bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost ? sim.roadPrice(k === 'road2' ? 2 : 1) + ' SUP / TILE' : 'REFUND'}</span></button>`).join('') : '')
+  const lines = group === 'expansion' ? ['road1', 'road2', 'unroad'] : group === 'defence' ? ['wall', 'unroad'] : [];
+  $('b-items').innerHTML = (lines.length ? `<button class="btn bi road" data-snap="1" type="button" title="How line ends snap (G)"><b>SNAP</b><span class="cost">${SNAPNAME[snapMode]}</span></button>` : '')
+    + lines.map(k => { const d = RTOOLS[k]; return `<button class="btn bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d], i) => {
     const lk = sim.locked(k), poor = sim.supplies < d.cost;
     return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost} SUP</span></button>`;
   }).join('');
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (b) { group = b.dataset.g; buildBar(); } };
-$('b-items').onclick = e => { const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
+$('b-items').onclick = e => { if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
+  if (b.dataset.snap) return tip('<b>Snapping</b><br>GRID: ends on tile centres. 45°: straight lines at 45-degree steps, whole tiles long. FREE: anywhere. Ends always join existing roads and walls. G switches.', e.clientX, e.clientY - 12, true);
   const k = b.dataset.b; if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
   const d = B[k], lk = sim.locked(k);
   const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${d.beds} votes` : '', d.eat ? `feeds ${d.eat}` : '', d.slots ? `trains ${d.slots} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', d.mor ? `+morale` : '', d.prop ? `+propaganda` : '', `upkeep ${d.up}/wk`].filter(Boolean);
@@ -412,18 +421,25 @@ $('me-import').onclick = async () => {
 // ---------------------------------------------------------------- pointer and touch
 const cv = $('view'), ptrs = new Map();
 let drag = null, pinch = null, roadDrag = null;
-const isRoad = t => t === 'road1' || t === 'road2' || t === 'unroad';
-function roadTiles(a, b) {   // an L from where the drag started to where it is now: along x first, then z
-  const out = [], sx = Math.sign(b[0] - a[0]), sz = Math.sign(b[1] - a[1]);
-  for (let x = a[0]; ; x += sx) { out.push([x, a[1]]); if (x === b[0] || !sx) break; }
-  if (sz) for (let z = a[1] + sz; ; z += sz) { out.push([b[0], z]); if (z === b[1]) break; }
-  return out;
+const isRoad = t => !!RTOOLS[t];
+function lineEnd(e) {   // the snapped end of the line under the pointer
+  const p = view.pick(e.clientX, e.clientY), k = RTOOLS[tool].k || 'dirt';
+  return sim.snapLine({ x: p.x, z: p.z }, snapMode, k, roadDrag);
 }
-function roadPreview(tiles, e) {
-  if (tool === 'unroad') { const n = tiles.filter(([x, z]) => sim.road(x, z)).length; view.showRoadGhost(tiles, false); if (e.pointerType === 'mouse') tip(`Remove ${n} tile${n === 1 ? '' : 's'}: +${n * 2} SUP`, e.clientX, e.clientY); return; }
-  const type = tool === 'road2' ? 2 : 1, cost = sim.roadCost(tiles, type);
-  view.showRoadGhost(tiles, cost <= sim.supplies);
-  if (e.pointerType === 'mouse') tip(`${ROADS[type].name}: ${cost} SUP`, e.clientX, e.clientY);
+function roadPreview(e) {
+  if (tool === 'unroad') {
+    const p = view.pick(e.clientX, e.clientY), sg = sim.lineAt(p.x, p.z);
+    if (!sg) { view.showLine(null); if (e.pointerType === 'mouse' && flashT <= 0) hideTip(); return; }
+    const nd = id => sim.net.nodes.find(n => n.id === id), a = nd(sg.a), b = nd(sg.b);
+    view.showLine(a, b, sg.w, false, sg.k === 'wall');
+    if (e.pointerType === 'mouse') tip(`Take out this ${sg.k === 'wall' ? 'wall' : 'road'}: +${Math.floor(Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)) * sim.linePrice(sg.k) / 2)} SUP`, e.clientX, e.clientY);
+    return;
+  }
+  const k = RTOOLS[tool].k, end = lineEnd(e);
+  if (!roadDrag) { view.showLine(end, end, k === 'paved' ? 2 : 1, true, k === 'wall'); if (e.pointerType === 'mouse' && flashT <= 0) hideTip(); return; }
+  const c = sim.checkLine(roadDrag, end, k);
+  view.showLine(roadDrag, end, k === 'paved' ? 2 : 1, c.ok, k === 'wall');
+  if (e.pointerType === 'mouse') tip(`${RTOOLS[tool].name}: ${c.cost} SUP${c.ok ? '' : ` · ${esc(c.why)}`}`, e.clientX, e.clientY);
 }
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
@@ -435,7 +451,7 @@ cv.addEventListener('pointerdown', e => {
   if (!playing) return;
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; drag = null; return; }
-  if (isRoad(tool) && e.button === 0) { const p = view.pick(e.clientX, e.clientY); roadDrag = [Math.floor(p.x), Math.floor(p.z)]; drag = null; return; }
+  if (isRoad(tool) && e.button === 0) { if (tool !== 'unroad') roadDrag = lineEnd(e); else roadDrag = { x: 0, z: 0, bull: true }; drag = null; return; }
   drag = { x: e.clientX, y: e.clientY, btn: e.button, moved: false };
 });
 cv.addEventListener('pointermove', e => {
@@ -454,7 +470,7 @@ cv.addEventListener('pointermove', e => {
     }
   }
   if (photo) return;
-  if (isRoad(tool)) { const p = view.pick(e.clientX, e.clientY), here = [Math.floor(p.x), Math.floor(p.z)]; roadPreview(roadDrag ? roadTiles(roadDrag, here) : [here], e); }
+  if (isRoad(tool)) roadPreview(e);
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
@@ -467,10 +483,11 @@ function up(e) {
   if (!playing) return;
   ptrs.delete(e.pointerId);
   if (roadDrag) {
-    const p = view.pick(e.clientX, e.clientY), tiles = roadTiles(roadDrag, [Math.floor(p.x), Math.floor(p.z)]); roadDrag = null;
-    const n = tool === 'unroad' ? sim.clearRoad(tiles) : sim.layRoad(tiles, tool === 'road2' ? 2 : 1);
-    view.showRoadGhost(null); hideTip();
-    if (n) audio.play(tool === 'unroad' ? 'demolish' : 'place'); else { flash(tool === 'unroad' ? 'No road there.' : 'Nothing to lay there, or not enough supplies.'); audio.play('deny'); }
+    let ok;
+    if (tool === 'unroad') { const p = view.pick(e.clientX, e.clientY); ok = sim.removeLine(p.x, p.z); if (!ok) flash('No road or wall there.'); }
+    else { const end = lineEnd(e), c = sim.checkLine(roadDrag, end, RTOOLS[tool].k); ok = c.ok && sim.drawLine(roadDrag, end, RTOOLS[tool].k); if (!ok && c.why !== 'Too short') flash(c.why || 'Cannot draw that here.'); }
+    roadDrag = null; view.showLine(null); if (flashT <= 0) hideTip();
+    if (ok) { audio.play(tool === 'unroad' ? 'demolish' : 'place'); buildBar(); } else audio.play('deny');
     return;
   }
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
@@ -512,6 +529,7 @@ addEventListener('keydown', e => {
     else if (k === ' ') { e.preventDefault(); $('ph-pause').click(); }
     return;
   }
+  if (k === 'g') { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); flash(`Snapping: ${SNAPNAME[snapMode]}`); return; }
   if (k === 'q') view.rotate(-1);
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
