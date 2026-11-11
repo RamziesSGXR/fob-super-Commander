@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#030805">
+<meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
+<title>FOB Super Commander</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="view"></canvas>
+
+  <!-- ===================================================== title -->
+  <section id="s-title" class="screen on">
+    <div class="card title">
+      <div class="eyebrow">Super Earth faction command</div>
+      <h1>FOB SUPER<br>COMMANDER</h1>
+      <p class="tag">Build your faction's base. Answer to three Ministries. Outshine the other loyal factions for the Federation's supplies.</p>
+      <div class="btns col">
+        <button id="b-continue" class="btn big primary hidden" type="button">CONTINUE</button>
+        <button id="b-new" class="btn big" type="button">NEW FACTION</button>
+        <button id="b-howto" class="btn" type="button">HOW TO PLAY</button>
+      </div>
+      <p class="fine">Prototype 0.1. Your base saves on this device. Unofficial fan project, not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.</p>
+    </div>
+  </section>
+
+  <!-- ===================================================== found a faction -->
+  <section id="s-faction" class="screen">
+    <div class="card wide">
+      <div class="eyebrow">Register a loyal faction</div>
+      <h2 id="fx-title">FOUND YOUR FACTION</h2>
+      <div class="fx">
+        <div class="fx-logo">
+          <canvas id="fx-prev" width="200" height="200"></canvas>
+          <div class="fx-row"><span>CREST</span><button class="btn icon" data-cy="shape:-1" type="button">‹</button><b id="fx-shape"></b><button class="btn icon" data-cy="shape:1" type="button">›</button></div>
+          <div class="fx-row"><span>SYMBOL</span><button class="btn icon" data-cy="symbol:-1" type="button">‹</button><b id="fx-symbol"></b><button class="btn icon" data-cy="symbol:1" type="button">›</button></div>
+          <div class="fx-row"><span>LETTERS</span><input id="fx-text" maxlength="4" autocomplete="off" spellcheck="false"></div>
+          <div class="fx-sw"><span>FIELD</span><div class="sw" data-k="logo.bg"></div></div>
+          <div class="fx-sw"><span>SYMBOL</span><div class="sw" data-k="logo.fg"></div></div>
+          <div class="fx-sw"><span>RIM</span><div class="sw" data-k="logo.rim"></div></div>
+        </div>
+        <div class="fx-form">
+          <label>FACTION NAME<input id="fx-name" maxlength="40" autocomplete="off" spellcheck="false"></label>
+          <label>BASE NAME<input id="fx-base" maxlength="22" autocomplete="off" spellcheck="false"></label>
+          <label>MOTTO<input id="fx-motto" maxlength="48" autocomplete="off" spellcheck="false"></label>
+          <div class="fx-sw"><span>PRIMARY</span><div class="sw" data-k="primary"></div></div>
+          <div class="fx-sw"><span>ACCENT</span><div class="sw" data-k="secondary"></div></div>
+          <p class="fine left">Your crest goes on every flag, banner, billboard and statue you build. Primary colours roofs and uniforms; accent trims the banners and the parade ground.</p>
+        </div>
+      </div>
+      <div class="btns">
+        <button id="fx-back" class="btn" type="button">BACK</button>
+        <button id="fx-rand" class="btn" type="button">RANDOMISE</button>
+        <button id="fx-go" class="btn primary" type="button">FOUND THE FACTION</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== how to play -->
+  <section id="s-howto" class="screen overlay">
+    <div class="card wide brief">
+      <div class="eyebrow">Field manual</div>
+      <h2>HOW TO PLAY</h2>
+      <p>You command a loyal sub-faction of Super Earth. Every <b>week</b> (two and a half minutes) the Federation hands out supplies, and the better your <b>standing</b>, the bigger your share. Three other factions on the planet want the same supplies.</p>
+      <p>Your standing comes from three Ministries, and they all want something different:</p>
+      <ul>
+        <li><b class="c-def">DEFENCE</b> wants patrols. Send squads out from the Ministries panel. They march out of the gate and come back, with a medal or a few fewer.</li>
+        <li><b class="c-pro">PROSPERITY</b> wants requisitions filled. Pump E-710, turn it into shells, and ship them from the landing pad before the deadline.</li>
+        <li><b class="c-tru">TRUTH</b> inspects your base once a week. It wants high morale, lots of propaganda and buildings in good repair.</li>
+      </ul>
+      <p>They pull against each other. Troops on patrol aren't working the pumps. The munitions plant is loud and keeps people awake. A statue costs what a barracks costs. Fall behind and your allocation shrinks, upkeep goes unpaid and the base wears down, but nothing ends: you can always climb back.</p>
+      <p><b>Controls.</b> Drag to move around, scroll or pinch to zoom, <kbd>Q</kbd> <kbd>E</kbd> or right-drag (two-finger twist) to rotate. Pick a building at the bottom, <kbd>R</kbd> turns it, click to build. Click a building to select it. <kbd>Space</kbd> pauses, <kbd>M</kbd> opens the Ministries, <kbd>H</kbd> hides the interface for screenshots.</p>
+      <div class="btns"><button id="ht-x" class="btn primary" type="button">UNDERSTOOD</button></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== HUD -->
+  <div id="hud" class="hidden">
+    <header id="top">
+      <div class="who"><canvas id="h-logo" width="56" height="56"></canvas><div><b id="h-name"></b><span id="h-base"></span></div></div>
+      <div class="res">
+        <span class="ri cr" title="Supplies: what you build and pay upkeep with"><i>SUP</i><b id="r-sup">0</b></span>
+        <span class="ri" title="Power made / used"><i>PWR</i><b id="r-pw"></b></span>
+        <span class="ri" title="Troops at the base / all troops / beds"><i>TRP</i><b id="r-trp"></b></span>
+        <span class="ri" title="Morale"><i>MRL</i><b id="r-mrl"></b></span>
+        <span class="ri" title="E-710 in store"><i>E-710</i><b id="r-e7"></b></span>
+        <span class="ri" title="Shells in store"><i>SHL</i><b id="r-shl"></b></span>
+      </div>
+      <button id="b-week" class="week" type="button" title="Standings (S)"><b id="w-title">WEEK 1</b><span class="wbar"><span id="w-fill"></span><span id="w-insp" title="Inspection"></span></span><span id="w-rank"></span></button>
+      <div class="menu">
+        <button id="b-rl" class="btn icon" type="button" title="Rotate left (Q)">⟲</button>
+        <button id="b-rr" class="btn icon" type="button" title="Rotate right (E)">⟳</button>
+        <button id="b-pause" class="btn icon" type="button" title="Pause (Space)">II</button>
+        <button id="b-speed" class="btn icon" type="button" title="Game speed">1×</button>
+        <button id="b-min" class="btn" type="button" title="The Ministries (M)">MINISTRIES</button>
+        <button id="b-hide" class="btn icon" type="button" title="Hide the interface (H)">H</button>
+        <button id="b-menu" class="btn" type="button" title="Menu">MENU</button>
+      </div>
+    </header>
+
+    <aside id="stand" class="panel" title="Standings: click for details"></aside>
+    <aside id="orders" class="panel"><div class="ph"><span>FIRST ORDERS</span><button class="x" id="or-x" type="button" title="Hide">–</button></div><ol id="or-list"></ol></aside>
+
+    <div id="selp" class="panel hidden"></div>
+    <div id="comms" class="panel"><div class="ph"><span>COMMS</span></div><div id="c-list"></div></div>
+
+    <footer id="build">
+      <div id="b-groups"></div>
+      <div id="b-items"></div>
+    </footer>
+
+    <div id="tip" class="hidden"></div>
+    <div id="paused" class="hidden">PAUSED</div>
+
+    <!-- the Ministries -->
+    <div id="mins" class="panel float hidden">
+      <div class="ph"><span>THE MINISTRIES</span><button class="x" id="mi-x" type="button" title="Close (M)">×</button></div>
+      <div class="tabs" id="mi-tabs"></div>
+      <div class="mi-body" id="mi-body"></div>
+    </div>
+
+    <!-- menu -->
+    <div id="menu" class="panel float hidden">
+      <div class="ph"><span>MENU</span><button class="x" id="me-x" type="button">×</button></div>
+      <div class="me-body">
+        <button class="btn" id="me-resume" type="button">RESUME</button>
+        <button class="btn" id="me-faction" type="button">EDIT FACTION AND CREST</button>
+        <button class="btn" id="me-howto" type="button">HOW TO PLAY</button>
+        <button class="btn" id="me-export" type="button">COPY SAVE CODE</button>
+        <button class="btn" id="me-import" type="button">LOAD SAVE CODE</button>
+        <button class="btn danger" id="me-new" type="button">FOUND A NEW FACTION</button>
+        <textarea id="me-code" class="hidden" spellcheck="false" placeholder="Paste a save code here, then press LOAD SAVE CODE again."></textarea>
+        <p class="fine" id="me-msg"></p>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

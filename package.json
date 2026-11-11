@@ -1,0 +1,17 @@
+{
+  "name": "fob-super-commander",
+  "version": "0.1.0",
+  "description": "FOB Super Commander - build and run your faction's base for Super Earth (unofficial fan project, prototype)",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "sim": "node test/headless.mjs 14 bot 7",
+    "sim:idle": "node test/headless.mjs 10 idle 7",
+    "ui": "node test/ui.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
