@@ -4,7 +4,7 @@
 
 Build and run your faction's base for Super Earth. A browser game for the **Super Earth Special Forces** community, in the same look as [Orbital Fury](https://orbitalfury.com/) and [Super Orbital Simulator](https://ramziessgxr.github.io/super-orbital-simulator/).
 
-> **Prototype 0.3** (the version shows on the title screen and in the menu). One planet, your faction and three rivals, three Ministries, 32 buildings, patrols, requisitions, inspections, a crest maker or your own uploaded logo, and troopers in your colours. Your base saves on your device.
+> **Prototype 0.2** (the version shows on the title screen and in the menu). One planet, your faction and three rivals, three Ministries, 32 buildings, patrols, requisitions, inspections, a crest maker or your own uploaded logo, and troopers in your colours. Your base saves on your device.
 
 You command a loyal sub-faction of Super Earth: your name, your crest, your colours, your base. Every week the Federation hands out supplies, and the better your standing with its Ministries, the bigger your share. Three other loyal factions on the planet want the same supplies.
 
