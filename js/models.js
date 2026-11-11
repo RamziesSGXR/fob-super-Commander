@@ -262,11 +262,12 @@ const MAKE = {
     const f = new THREE.Group(); f.position.set(0, 0.96, 0); f.scale.setScalar(2.1); g.add(f);
     box(f, 0.07, 0.22, 0.08, m.bronze, -0.05, 0.11, 0); box(f, 0.07, 0.22, 0.08, m.bronze, 0.05, 0.11, 0.04, { rx: -0.3 });
     box(f, 0.2, 0.24, 0.12, m.bronze, 0, 0.34, 0); ball(f, 0.06, m.bronze, 0, 0.52, 0); add(f, new THREE.SphereGeometry(0.068, 10, 6, 0, 6.3, 0, 1.6), m.bronze, 0, 0.53, 0);
-    box(f, 0.05, 0.22, 0.05, m.bronze, -0.13, 0.36, 0.03, { rz: 0.2 });
-    const arm = box(f, 0.05, 0.24, 0.05, m.bronze, 0.14, 0.53, 0, { rz: -0.25 });
-    cyl(f, 0.008, 0.008, 0.35, m.bronze, 0.19, 0.72, 0); box(f, 0.13, 0.08, 0.005, m.bronze, 0.26, 0.84, 0);
+    box(f, 0.05, 0.2, 0.05, m.bronze, -0.13, 0.34, 0.01, { rz: -0.12 });   // left arm at its side
+    const sh = new THREE.Group(); sh.position.set(0.12, 0.44, 0); sh.rotation.set(-1.05, 0, -0.35); f.add(sh);
+    box(sh, 0.05, 0.12, 0.055, m.bronze, 0, -0.06, 0);
+    const el = new THREE.Group(); el.position.set(0, -0.12, 0); el.rotation.x = -2.1; sh.add(el);
+    box(el, 0.048, 0.11, 0.05, m.bronze, 0, -0.055, 0); box(el, 0.045, 0.045, 0.05, m.bronze, 0, -0.125, 0);
     add(f, new THREE.PlaneGeometry(0.24, 0.32), m.bronze, 0, 0.3, -0.07, { rx: 0.15 }).material = m.bronze;
-    void arm;
   },
 };
 
@@ -278,12 +279,20 @@ export function buildModel(type, m) {
 export function makePerson(m, kind = 'troop') {
   const g = new THREE.Group(), body = kind === 'inspector' ? m.coat : m.uniform;
   const leg = (x) => { const p = new THREE.Group(); p.position.set(x, 0.2, 0); g.add(p); box(p, 0.05, 0.2, 0.06, m.boots, 0, -0.1, 0); return p; };
-  const arm = (x) => { const p = new THREE.Group(); p.position.set(x, 0.38, 0); g.add(p); box(p, 0.045, 0.17, 0.05, body, 0, -0.08, 0); ball(p, 0.022, m.skin, 0, -0.17, 0, { seg: 6 }); return p; };
+  // an arm is a shoulder joint with the upper arm, and an elbow joint with the forearm and a clenched fist,
+  // so poses like the Helldiver salute (fist at the chin, forearm upright) are possible
+  const arm = (x) => {
+    const p = new THREE.Group(); p.position.set(x, 0.38, 0); g.add(p);
+    box(p, 0.045, 0.09, 0.05, body, 0, -0.045, 0);
+    const el = new THREE.Group(); el.position.set(0, -0.09, 0); p.add(el); p.userData.elbow = el;
+    box(el, 0.042, 0.08, 0.046, body, 0, -0.04, 0); box(el, 0.036, 0.034, 0.04, m.boots, 0, -0.092, 0);
+    return p;
+  };
   const parts = { legL: leg(-0.035), legR: leg(0.035), armL: arm(-0.085), armR: arm(0.085) };
   parts.torso = box(g, 0.13, 0.19, 0.08, body, 0, 0.3, 0);
   parts.head = new THREE.Group(); parts.head.position.set(0, 0.44, 0); g.add(parts.head);
   ball(parts.head, 0.045, m.skin, 0, 0, 0, { seg: 8 });
-  if (kind === 'inspector') { cyl(parts.head, 0.055, 0.05, 0.03, m.cap, 0, 0.035, 0, { seg: 10 }); box(parts.head, 0.07, 0.01, 0.04, m.coat, 0, 0.025, 0.05); box(parts.armR, 0.07, 0.09, 0.005, m.paper, 0, -0.12, 0.04); }
+  if (kind === 'inspector') { cyl(parts.head, 0.055, 0.05, 0.03, m.cap, 0, 0.035, 0, { seg: 10 }); box(parts.head, 0.07, 0.01, 0.04, m.coat, 0, 0.025, 0.05); box(parts.armR.userData.elbow, 0.07, 0.09, 0.005, m.paper, 0, -0.05, 0.035); }
   else { add(parts.head, new THREE.SphereGeometry(0.055, 10, 5, 0, 6.3, 0, 1.5), m.helmet, 0, 0.005, 0); box(g, 0.1, 0.12, 0.05, m.helmet, 0, 0.32, -0.06); }
   g.userData.parts = parts;
   return g;

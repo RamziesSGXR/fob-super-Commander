@@ -300,15 +300,16 @@ export class View {
       g.position.set(this.wx(a.x), 0, this.wx(a.z)); g.rotation.y = a.yaw;
       const p = g.userData.parts, ph = t * 9 + a.seed;
       p.legL.rotation.set(0, 0, 0); p.legR.rotation.set(0, 0, 0); p.armL.rotation.set(0, 0, 0); p.armR.rotation.set(0, 0, 0); p.head.rotation.set(0, 0, 0);
+      const eL = p.armL.userData.elbow, eR = p.armR.userData.elbow; eL.rotation.set(0, 0, 0); eR.rotation.set(0, 0, 0);
       g.position.y = 0;
       switch (a.act) {
-        case 'walk': p.legL.rotation.x = Math.sin(ph) * 0.6; p.legR.rotation.x = -Math.sin(ph) * 0.6; p.armL.rotation.x = -Math.sin(ph) * 0.5; p.armR.rotation.x = Math.sin(ph) * 0.5; g.position.y = Math.abs(Math.sin(ph)) * 0.015; break;
-        case 'salute': p.armR.rotation.set(-2.5, 0, 0.9); break;
-        case 'work': case 'build': p.armR.rotation.x = -1.3 + Math.sin(t * 7 + a.seed) * 0.6; p.armL.rotation.x = -0.6; break;
-        case 'drill': { const k = Math.sin(t * 6 + Math.floor(a.x)); p.legL.rotation.x = Math.max(0, k) * -1.1; p.legR.rotation.x = Math.max(0, -k) * -1.1; p.armL.rotation.x = k * 0.7; p.armR.rotation.x = -k * 0.7; g.position.y = Math.abs(k) * 0.02; break; }
-        case 'drink': p.armR.rotation.x = -2.2 + Math.sin(t * 2 + a.seed) * 0.2; break;
-        case 'mourn': p.head.rotation.x = 0.5; p.armL.rotation.x = -0.3; p.armR.rotation.x = -0.3; break;
-        case 'inspect': p.armR.rotation.x = -1.2; p.head.rotation.x = 0.3; p.head.rotation.y = Math.sin(t * 1.5 + a.seed) * 0.4; break;
+        case 'walk': p.legL.rotation.x = Math.sin(ph) * 0.6; p.legR.rotation.x = -Math.sin(ph) * 0.6; p.armL.rotation.x = -Math.sin(ph) * 0.5; p.armR.rotation.x = Math.sin(ph) * 0.5; eL.rotation.x = eR.rotation.x = -0.35; g.position.y = Math.abs(Math.sin(ph)) * 0.015; break;
+        case 'salute': p.armR.rotation.set(-1.05, 0, -0.35); eR.rotation.x = -2.1; break;
+        case 'work': case 'build': p.armR.rotation.x = -1.4 + Math.sin(t * 7 + a.seed) * 0.5; eR.rotation.x = -0.9 + Math.sin(t * 7 + a.seed) * 0.4; p.armL.rotation.x = -0.6; eL.rotation.x = -0.8; break;
+        case 'drill': { const k = Math.sin(t * 6 + Math.floor(a.x)); p.legL.rotation.x = Math.max(0, k) * -1.1; p.legR.rotation.x = Math.max(0, -k) * -1.1; p.armL.rotation.x = k * 0.7; p.armR.rotation.x = -k * 0.7; eL.rotation.x = eR.rotation.x = -0.4; g.position.y = Math.abs(k) * 0.02; break; }
+        case 'drink': p.armR.rotation.set(-0.9, 0, -0.3); eR.rotation.x = -2.0 + Math.sin(t * 2 + a.seed) * 0.25; break;
+        case 'mourn': p.head.rotation.x = 0.5; p.armL.rotation.x = -0.3; p.armR.rotation.x = -0.3; eL.rotation.x = eR.rotation.x = -1.2; break;
+        case 'inspect': p.armR.rotation.x = -0.4; eR.rotation.x = -1.2; p.head.rotation.x = 0.3; p.head.rotation.y = Math.sin(t * 1.5 + a.seed) * 0.4; break;
         case 'look': p.head.rotation.x = -0.25; break;
         default: p.armL.rotation.x = Math.sin(t * 1.5 + a.seed) * 0.05;
       }
