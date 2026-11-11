@@ -198,9 +198,9 @@ function logoImg(logo) {
 const ORDERS = [
   ['Build an E-710 Pump on the dark ground', s => s.has('pump')],
   ['Build a Supply Depot', s => s.has('depot')],
-  ['Fill a requisition (Ministries, Expansion)', s => s.stats.delivered > 0],
+  ['Fill a requisition (Expansion, bottom right)', s => s.stats.delivered > 0],
   ['Build a Barracks', s => s.has('barracks')],
-  ['Send a patrol (Ministries, Defence)', s => s.stats.patrolsWon + s.stats.patrolsLost + s.patrols.length > 0],
+  ['Send a patrol (Defence, bottom right)', s => s.stats.patrolsWon + s.stats.patrolsLost + s.patrols.length > 0],
   ['Build a Mess Hall for morale', s => s.has('mess')],
   ['Raise two Banners with your crest', s => s.b.filter(b => b.type === 'banner' && b.done).length >= 2],
   ['Build a Truth Office', s => s.has('truth')],
@@ -236,6 +236,15 @@ function hud() {
   for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; b.classList.toggle('poor', s.supplies < B[k].cost); b.classList.toggle('lock', !!s.locked(k)); }
   if (selId) selPanel();
   if (!$('mins').classList.contains('hidden')) renderMins();
+  // the Ministry dock, bottom right: what each Ministry has waiting
+  const sendable = s.offers.filter(o => o.size <= home).length, ready = s.contracts.filter(c => s[c.good] >= c.qty && s.has('pad')).length;
+  $('md-def').textContent = s.patrols.length ? `${s.patrols.length} in the field` : `${sendable} mission${sendable === 1 ? '' : 's'}`;
+  $('md-pro').textContent = ready ? `${ready} ready to ship` : `${s.contracts.length} requisition${s.contracts.length === 1 ? '' : 's'}`;
+  $('md-tru').textContent = s.inspected ? 'inspected' : `inspects in ${days(C.WEEK * C.INSPECT_AT - s.wt)}`.replace(' days', 'd').replace(' hours', 'h');
+  $('md-st').textContent = `${['1st', '2nd', '3rd', '4th'][s.rank]} of 4`;
+  document.querySelector('[data-mt="def"]').classList.toggle('alert', sendable > 0 && !s.patrols.length);
+  document.querySelector('[data-mt="pro"]').classList.toggle('alert', ready > 0);
+  for (const b of document.querySelectorAll('.md')) b.classList.toggle('on', !$('mins').classList.contains('hidden') && b.dataset.mt === minTab);
 }
 let commsN = 0;
 function renderComms(all) {
@@ -299,7 +308,8 @@ $('mi-body').onclick = e => {
   if (d && sim.deliver(+d.dataset.ship)) { renderMins(); renderComms(); }
 };
 function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) renderMins(); }
-$('b-min').onclick = () => toggleMins(); $('mi-x').onclick = () => $('mins').classList.add('hidden');
+$('mdock').onclick = e => { const b = e.target.closest('[data-mt]'); if (b) toggleMins(b.dataset.mt); };
+$('mi-x').onclick = () => $('mins').classList.add('hidden');
 $('b-week').onclick = () => toggleMins('st'); $('stand').onclick = () => toggleMins('st');
 $('or-x').onclick = () => $('orders').classList.toggle('min');
 
