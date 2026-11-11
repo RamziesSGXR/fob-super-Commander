@@ -244,7 +244,7 @@ function hud() {
   $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${left} DAY${left === 1 ? '' : 'S'}`;
   const hh = Math.floor(s.time.hour), mm = Math.floor((s.time.hour - hh) * 60 / 10) * 10;
   $('ck-day').textContent = `DAY ${s.time.day}`; $('ck-time').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-  $('ck-phase').textContent = { night: 'LIGHTS OUT', reveille: 'REVEILLE', drill: 'DRILL', mess: 'MESS', work: 'DUTY', evening: 'FREE TIME' }[s.time.phase];
+  $('ck-phase').textContent = { night: 'LIGHTS OUT', firstcall: 'FIRST CALL', reveille: 'REVEILLE', pt: 'PT', chow: 'CHOW', mess: 'MESS', work: 'DUTY', retreat: 'RETREAT', evening: 'FREE TIME' }[s.time.phase];
   // standings
   const rows = s.table();
   $('stand').innerHTML = rows.map((r, i) => `<div class="srow ${r.me ? 'me' : ''}"><span class="pos">${i + 1}</span><canvas data-logo="${i}"></canvas><span class="nm">${esc(r.name)}</span><span class="tot">${s.total(r.stand)}</span>
@@ -543,7 +543,7 @@ function loop(now) {
         if (ev.t === 'built') audio.play('built');
         if (ev.t === 'say') audio.play('ping', ev.ch);
         if (ev.t === 'patrolBack' && ev.hero) audio.play('medal');
-        if (ev.t === 'phase') { if (ev.phase === 'reveille') audio.play('reveille'); if (ev.phase === 'night') audio.play('taps'); }
+        if (ev.t === 'phase') { if (ev.phase === 'reveille') audio.play('reveille'); if (ev.phase === 'retreat') audio.play('retreat'); if (ev.phase === 'night') audio.play('taps'); }
         if (ev.t === 'moved') select(selId);
       }
       if (life.flights.some(f => !f.heard)) { for (const f of life.flights) f.heard = true; audio.play('pelican'); }

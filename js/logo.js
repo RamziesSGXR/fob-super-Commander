@@ -4,7 +4,7 @@
 export const SHAPES = ['shield', 'circle', 'hex', 'diamond', 'square', 'chevron', 'star', 'pentagon', 'pennant', 'roundel', 'oval'];
 export const SYMBOLS = ['eagle', 'fist', 'skull', 'helmet', 'star', 'sword', 'bolt', 'planet', 'globe', 'wings', 'gear', 'tower', 'flame', 'crosshair', 'anchor', 'chevrons', 'none'];
 export const PATTERNS = ['none', 'halves', 'stripe', 'band', 'chevron', 'quarters', 'cross', 'diagonal', 'border'];
-export const UNIFORMS = ['#5b6650', '#7a7f74', '#4a5a6a', '#3b3f3a', '#8a7a5a', '#2e4a2a', '#d9dbd2', '#1d3f8a', '#8a1c1c', '#111111', '#6b5a8a', '#b8862b', '#ffe600', '#c0392b'];
+export const UNIFORMS = ['#8fb0cc', '#2c5a94', '#5b6650', '#7a7f74', '#4a5a6a', '#3b3f3a', '#8a7a5a', '#2e4a2a', '#d9dbd2', '#1d3f8a', '#8a1c1c', '#111111', '#6b5a8a', '#b8862b', '#ffe600', '#c0392b'];
 export const PALETTE = ['#ffe600', '#f4f4f4', '#1b2a1a', '#2e4a2a', '#8a1c1c', '#c0392b', '#1d3f8a', '#3da9ff', '#3d4247', '#111111', '#ffb020', '#7a3fa0', '#0f6b5c', '#b8862b'];
 
 function crest(g, shape) {
@@ -141,7 +141,8 @@ export function drawTrooper(g, f, x, y, s) {
 // The look of a faction's troopers; older saves have none, so it is worked out from the faction colours.
 export function lookOf(f) {
   const mix = (a, b, k) => '#' + [0, 2, 4].map(i => Math.round(parseInt(a.substr(1 + i, 2), 16) * (1 - k) + parseInt(b.substr(1 + i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
-  return { uniform: mix(f.primary, '#9a9d92', 0.45), helmet: mix(f.primary, '#000000', 0.25), armband: f.secondary, crest: false, ...(f.look || {}) };
+  void mix;   // SEAF issue by default: light-blue armour, a blue helmet; the faction's colour goes on the armband
+  return { uniform: '#8fb0cc', helmet: '#2c5a94', armband: f.secondary, crest: true, ...(f.look || {}) };
 }
 
 // Draws a logo into a 2D context at (x, y), size s.

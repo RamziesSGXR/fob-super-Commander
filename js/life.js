@@ -231,12 +231,19 @@ export class Life {
       // the daily routine: a ceremony beats everything, then reveille, lights out and meals, then the job, then drill
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
       const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
-      const want = this.ceremony ? 'cer' : ph === 'reveille' && flag ? 'cer'
+      // Reveille and Retreat: everyone outdoors stops where they stand, faces the nearest flag and salutes; indoors carries on
+      const want = this.ceremony ? 'cer' : (ph === 'reveille' || ph === 'retreat') && flag ? 'honors'
+        : ph === 'firstcall' ? (shift ? 'job' + t.job : 'form')
         : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
-        : ph === 'mess' ? (shift ? 'job' + t.job : 'mess')
+        : ph === 'mess' || ph === 'chow' ? (shift ? 'job' + t.job : 'mess')
         : jobB ? 'job' + t.job
         : t.at && s.byId(t.at) ? 'train' + t.at
-        : ph === 'drill' && s.has('parade') ? 'drill' : 'free';
+        : ph === 'pt' && s.has('parade') ? 'drill' : 'free';
+      if (a.task !== want && want === 'honors') {
+        a.task = want; a.goal = null; a.path = []; a.then = null; a.lap = null;
+        if (a.hidden || a.act === 'plan') { if (a.act === 'plan') a.act = 'idle'; if (a.hidden) a.act = 'inside'; }   // indoors: no change
+        else { a.act = 'salute'; a.face = this.nearestFlag(a); }
+      }
       if (a.task !== want) {
         a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.onDone = null;
         if (want.startsWith('job')) {
@@ -255,6 +262,10 @@ export class Life {
             this.go(a, x, z, () => { a.act = 'aim'; a.face = this.centre(p); });
           } else if (kind === 'course') { a.lap = p.id; a.act = 'run'; a.path = []; }
           else { const i = slot % 12; this.go(a, p.x + 0.6 + (i % 4) * (p.w - 1.2) / 3, p.z + 0.6 + Math.floor(i / 4) * (p.d - 1.2) / 2, () => { a.act = 'drill'; a.yaw = Math.PI * 0.5 * p.rot; }); }
+        } else if (want === 'form') {   // First Call: out of the bunks and into a line in front of the quarters
+          const homes = s.b.filter(b => b.done && HOUSING.includes(b.type)), h = homes.length ? homes.reduce((p, q) => Math.hypot(p.x - a.x, p.z - a.z) < Math.hypot(q.x - a.x, q.z - a.z) ? p : q) : null;
+          if (h) { const n = (this.formN = (this.formN || 0) + 1) % 12, [x, z] = this.front(h, 0.9 + Math.floor(n / 6) * 0.45, (n % 6 - 2.5) * 0.42); this.go(a, x, z, () => { a.act = 'idle'; a.face = this.nearestFlag(a); }); }
+          else { a.act = 'idle'; }
         } else if (want === 'sleep') this.toBed(a);
         else if (want === 'mess') this.toMess(a);
         else if (want === 'drill') {
@@ -288,6 +299,12 @@ export class Life {
     if (tile) return [tile[0] + (i % 2 ? 0.72 : 0.28), tile[1] + 0.5];
     const [cx, cz] = this.centre(f), ang = i * 2.4, r = 6 + (i % 3) * 0.6;
     const [x, z] = this.near(cx + Math.cos(ang) * r, cz + Math.sin(ang) * r); return [x + 0.5, z + 0.5];
+  }
+  nearestFlag(a) {
+    const f = this.sim.b.filter(b => b.done && (b.type === 'seflag' || b.type === 'flag'));
+    if (!f.length) return null;
+    const b = f.reduce((p, q) => Math.hypot(p.x + 1 - a.x, p.z + 1 - a.z) < Math.hypot(q.x + 1 - a.x, q.z + 1 - a.z) ? p : q);
+    return this.centre(b);
   }
   toBed(a) {   // each night everyone finds a bunk; with none left they sleep outdoors by the HQ
     const s = this.sim, homes = s.b.filter(b => b.done && HOUSING.includes(b.type));

@@ -315,7 +315,6 @@ export class Sim {
       grief: -Math.round(this.grief),
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
-      plaza: (() => { const p = this.plaza(); return p && p.need > p.cap ? -Math.min(10, Math.ceil((p.need - p.cap) / 3)) : 0; })(),
     };
     this.moraleTarget = clamp(Object.values(this.mor).reduce((a, b) => a + b, 0), 0, 100);
     this.avgCond = done.length ? done.reduce((a, b) => a + b.cond, 0) / done.length : 100;
@@ -371,7 +370,10 @@ export class Sim {
   // ---------------------------------------------------------------- the clock: a week of seven days, starting at 06:00
   tick() {
     const days = this.wt / C.DAY + 0.25, d = Math.floor(days), tod = days - d, h = tod * 24;
-    const phase = h < 5 || h >= 22 ? 'night' : h < 8 ? 'reveille' : h < 11.5 ? 'drill' : h < 13 ? 'mess' : h < 20 ? 'work' : 'evening';
+    // an Army-style duty day (AR 600-25 bugle calls): First Call 06:00, Reveille 06:30 as the flag goes up, PT, chow,
+    // Work Call 09:00, lunch, Retreat 17:00 as the flag comes down, free time, Taps 21:00
+    const phase = h < 6 || h >= 21 ? 'night' : h < 6.5 ? 'firstcall' : h < 7 ? 'reveille' : h < 8 ? 'pt' : h < 9 ? 'chow'
+      : h < 11.5 ? 'work' : h < 13 ? 'mess' : h < 17 ? 'work' : h < 17.5 ? 'retreat' : 'evening';
     if (this.time && phase !== this.time.phase) this.events.push({ t: 'phase', phase });
     this.time = { day: (this.week - 1) * 7 + d + 1, hour: h, tod, phase, weekday: d };
   }
@@ -404,7 +406,7 @@ export class Sim {
 
   // ---------------------------------------------------------------- training: recruits go where they can learn fastest
   train(dt) {
-    const ph = this.time?.phase, on = ph === 'drill' || ph === 'work', hours = dt / C.DAY * 24;
+    const ph = this.time?.phase, on = ph === 'pt' || ph === 'work', hours = dt / C.DAY * 24;
     const recruits = this.troops.filter(t => t.state === 'idle' && !this.trained(t));
     if (!on) { for (const t of this.troops) t.at = null; return; }
     const places = this.b.filter(b => b.done && !b.off && B[b.type].train)
@@ -488,7 +490,7 @@ export class Sim {
     for (const v of this.veh) {
       const home = this.byId(v.home), spec = VEHICLES[v.kind];
       if (!home) continue;
-      if (this.time?.phase === 'reveille' && !v.go) continue;   // everyone stops for the dawn salute, drivers included
+      if ((this.time?.phase === 'reveille' || this.time?.phase === 'retreat') && !v.go) continue;   // vehicles halt for the colours, drivers included
       if (VEHICLES[v.kind].armour) {
         if (v.away) continue;
         if (!v.mission && !v.path.length && !v.parked) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.pathTo(v.x, v.z, x, z); else v.parked = true; }
@@ -782,7 +784,6 @@ export class Sim {
     if (this.hunger > 0.3) notes.push('Votes were seen eating their boot laces. The Ministry suggests rations.');
     if (this.avgCond < 60) notes.push('Several structures appear to be held together by optimism.');
     if (this.troops.length > this.beds) notes.push('Votes are sleeping outdoors. The Ministry finds this photogenic but concerning.');
-    const pz = this.plaza(); if (pz && pz.need > pz.cap) notes.push('At the morning salute, votes were standing in the flowerbeds. The plaza is too small for the base.');
     if (this.potties.filthy) notes.push('The latrines were described in the report as "a matter for the Ministry of Science".');
     else if (!this.potties.n && this.troops.length > 8) notes.push('The inspector asked where the latrines were. Nobody would say.');
     if (!notes.length) notes.push('Adequate. The Ministry expects more than adequate.');

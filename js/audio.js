@@ -61,6 +61,7 @@ export function play(what, arg) {
     case 'pelican': noise(t, 4.5, { vol: 0.22, freq: 180, q: 0.7, sweep: 260 }); tone(70, t, 4.5, { type: 'sawtooth', vol: 0.03, attack: 1.5 }); break;
     case 'reveille': bugle([[3, 0.18], [4, 0.18], [5, 0.36], [3, 0.18], [4, 0.18], [5, 0.36], [3, 0.18], [5, 0.18], [6, 0.6]]); break;
     case 'taps': bugle([[3, 0.5], [3, 0.25], [4, 1.1], [3, 0.5], [4, 0.25], [5, 1.1], [3, 0.4], [4, 0.4], [5, 1.4]]); break;
+    case 'retreat': bugle([[4, 0.3], [4, 0.15], [5, 0.3], [6, 0.6], [5, 0.3], [4, 0.3], [3, 0.6], [4, 0.3], [5, 0.9]]); break;
     case 'medal': bugle([[4, 0.16], [5, 0.16], [6, 0.32], [8, 0.8]]); break;
   }
 }

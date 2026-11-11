@@ -19,7 +19,7 @@ export const C = {
   PADSEATS: 8,             // recruits in, or troopers out, per pad per flight
   BRIEF: 7.5,              // a squad's briefing before it marches out (1.5 game hours)
   REBUILD: 240,            // a wrecked FRV or tank is replaced in two days
-  DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 8,   // hours: transports leave, supplies land, standing patrols go out
+  DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 9,   // hours: transports leave, supplies land, standing patrols go out
   DEPLOY_PAY: 40,          // supplies for every trained trooper shipped to the front
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
   REFUND: 0.5,
@@ -58,7 +58,7 @@ export const TECH = {
   tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
 };
 // Training: points a recruit earns per game hour at each place; 100 makes a trooper.
-export const TRAIN = { range: 6, course: 4, lecture: 3, parade: 2 };
+export const TRAIN = { range: 8, course: 6, lecture: 4, parade: 3 };   // points an hour; the duty day is 7.5 training hours
 
 export const MIN = {
   def: { name: 'Ministry of Defence', short: 'DEFENCE', key: 'D', wants: 'Trained troopers shipped to the front on time, and patrols that come back.' },
