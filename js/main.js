@@ -1,5 +1,5 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
-import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION } from './config.js';
+import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN } from './config.js';
 import { Sim, MKEYS, rankOf, dims } from './sim.js';
 import { Life } from './life.js';
 import { View } from './view.js';
@@ -124,11 +124,15 @@ $('b-howto').onclick = () => show('s-howto');
 $('ht-x').onclick = () => show(playing ? null : 's-title');
 
 // ---------------------------------------------------------------- the build bar
+const RTOOLS = { road1: { name: 'Dirt Road', cost: ROADS[1].cost, desc: 'Drag to lay. People walk a little faster, vehicles go 1.6 times as fast.' },
+  road2: { name: 'Paved Road', cost: ROADS[2].cost, desc: 'Drag to lay. Vehicles go 2.4 times as fast, and supplies reach their buildings sooner.' },
+  unroad: { name: 'Remove Road', cost: 0, desc: 'Drag to tear up road. Half the cost back.' } };
 function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[2]; return Object.entries(B).filter(([, d]) => subs.includes(d.group) && !d.fixed); }
 function buildBar() {
   $('b-groups').innerHTML = GROUPS.map(([k, n]) => `<button class="btn ${k === group ? 'on' : ''}" data-g="${k}" type="button">${n}</button>`).join('');
   const items = groupItems(group);
-  $('b-items').innerHTML = items.map(([k, d], i) => {
+  $('b-items').innerHTML = (group === 'expansion' ? Object.entries(RTOOLS).map(([k, d]) => `<button class="btn bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost ? d.cost + ' SUP / TILE' : 'REFUND'}</span></button>`).join('') : '')
+    + items.map(([k, d], i) => {
     const lk = sim.locked(k), poor = sim.supplies < d.cost;
     return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost} SUP</span></button>`;
   }).join('');
@@ -137,12 +141,14 @@ $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (b) { 
 $('b-items').onclick = e => { const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
-  const k = b.dataset.b, d = B[k], lk = sim.locked(k);
-  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${d.beds} votes` : '', d.mor ? `+morale` : '', d.prop ? `+propaganda` : '', `upkeep ${d.up}/wk`].filter(Boolean);
+  const k = b.dataset.b; if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
+  const d = B[k], lk = sim.locked(k);
+  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${d.beds} votes` : '', d.eat ? `feeds ${d.eat}` : '', d.slots ? `trains ${d.slots} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', d.mor ? `+morale` : '', d.prop ? `+propaganda` : '', `upkeep ${d.up}/wk`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.map(t => B[t].name).join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
 });
 $('b-items').addEventListener('pointerleave', hideTip);
 function pickTool(k) {
+  if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.map(t => B[t].name).join(' and ')} first.`); return; }
   tool = tool === k ? null : k; select(null); buildBar();
@@ -164,8 +170,15 @@ function selPanel() {
   else {
     bits.push(`<div class="kv"><span>CONDITION</span><b class="${b.cond < 40 ? 'down' : ''}">${Math.round(b.cond)}%</b></div><div class="meter"><i style="width:${b.cond}%;background:${b.cond < 40 ? 'var(--red)' : b.cond < 70 ? 'var(--amber)' : 'var(--g)'}"></i></div>`);
     if (d.crew) bits.push(`<div class="kv"><span>CREW</span><b class="${b.crew < d.crew ? 'warn' : ''}">${b.crew} / ${d.crew}</b></div>`);
-    if (d.crew || d.make || d.out) bits.push(`<div class="kv"><span>RUNNING AT</span><b>${Math.round(sim.work(b) * 100)}%</b></div>`);
-    if (d.pw) bits.push(`<div class="kv"><span>POWER</span><b>${d.pw > 0 ? '+' : ''}${b.type === 'gen' ? Math.round(d.pw * sim.crewFrac(b) * (sim.e710 > 0 ? 1 : 0)) : d.pw}</b></div>`);
+    if (d.pw) bits.push(`<div class="kv"><span>POWER</span><b>${d.pw > 0 ? '+' : ''}${b.type === 'gen' ? Math.round(d.pw * sim.crewFrac(b) * (b.stock.fuel > 0 ? 1 : 0)) : d.pw}</b></div>`);
+    const bar = (g, n, cap, label) => `<div class="kv"><span>${label || GOODS[g].name.toUpperCase()}</span><b class="${n < cap * 0.15 ? 'down' : ''}">${Math.floor(n)} / ${cap}</b></div><div class="meter"><i style="width:${Math.min(100, n / cap * 100)}%;background:${GOODS[g].color}"></i></div>`;
+    if (d.store) for (const g in d.store) bits.push(bar(g, b.stock[g], d.store[g]));
+    if (d.need) for (const g in d.need) bits.push(bar(g, b.stock[g], d.need[g], 'NEEDS ' + GOODS[g].name.toUpperCase()));
+    if (d.pad) { const n = GKEYS.reduce((a, g) => a + b.stock[g], 0); bits.push(`<div class="kv"><span>WAITING TO BE MOVED</span><b>${Math.floor(n)}</b></div>`); }
+    if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${d.eat} votes a day</b></div>`);
+    if (d.slots) { const n = sim.troops.filter(t => t.at === b.id).length; bits.push(`<div class="kv"><span>TRAINING NOW</span><b>${n} / ${d.slots}</b></div>`); }
+    if (d.trucks || d.lifts) { const vs = sim.veh.filter(v => v.home === b.id); bits.push(`<div class="kv"><span>${d.trucks ? 'TRUCKS' : 'FORKLIFT'}</span><b>${vs.filter(v => v.job).length} of ${vs.length} on a run</b></div>`); }
+    if (d.squads) { const out = sim.patrols.filter(p => p.office === b.id).length; bits.push(`<div class="kv"><span>SQUADS KEPT OUT</span><b><button class="btn icon" id="sq-dn" type="button">-</button> ${b.squads} <button class="btn icon" id="sq-up" type="button">+</button></b></div><div class="kv"><span>IN THE FIELD NOW</span><b>${out}</b></div>`); }
     if (d.beds) bits.push(`<div class="kv"><span>VOTES HOUSED</span><b>${d.beds}</b></div>`);
     if (d.potty) bits.push(`<div class="kv"><span>CLEANLINESS</span><b class="${(b.clean ?? 100) < 25 ? 'down' : ''}">${Math.round(b.clean ?? 100)}%</b></div><div class="meter"><i style="width:${b.clean ?? 100}%;background:${(b.clean ?? 100) < 25 ? 'var(--red)' : 'var(--blue)'}"></i></div><div class="kv"><span>VOTES PER POTTY</span><b>${Math.round(sim.potties.perPotty)}</b></div>`);
     if (b.type === 'seflag') { const pz = sim.plaza(); bits.push(`<div class="kv"><span>PLAZA HOLDS</span><b class="${pz.need > pz.cap ? 'down' : ''}">${pz.cap} votes</b></div><div class="kv"><span>VOTES TO SALUTE</span><b>${pz.need}</b></div>`); }
@@ -181,6 +194,8 @@ function selPanel() {
   $('sp-x').onclick = () => select(null);
   if ($('sp-rep')) $('sp-rep').onclick = () => { if (!sim.repair(b.id)) flash('Not enough supplies.'); selPanel(); };
   if ($('sp-off')) $('sp-off').onclick = () => { sim.toggle(b.id); selPanel(); };
+  if ($('sq-up')) $('sq-up').onclick = () => { sim.setSquads(b.id, b.squads + 1); selPanel(); };
+  if ($('sq-dn')) $('sq-dn').onclick = () => { sim.setSquads(b.id, b.squads - 1); selPanel(); };
   if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.play('demolish'); };
   if ($('sp-move')) $('sp-move').onclick = () => { tool = 'moveflag'; view.showPlaza(sim.plazaAt(b.x, b.z, b.id)); flash('Pick a new spot for the flag. It needs open ground round it for the plaza.'); };
 }
@@ -196,14 +211,14 @@ function logoImg(logo) {
   const c = document.createElement('canvas'); c.width = c.height = 44; drawLogo(c.getContext('2d'), logo, 1, 1, 42); const u = c.toDataURL(); logoCache.set(k, u); return u;
 }
 const ORDERS = [
-  ['Build an E-710 Pump on the dark ground', s => s.has('pump')],
-  ['Build a Supply Depot', s => s.has('depot')],
-  ['Fill a requisition (Expansion, bottom right)', s => s.stats.delivered > 0],
-  ['Build a Barracks', s => s.has('barracks')],
-  ['Send a patrol (Defence, bottom right)', s => s.stats.patrolsWon + s.stats.patrolsLost + s.patrols.length > 0],
-  ['Build a Mess Hall for morale', s => s.has('mess')],
+  ['Build a Supply Depot near the landing pad', s => s.has('depot')],
+  ['Build a Mess Hall so every vote can eat', s => s.has('mess')],
+  ['Build a Barracks: recruits fill empty bunks', s => s.has('barracks')],
+  ['Build a Firing Range to train recruits', s => s.has('range')],
+  ['Lay a road to it (Expansion: Paved Road, drag)', s => s.roadsV > 1],
+  ['Ship trained troopers to the front (16:00)', s => s.stats.deployed > 0],
+  ['Build a Patrol Office for standing patrols', s => s.has('patrol')],
   ['Raise two Banners with your crest', s => s.b.filter(b => b.type === 'banner' && b.done).length >= 2],
-  ['Build a Truth Office', s => s.has('truth')],
   ['Score 60+ in an inspection', s => s.inspection && s.inspection.score >= 60],
   ['Reach 1st place in the standings', s => s.rank === 0],
 ];
@@ -215,7 +230,10 @@ function hud() {
   $('r-trp').textContent = `${home}/${s.troops.length}/${s.beds}`; $('r-trp').parentElement.classList.toggle('bad', s.troops.length > s.beds);
   $('r-mrl').textContent = Math.round(s.morale) + (s.moraleTarget > s.morale + 1 ? '↑' : s.moraleTarget < s.morale - 1 ? '↓' : '');
   $('r-mrl').parentElement.classList.toggle('bad', s.morale < 40);
-  $('r-e7').textContent = `${Math.floor(s.e710)}/${s.cap}`; $('r-shl').textContent = `${Math.floor(s.shells)}`;
+  const use = s.usage();
+  for (const g of GKEYS) { const n = Math.floor(s.amount(g)), u = use[g], el = $('r-' + (g === 'rations' ? 'rat' : g)); el.textContent = n; el.parentElement.classList.toggle('bad', u > 0 && n < u * 0.5); }
+  const readyN = s.troops.filter(t => t.train >= 100 && t.state !== 'patrol').length, rec = s.troops.filter(t => t.train < 100).length;
+  $('r-ready').textContent = `${readyN}/${rec}`;
   $('w-title').textContent = `WEEK ${s.week}`; $('w-fill').style.width = (s.wt / C.WEEK * 100) + '%'; $('w-insp').style.left = (C.INSPECT_AT * 100) + '%';
   const left = Math.ceil((C.WEEK - s.wt) / C.DAY);
   $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${left} DAY${left === 1 ? '' : 'S'}`;
@@ -233,17 +251,17 @@ function hud() {
   $('orders').classList.toggle('hidden', next < 0);
   $('or-list').innerHTML = ORDERS.map((o, i) => `<li class="${done[i] ? 'done' : i === next ? 'next' : ''}">${o[0]}</li>`).join('');
   // the build bar's affordability, and the selection
-  for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; b.classList.toggle('poor', s.supplies < B[k].cost); b.classList.toggle('lock', !!s.locked(k)); }
+  for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < B[k].cost); b.classList.toggle('lock', !!s.locked(k)); }
   if (selId) selPanel();
   if (!$('mins').classList.contains('hidden')) renderMins();
   // the Ministry dock, bottom right: what each Ministry has waiting
-  const sendable = s.offers.filter(o => o.size <= home).length, ready = s.contracts.filter(c => s[c.good] >= c.qty && s.has('pad')).length;
-  $('md-def').textContent = s.patrols.length ? `${s.patrols.length} in the field` : `${sendable} mission${sendable === 1 ? '' : 's'}`;
-  $('md-pro').textContent = ready ? `${ready} ready to ship` : `${s.contracts.length} requisition${s.contracts.length === 1 ? '' : 's'}`;
+  const o = s.orders[0], low = GKEYS.filter(g => use[g] > 0 && s.amount(g) < use[g] * 0.5);
+  $('md-def').textContent = o ? `${o.sent}/${o.n} shipped` : `${s.patrols.length} patrols out`;
+  $('md-pro').textContent = low.length ? `${low.map(g => GOODS[g].short).join(', ')} low` : s.hunger > 0.15 ? 'votes hungry' : 'supplies OK';
   $('md-tru').textContent = s.inspected ? 'inspected' : `inspects in ${days(C.WEEK * C.INSPECT_AT - s.wt)}`.replace(' days', 'd').replace(' hours', 'h');
   $('md-st').textContent = `${['1st', '2nd', '3rd', '4th'][s.rank]} of 4`;
-  document.querySelector('[data-mt="def"]').classList.toggle('alert', sendable > 0 && !s.patrols.length);
-  document.querySelector('[data-mt="pro"]').classList.toggle('alert', ready > 0);
+  document.querySelector('[data-mt="def"]').classList.toggle('alert', !!o && o.due - s.time.day <= 1 && o.sent < o.n);
+  document.querySelector('[data-mt="pro"]').classList.toggle('alert', low.length > 0 || s.hunger > 0.15);
   for (const b of document.querySelectorAll('.md')) b.classList.toggle('on', !$('mins').classList.contains('hidden') && b.dataset.mt === minTab);
 }
 let commsN = 0;
@@ -253,61 +271,68 @@ function renderComms(all) {
 }
 
 // ---------------------------------------------------------------- the Ministries
-function renderMins() {
+function renderMins(force) {
   const s = sim;
-  $('mi-tabs').innerHTML = [['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['st', 'STANDINGS']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
+  const tabs = [['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['st', 'STANDINGS']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
+  if ($('mi-tabs')._html !== tabs) $('mi-tabs').innerHTML = $('mi-tabs')._html = tabs;
   let h = '';
   const head = m => `<div class="mi-head"><div class="big c-${m}">${Math.round(s.stand[m])}</div><div><b class="c-${m}">${MIN[m].name.toUpperCase()}</b><p>${MIN[m].wants} Standing drifts back toward ${C.STAND.rest} every week.</p></div></div>`;
   if (minTab === 'def') {
-    const home = s.troops.filter(t => t.state !== 'patrol');
-    h += head('def') + `<h3>MISSIONS OFFERED THIS WEEK</h3>`;
-    if (!s.offers.length) h += `<p>No more missions this week. New orders arrive with the allocation.</p>`;
+    const home = s.troops.filter(t => t.state !== 'patrol'), ready = home.filter(t => t.train >= 100).length, rec = s.troops.filter(t => t.train < 100), training = rec.filter(t => t.at).length;
+    h += head('def') + `<h3>DEPLOYMENT ORDERS</h3>`;
+    if (!s.orders.length) h += `<p>No orders open. The next comes with the week.</p>`;
+    for (const o of s.orders) h += `<div class="card2"><div class="l"><b>${o.n} TRAINED TROOPERS TO THE FRONT</b><span>${o.sent} shipped · due day ${o.due} (${Math.max(0, o.due - s.time.day)} days left) · +${C.DEPLOY_PAY} SUP each, +${o.def} DEF when complete</span><div class="prog"><i style="width:${o.sent / o.n * 100}%"></i></div></div></div>`;
+    h += `<p>Transports leave from the landing pad at ${C.DEPLOY_AT}:00 every day, ${8 * s.b.filter(b => b.done && B[b.type].pad).length} seats a day across your pads. They take trained troopers who aren't crewing a building; the Patrol Office keeps its own squads back.</p>`;
+    h += `<h3>TRAINING</h3><div class="kv"><span>READY TO SHIP</span><b>${ready}</b></div><div class="kv"><span>RECRUITS</span><b>${rec.length}</b></div><div class="kv"><span>IN TRAINING RIGHT NOW</span><b>${training}</b></div>`;
+    const places = s.b.filter(b => b.done && B[b.type].slots);
+    h += places.length ? places.map(b => `<div class="kv"><span>${B[b.type].name}</span><b>${s.troops.filter(t => t.at === b.id).length}/${B[b.type].slots} · ${TRAIN[B[b.type].train]} per hour</b></div>`).join('') : `<p class="warn">Nowhere to train. Build a Firing Range, an Obstacle Course or a Parade Ground.</p>`;
+    h += `<p class="fine left">Recruits train from 08:00 to 20:00, except at lunch. 100 points makes a trooper. Recruits arrive with the morning supply pelican and fill empty bunks: more housing, more recruits.</p>`;
+    const offices = s.b.filter(b => b.type === 'patrol' && b.done);
+    h += `<h3>STANDING PATROLS</h3>` + (offices.length ? offices.map(b => `<div class="kv"><span>Patrol Office</span><b>${s.patrols.filter(p => p.office === b.id).length} of ${b.squads} squads out · ammo ${Math.floor(b.stock.ammo)}</b></div>`).join('') : `<p>Build a Patrol Office and it sends squads of three trained troopers out every morning at ${C.PATROL_AT}:00, on its own.</p>`);
+    h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3>`;
     for (const o of s.offers) {
       const ch = s.chance(o), ok = home.length >= o.size;
       h += `<div class="card2"><div class="l"><b>${esc(o.op)}</b><span>${o.kind} · difficulty ${'◆'.repeat(o.diff)}${'◇'.repeat(5 - o.diff)} · ${o.size} troopers · ${days(o.dur * C.PATROL)} · reward +${o.def} DEF, +${o.sup} SUP</span></div>
         <div style="text-align:right"><b class="${ch >= 0.65 ? 'up' : ch < 0.45 ? 'down' : 'warn'}">${ok ? Math.round(ch * 100) + '%' : '—'}</b><br><button class="btn" data-send="${o.id}" ${ok ? '' : 'disabled'} type="button">SEND</button></div></div>`;
     }
-    h += `<p class="fine left">Odds rise with veterans, drill on the parade ground, morale and a staffed armory. Squads are taken from idle troops first, then from jobs, so a patrol can leave a pump unmanned.</p>`;
     if (s.patrols.length) { h += `<h3>IN THE FIELD</h3>`; for (const p of s.patrols) h += `<div class="card2"><div class="l"><b>${esc(p.op)}</b><span>${p.kind} · ${p.members.length} troopers · odds ${Math.round(p.chance * 100)}%</span><div class="prog"><i style="width:${p.t / p.dur * 100}%"></i></div></div></div>`; }
     if (s.honours.length) h += `<h3>MEDALS OF VALOUR</h3><div class="list2">${s.honours.slice(-12).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, week ${x.week}</div>`).join('')}</div>`;
     if (s.fallen.length) h += `<h3>THE FALLEN</h3><div class="list2">${s.fallen.slice(-16).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, ${esc(x.op)}</div>`).join('')}</div>`;
   } else if (minTab === 'pro') {
-    h += head('pro') + `<h3>REQUISITIONS</h3>`;
-    if (!s.contracts.length) h += `<p>No requisitions open. More arrive each week.</p>`;
-    for (const c of s.contracts) {
-      const have = s[c.good], ok = have >= c.qty && s.has('pad'), left = c.due - s.week;
-      h += `<div class="card2"><div class="l"><b>${c.qty} ${c.good === 'shells' ? 'SHELLS' : 'E-710'}</b><span>due ${left <= 0 ? 'this week' : `in ${left + 1} weeks`} · reward +${c.pro} PRO, +${c.sup} SUP · you have ${Math.floor(have)}</span><div class="prog"><i style="width:${Math.min(100, have / c.qty * 100)}%"></i></div></div>
-        <button class="btn ${ok ? 'primary' : ''}" data-ship="${c.id}" ${ok ? '' : 'disabled'} type="button">SHIP</button></div>`;
-    }
-    const pumps = s.b.filter(b => b.type === 'pump' && b.done), plants = s.b.filter(b => b.type === 'plant' && b.done);
-    const e7 = pumps.reduce((a, b) => a + B.pump.make * s.work(b), 0) * 60, sh = plants.reduce((a, b) => a + B.plant.out * s.work(b), 0) * 60;
-    h += `<h3>PRODUCTION</h3><p>E-710: about ${Math.round(e7)} a minute from ${pumps.length} pump${pumps.length === 1 ? '' : 's'}. Shells: about ${Math.round(sh)} a minute from ${plants.length} plant${plants.length === 1 ? '' : 's'}, which use ${Math.round(sh / B.plant.out * B.plant.use)} E-710 a minute. Storage ${s.cap} of each.</p>`;
-    if (!s.has('pad')) h += `<p class="warn">You need a Landing Pad to ship anything.</p>`;
-    h += `<p class="fine left">A missed requisition costs 8 Expansion standing.</p>`;
+    const u = s.usage(), home = s.troops.filter(t => t.state !== 'patrol').length;
+    h += head('pro') + `<h3>SUPPLY LINES</h3><table class="st"><tr><th></th><th>GOOD</th><th>IN STORE</th><th>ON THE PAD</th><th>AT USE</th><th>USED A DAY</th><th>COST A DAY</th></tr>`
+      + GKEYS.map(g => `<tr><td></td><td>${GOODS[g].name}</td><td>${Math.floor(s.stored(g))} / ${s.storage(g)}</td><td>${Math.floor(s.onPad(g))}</td><td>${Math.floor(s.inUse(g))}</td><td>${Math.round(u[g])}</td><td>${Math.round(u[g] * GOODS[g].cost)}</td></tr>`).join('') + `</table>`;
+    if (s.bill) h += `<p>Last supply pelican, day ${s.bill.day}: ${GKEYS.map(g => `${s.bill.order[g]} ${GOODS[g].name.toLowerCase()}`).join(', ')}. Billed ${s.bill.cost} supplies. It lands at 0${C.SUPPLY_AT}:00 and brings what fills your storage, up to ${C.PADLOAD} per pad.</p>`;
+    const lifts = s.veh.filter(v => v.kind === 'lift'), trucks = s.veh.filter(v => v.kind === 'truck');
+    h += `<h3>VEHICLES</h3><div class="kv"><span>FORKLIFTS</span><b>${lifts.filter(v => v.job).length} of ${lifts.length} on a run</b></div><div class="kv"><span>SUPPLY TRUCKS</span><b>${trucks.filter(v => v.job).length} of ${trucks.length} on a run</b></div>`;
+    h += `<p class="fine left">Vehicles carry goods from the pad to storage, and from storage to the buildings that use them, without being told. They go 1.6 times as fast on dirt road and 2.4 times on paved. A Motor Pool adds two trucks.</p>`;
+    h += `<h3>FOOD</h3><div class="kv"><span>SEATS AT MEALS</span><b class="${s.seats < home ? 'down' : ''}">${s.seats} for ${home} votes</b></div><div class="kv"><span>HUNGER</span><b class="${s.hunger > 0.15 ? 'down' : ''}">${Math.round(s.hunger * 100)}%</b></div>`;
+    if (s.audit) { const A = s.audit; h += `<h3>LAST AUDIT, WEEK ${A.week}: ${A.score}/100 (${A.delta >= 0 ? '+' : ''}${A.delta})</h3><div class="kv"><span>SUPPLY LINES</span><b>${A.lines}</b></div><div class="kv"><span>VOTES FED</span><b>${A.food}</b></div><div class="kv"><span>HOUSING</span><b>${A.housing}</b></div><div class="kv"><span>GROWTH (${A.target} expected)</span><b>${A.growth}</b></div><ul class="notes">${A.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`; }
+    h += `<p class="fine left">The audit at the end of each week scores supply lines that never run dry, votes fed, a bunk for everyone, and a base that keeps growing.</p>`;
   } else if (minTab === 'tru') {
     const ins = s.inspection, at = C.WEEK * C.INSPECT_AT - s.wt;
     h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${days(at)}.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
     h += `<h3>RIGHT NOW</h3><div class="kv"><span>MORALE</span><b>${Math.round(s.morale)}</b></div><div class="kv"><span>PROPAGANDA</span><b>${s.prop}</b></div><div class="kv"><span>CONDITION</span><b>${Math.round(s.avgCond)}</b></div><div class="kv"><span>LIKELY SCORE</span><b>${Math.round(0.35 * s.morale + 0.45 * s.prop + 0.2 * s.avgCond)}</b></div>`;
-    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', noise: 'noise near housing', crowd: 'votes without housing', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
+    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', food: 'hunger', noise: 'noise near housing', crowd: 'votes without housing', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
     if (ins) h += `<h3>LAST REPORT, WEEK ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
     h += `<p class="fine left">Every kind of propaganda counts for less the more of it you have, so a flag, banners, a loudspeaker, a statue and a pool beat ten banners.</p>`;
   } else {
     const rows = s.table();
-    h += `<p>Every week Super Earth ranks the four loyal factions on ${s.planet} by their total standing and splits the allocation: 1st gets ${C.ALLOC.mult[0]}×, 4th gets ${C.ALLOC.mult[3]}×, and the recruits follow the same order.</p>`;
+    h += `<p>Every week Super Earth ranks the four loyal factions on ${s.planet} by their total standing and splits the allocation: 1st gets ${C.ALLOC.mult[0]}×, 4th gets ${C.ALLOC.mult[3]}×, and the morning recruits fill more of your empty bunks the higher you rank.</p>`;
     h += `<table class="st"><tr><th>#</th><th>FACTION</th><th class="c-def">DEF</th><th class="c-pro">EXP</th><th class="c-tru">TRU</th><th>TOTAL</th><th>SHARE</th></tr>`
       + rows.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td><img src="${logoImg(r.logo)}" width="20" height="20" alt="" style="vertical-align:middle;margin-right:6px">${esc(r.name)}</td>${MKEYS.map(m => `<td>${Math.round(r.stand[m])}</td>`).join('')}<td><b>${s.total(r.stand)}</b></td><td>${fmt(C.ALLOC.base * C.ALLOC.mult[i])}</td></tr>`).join('') + `</table>`;
     if (s.ledger) { const L = s.ledger; h += `<h3>BUREAU LEDGER, WEEK ${L.week}</h3><div class="kv"><span>Allocation approved by the Federation</span><b>${fmt(L.gross)}</b></div><div class="kv"><span>Bureau handling fee</span><b class="down">-${fmt(L.fee)}</b></div><div class="kv"><span>Presidential consulting</span><b class="down">-${fmt(L.consult)}</b></div><div class="kv"><span>Delivered to ${esc(s.faction.base)}</span><b>${fmt(L.net)}</b></div><p class="fine left">The numbers add up. The Bureau has checked.</p>`; }
-    h += `<p class="fine left">Last allocation: ${fmt(s.lastAlloc)} supplies. Patrols won ${s.stats.patrolsWon}, lost ${s.stats.patrolsLost}. Requisitions filled ${s.stats.delivered}. Inspections ${s.stats.inspections}.</p>`;
+    h += `<p class="fine left">Last allocation: ${fmt(s.lastAlloc)} supplies. Troopers shipped ${s.stats.deployed}. Patrols won ${s.stats.patrolsWon}, lost ${s.stats.patrolsLost}. Inspections ${s.stats.inspections}.</p>`;
   }
-  $('mi-body').innerHTML = h;
+  // only redraw what changed, and never under the pointer, so buttons stay put while you click them
+  if ($('mi-body')._html !== h && (force || !$('mins').matches(':hover'))) $('mi-body').innerHTML = $('mi-body')._html = h;
 }
-$('mi-tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { minTab = b.dataset.t; renderMins(); } };
+$('mi-tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { minTab = b.dataset.t; renderMins(true); } };
 $('mi-body').onclick = e => {
-  const s = e.target.closest('[data-send]'), d = e.target.closest('[data-ship]');
-  if (s && sim.send(+s.dataset.send)) { renderMins(); renderComms(); }
-  if (d && sim.deliver(+d.dataset.ship)) { renderMins(); renderComms(); }
+  const s = e.target.closest('[data-send]');
+  if (s && sim.send(+s.dataset.send)) { renderMins(true); renderComms(); }
 };
-function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) renderMins(); }
+function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) renderMins(true); }
 $('mdock').onclick = e => { const b = e.target.closest('[data-mt]'); if (b) toggleMins(b.dataset.mt); };
 $('mi-x').onclick = () => $('mins').classList.add('hidden');
 $('b-week').onclick = () => toggleMins('st'); $('stand').onclick = () => toggleMins('st');
@@ -340,7 +365,20 @@ $('me-import').onclick = async () => {
 
 // ---------------------------------------------------------------- pointer and touch
 const cv = $('view'), ptrs = new Map();
-let drag = null, pinch = null;
+let drag = null, pinch = null, roadDrag = null;
+const isRoad = t => t === 'road1' || t === 'road2' || t === 'unroad';
+function roadTiles(a, b) {   // an L from where the drag started to where it is now: along x first, then z
+  const out = [], sx = Math.sign(b[0] - a[0]), sz = Math.sign(b[1] - a[1]);
+  for (let x = a[0]; ; x += sx) { out.push([x, a[1]]); if (x === b[0] || !sx) break; }
+  if (sz) for (let z = a[1] + sz; ; z += sz) { out.push([b[0], z]); if (z === b[1]) break; }
+  return out;
+}
+function roadPreview(tiles, e) {
+  if (tool === 'unroad') { const n = tiles.filter(([x, z]) => sim.road(x, z)).length; view.showRoadGhost(tiles, false); if (e.pointerType === 'mouse') tip(`Remove ${n} tile${n === 1 ? '' : 's'}: +${n * 2} SUP`, e.clientX, e.clientY); return; }
+  const type = tool === 'road2' ? 2 : 1, cost = sim.roadCost(tiles, type);
+  view.showRoadGhost(tiles, cost <= sim.supplies);
+  if (e.pointerType === 'mouse') tip(`${ROADS[type].name}: ${cost} SUP`, e.clientX, e.clientY);
+}
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
@@ -351,6 +389,7 @@ cv.addEventListener('pointerdown', e => {
   if (!playing) return;
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; drag = null; return; }
+  if (isRoad(tool) && e.button === 0) { const p = view.pick(e.clientX, e.clientY); roadDrag = [Math.floor(p.x), Math.floor(p.z)]; drag = null; return; }
   drag = { x: e.clientX, y: e.clientY, btn: e.button, moved: false };
 });
 cv.addEventListener('pointermove', e => {
@@ -367,7 +406,8 @@ cv.addEventListener('pointermove', e => {
       if (drag.moved) { if (drag.btn === 2 || drag.btn === 1) view.spin(-dx * 0.008); else view.pan(dx, dy); }
     }
   }
-  if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  if (isRoad(tool)) { const p = view.pick(e.clientX, e.clientY), here = [Math.floor(p.x), Math.floor(p.z)]; roadPreview(roadDrag ? roadTiles(roadDrag, here) : [here], e); }
+  else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
     const p = view.pick(e.clientX, e.clientY);
@@ -378,11 +418,18 @@ cv.addEventListener('pointermove', e => {
 function up(e) {
   if (!playing) return;
   ptrs.delete(e.pointerId);
+  if (roadDrag) {
+    const p = view.pick(e.clientX, e.clientY), tiles = roadTiles(roadDrag, [Math.floor(p.x), Math.floor(p.z)]); roadDrag = null;
+    const n = tool === 'unroad' ? sim.clearRoad(tiles) : sim.layRoad(tiles, tool === 'road2' ? 2 : 1);
+    view.showRoadGhost(null); hideTip();
+    if (n) audio.play(tool === 'unroad' ? 'demolish' : 'place'); else { flash(tool === 'unroad' ? 'No road there.' : 'Nothing to lay there, or not enough supplies.'); audio.play('deny'); }
+    return;
+  }
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (!drag) return;
   const d = drag; drag = null;
   if (d.moved) return;
-  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); buildBar(); } else select(null); return; }
+  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); buildBar(); } else select(null); return; }
   if (tool === 'moveflag') {
     const t = tileAt(e), r = sim.moveFlag(t.tx, t.tz);
     if (!r.ok) { flash(r.why); audio.play('deny'); return; }
@@ -411,7 +458,7 @@ addEventListener('keydown', e => {
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
   else if (k === ' ') { e.preventDefault(); setPause(!paused); }
-  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
+  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
   else if (k === 'm') toggleMins();
   else if (k === 'h') $('hud').classList.toggle('bare');
   else if (k === 'tab') { e.preventDefault(); const i = GROUPS.findIndex(g => g[0] === group); group = GROUPS[(i + (e.shiftKey ? GROUPS.length - 1 : 1)) % GROUPS.length][0]; buildBar(); }

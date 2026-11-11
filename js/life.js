@@ -1,10 +1,11 @@
 // The ant farm: everyone you can watch walking about. Troops go to work, drill, salute the flag, queue at the
-// vending machine, march out on patrol and come home; forklifts unload pelicans; inspectors poke at things.
+// vending machine, train on the range, march out on patrol and come home, and board transports to the front;
+// pelicans bring supplies and recruits; inspectors poke at things. Trucks and forklifts live in the simulation.
 // It reads the simulation and never changes it. Positions are in tiles (a tile's centre is i + 0.5).
-import { B } from './config.js';
+import { B, ROADS } from './config.js';
 
 const WALK = 1.5, DRIVE = 2.4;
-const SHIFT = new Set(['pump', 'plant', 'gen']);   // these run round the clock, so their crews skip the routine
+const SHIFT = new Set(['gen', 'motorpool']);   // these run round the clock, so their crews skip the routine
 const HOUSING = ['hq', 'hab', 'barracks'];
 const EAT = ['mess', 'burger', 'chicken', 'cola'];
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -14,22 +15,14 @@ export class Life {
   constructor(sim) {
     this.sim = sim; this.N = sim.N;
     this.actors = new Map();      // id -> person (troops by their sim id, inspectors by negative ids)
-    this.lifts = new Map();       // depot id -> forklift
-    this.crates = []; this.flights = []; this.queue = [];
+    this.flights = []; this.queue = [];
     this.hold = new Set();        // recruits still on the pelican
     this.ceremony = null; this.nextFake = -1; this.t = 0;
     this.gridKey = '';
   }
 
   // ---------------------------------------------------------------- walking
-  grid() {
-    const s = this.sim, key = s.b.map(b => b.id).join(',');
-    if (key === this.gridKey) return this.walk;
-    const N = this.N, w = new Uint8Array(N * N);
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) w[z * N + x] = (s.inside(x, z) && !s.occ[z * N + x]) ? 1 : 0;
-    const m = N / 2; for (let x = m - 2; x <= m + 1; x++) w[(N - 1) * N + x] = 1;   // the gate
-    this.walk = w; this.gridKey = key; return w;
-  }
+  grid() { return this.sim.walkGrid(); }
   free(x, z) { const N = this.N; return x >= 0 && z >= 0 && x < N && z < N && this.grid()[z * N + x] === 1; }
   near(x, z) {   // the nearest walkable tile
     x = Math.floor(x); z = Math.floor(z);
@@ -39,21 +32,7 @@ export class Life {
     return [Math.floor(this.N / 2), this.N - 2];
   }
   path(fx, fz, tx, tz) {
-    const N = this.N, w = this.grid(), [sx, sz] = this.near(fx, fz), [ex, ez] = this.near(tx, tz);
-    const prev = new Int32Array(N * N).fill(-1), start = sz * N + sx, end = ez * N + ex, q = [start]; prev[start] = start;
-    const D = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    for (let h = 0; h < q.length && prev[end] < 0; h++) {
-      const c = q[h], cx = c % N, cz = (c / N) | 0;
-      for (const [dx, dz] of D) {
-        const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
-        const n = nz * N + nx; if (prev[n] >= 0 || !w[n]) continue;
-        if (dx && dz && (!w[cz * N + nx] || !w[nz * N + cx])) continue;   // no cutting corners
-        prev[n] = c; q.push(n);
-      }
-    }
-    if (prev[end] < 0) return [[tx, tz]];
-    const out = []; for (let c = end; c !== start; c = prev[c]) out.push([c % N + 0.5, ((c / N) | 0) + 0.5]);
-    out.reverse(); out.push([tx, tz]); return out;
+    const p = this.sim.pathTo(fx, fz, tx, tz); p.push([tx, tz]); return p;
   }
   go(a, tx, tz, then) { a.path = this.path(a.x, a.z, tx, tz); a.then = then; a.act = 'walk'; }
   doorOf(b) { const [x, z] = this.sim.door(b); return [x + 0.5, z + 0.5]; }
@@ -89,10 +68,13 @@ export class Life {
       });
       if (e.hero) this.startCeremony(e.hero);
     }
-    if (e.t === 'alloc') this.queue.push({ kind: 'alloc', crates: e.crates });
-    if (e.t === 'recruits') { for (const id of e.ids) this.hold.add(id); this.queue.push({ kind: 'recruits', ids: e.ids }); }
+    if (e.t === 'supply') { for (const id of e.fresh) this.hold.add(id); this.queue.push({ kind: 'supply', ids: e.fresh }); }
+    if (e.t === 'deploy') {   // the shipped troopers walk to the pad and board the transport
+      const [px, pz] = this.landAt();
+      e.ids.forEach((id, i) => { const a = this.actors.get(id); if (!a) return; a.boarding = true; a.hidden = false; this.go(a, px - 1 + (i % 4) * 0.5, pz + 1.6 + Math.floor(i / 4) * 0.5, () => { a.act = 'salute'; a.face = [px, pz]; }); });
+      this.queue.push({ kind: 'deploy', ids: e.ids });
+    }
     if (e.t === 'inspector') this.queue.push({ kind: 'inspector' });
-    if (e.t === 'pickup') this.queue.push({ kind: 'pickup', crates: Math.max(2, Math.min(8, Math.round(e.qty / 15))) });
   }
   startCeremony(hero) {
     const flag = this.sim.b.find(b => b.type === 'seflag') || this.sim.b.find(b => b.type === 'flag' && b.done) || this.sim.b.find(b => b.type === 'hq');
@@ -118,7 +100,7 @@ export class Life {
         f.y = 2.5 * (1 - Math.min(1, f.k / 2.5)) + 0.05;
         if (f.k >= 2.5) { f.ph = 'land'; f.k = 0; this.landed(f); }
       } else if (f.ph === 'land') {
-        if (this.flightDone(f) || f.k > 45) { f.ph = 'up'; f.k = 0; for (const c of this.crates) if (c.flight === f) c.gone = true; }
+        if (this.flightDone(f) || f.k > 45) { f.ph = 'up'; f.k = 0; if (f.kind === 'deploy') for (const id of f.ids) this.actors.delete(id); }
       } else if (f.ph === 'up') {
         const u = Math.min(1, f.k / 6), e = u * u;
         f.y = 0.05 + e * 16; f.x = f.lx - Math.cos(f.from) * 40 * e; f.z = f.lz - Math.sin(f.from) * 40 * e;
@@ -126,13 +108,10 @@ export class Life {
       }
     }
     this.flights = this.flights.filter(f => f.ph !== 'gone');
-    this.crates = this.crates.filter(c => !c.gone);
   }
   landed(f) {
     const s = this.sim;
-    if (f.kind === 'alloc') for (let i = 0; i < f.crates; i++)
-      this.crates.push({ x: f.lx - 1 + (i % 3) * 0.7, z: f.lz + 0.9 + Math.floor(i / 3) * 0.6, y: 0, state: 'pad', to: 'depot' });
-    if (f.kind === 'recruits') f.ids.forEach((id, i) => {
+    if (f.kind === 'supply') f.ids.forEach((id, i) => {
       this.hold.delete(id);
       if (!s.troop(id) || this.actors.has(id)) return;
       const a = this.person(id, 'troop', f.lx - 0.6 + (i % 3) * 0.6, f.lz + 1.2);
@@ -144,52 +123,18 @@ export class Life {
       for (let i = 0; i < 4 && looks.length; i++) stops.push(looks.splice(Math.floor(Math.random() * looks.length), 1)[0]);
       a.stops = stops; a.home = [f.lx + 0.4, f.lz + 1.2]; f.inspector = a.id;
     }
-    if (f.kind === 'pickup') {
-      const depot = s.b.find(b => b.type === 'depot' && b.done);
-      for (let i = 0; i < f.crates; i++) {
-        const [dx, dz] = depot ? this.doorOf(depot) : [f.lx + 1.6, f.lz + 1.6];
-        this.crates.push({ x: dx + (i % 2) * 0.4, z: dz + Math.floor(i / 2) * 0.4, y: 0, state: depot ? 'depot' : 'pad', to: 'pad', flight: f, dest: [f.lx - 1 + (i % 3) * 0.7, f.lz - 0.2 + Math.floor(i / 3) * 0.5] });
-      }
-    }
   }
   flightDone(f) {
-    if (f.kind === 'alloc') return f.k > 5;
-    if (f.kind === 'recruits') return f.k > 4;
+    if (f.kind === 'supply') return f.k > 5;
+    if (f.kind === 'deploy') return f.k > 3 && f.ids.every(id => { const a = this.actors.get(id); return !a || !a.path.length; });
     if (f.kind === 'inspector') return f.k > 6 && !this.actors.has(f.inspector);
-    if (f.kind === 'pickup') return f.k > 4 && this.crates.filter(c => c.flight === f).every(c => c.state === 'loaded');
     return true;
-  }
-
-  // ---------------------------------------------------------------- forklifts and crates
-  liftsUpdate(dt) {
-    const s = this.sim, depots = s.b.filter(b => b.type === 'depot' && b.done);
-    for (const d of depots) if (!this.lifts.has(d.id)) { const [x, z] = this.doorOf(d); this.lifts.set(d.id, { depot: d.id, x, z, yaw: 0, path: [], crate: null, act: 'idle' }); }
-    for (const [id] of this.lifts) if (!depots.some(d => d.id === id)) this.lifts.delete(id);
-    for (const L of this.lifts.values()) {
-      if (L.act === 'idle') {
-        const c = this.crates.find(c => !c.claimed && ((c.state === 'pad' && c.to === 'depot') || (c.state === 'depot' && c.to === 'pad')));
-        if (c) { c.claimed = true; L.crate = c; L.path = this.path(L.x, L.z, c.x, c.z); L.act = 'fetch'; }
-        else { const d = s.byId(L.depot), [hx, hz] = this.doorOf(d); if (Math.hypot(L.x - hx, L.z - hz) > 0.5) { L.path = this.path(L.x, L.z, hx, hz); L.act = 'home'; } }
-      }
-      if (this.move(L, dt * DRIVE)) {
-        if (L.act === 'fetch') {
-          const c = L.crate; c.state = 'carried';
-          const [tx, tz] = c.to === 'depot' ? this.doorOf(s.byId(L.depot)) : c.dest;
-          L.path = this.path(L.x, L.z, tx, tz); L.act = 'carry';
-        } else if (L.act === 'carry') {
-          const c = L.crate; L.crate = null; L.act = 'idle';
-          if (c.to === 'depot') c.gone = true; else { c.state = 'loaded'; [c.x, c.z] = c.dest; }
-        } else if (L.act === 'home') L.act = 'idle';
-      }
-      if (L.crate) { L.crate.x = L.x + Math.sin(L.yaw) * 0.35; L.crate.z = L.z + Math.cos(L.yaw) * 0.35; L.crate.y = 0.18; }
-    }
-    // with no depot, crates on the pad are carried off by hand (they just vanish after a while)
-    for (const c of this.crates) if (c.state === 'pad' && c.to === 'depot' && !depots.length) { c.age = (c.age || 0) + dt; if (c.age > 20) c.gone = true; }
-    for (const c of this.crates) if (c.state === 'depot' && c.to === 'pad' && !depots.length) c.state = 'loaded';
   }
 
   // ---------------------------------------------------------------- moving along a path; true on arrival
   move(a, step) {
+    const N = this.N, r = this.sim.roads, tx = Math.floor(a.x), tz = Math.floor(a.z);
+    if (tx >= 0 && tz >= 0 && tx < N && tz < N && r[tz * N + tx]) step *= ROADS[r[tz * N + tx]].walk;
     while (a.path && a.path.length && step > 0) {
       const [tx, tz] = a.path[0], dx = tx - a.x, dz = tz - a.z, d = Math.hypot(dx, dz);
       if (d > 1e-4) a.yaw = Math.atan2(dx, dz);
@@ -231,7 +176,7 @@ export class Life {
   update(dt) {
     this.t += dt;
     const s = this.sim;
-    this.flightsUpdate(dt); this.liftsUpdate(dt);
+    this.flightsUpdate(dt);
     if (this.cleaner) { const c = this.actors.get(this.cleaner); if (!c || c.task !== 'free') this.cleaner = null; }
     if (this.ceremony) { this.ceremony.t -= dt; if (this.ceremony.t <= 0 || !s.byId(this.ceremony.flag)) this.ceremony = null; }
     // troops: make sure everyone at home has a body, and nobody who left still does
@@ -242,6 +187,7 @@ export class Life {
       this.person(t.id, 'troop', x + rnd(-0.5, 0.5), z + rnd(0, 0.5));
     }
     for (const [id, a] of this.actors) {
+      if (a.boarding) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (a.kind === 'troop' && !s.troop(id)) { this.actors.delete(id); continue; }
       if (a.kind === 'inspector') { this.inspector(a, dt); continue; }
       const t = s.troop(id);
@@ -254,6 +200,7 @@ export class Life {
         : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
         : ph === 'mess' ? (shift ? 'job' + t.job : 'mess')
         : jobB ? 'job' + t.job
+        : t.at && s.byId(t.at) ? 'train' + t.at
         : ph === 'drill' && s.has('parade') ? 'drill' : 'free';
       if (a.task !== want) {
         a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.onDone = null;
@@ -265,6 +212,14 @@ export class Life {
           const c = this.ceremony, f = (c && s.byId(c.flag)) || flag || s.b.find(o => o.type === 'hq'), hero = c && id === c.hero;
           const [x, z] = hero ? this.front(f, 1.1, 0) : this.slot(f, c ? 'medal' + c.hero : 'rev' + s.time.day, id);
           this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); });
+        } else if (want.startsWith('train')) {
+          const p = s.byId(t.at), slot = s.troops.filter(o => o.at === t.at).indexOf(t), kind = B[p.type].train;
+          if (kind === 'lecture') { const [x, z] = this.doorOf(p); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
+          else if (kind === 'range') {   // a firing line along the front of the range, facing the targets
+            const [x, z] = this.front(p, -0.55, (slot - 2.5) * (Math.max(p.w, p.d) - 0.8) / 6);
+            this.go(a, x, z, () => { a.act = 'aim'; a.face = this.centre(p); });
+          } else if (kind === 'course') { a.lap = p.id; a.act = 'run'; a.path = []; }
+          else { const i = slot % 12; this.go(a, p.x + 0.6 + (i % 4) * (p.w - 1.2) / 3, p.z + 0.6 + Math.floor(i / 4) * (p.d - 1.2) / 2, () => { a.act = 'drill'; a.yaw = Math.PI * 0.5 * p.rot; }); }
         } else if (want === 'sleep') this.toBed(a);
         else if (want === 'mess') this.toMess(a);
         else if (want === 'drill') {
@@ -273,6 +228,11 @@ export class Life {
         } else { a.act = 'idle'; a.wait = rnd(0.5, 2); }
       }
       if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
+      if (a.act === 'run' && a.lap) {   // laps of the obstacle course
+        const p = s.byId(a.lap); if (!p) { a.lap = null; a.act = 'idle'; continue; }
+        if (!a.path.length) { const c = [[p.x + 0.3, p.z + 0.3], [p.x + p.w - 0.3, p.z + 0.3], [p.x + p.w - 0.3, p.z + p.d - 0.3], [p.x + 0.3, p.z + p.d - 0.3]]; a.path = c.slice(Math.floor(a.seed) % 4).concat(c.slice(0, Math.floor(a.seed) % 4)); }
+        this.move(a, dt * WALK * 1.4); continue;
+      }
       if (want === 'free') {
         a.wait -= dt;
         if (a.wait <= 0) { if (a.onDone) { a.onDone(); a.onDone = null; } a.hidden = false; a.act = 'idle'; this.idleTask(a, t); }

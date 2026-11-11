@@ -12,9 +12,12 @@ export const C = {
   INSPECT_AT: 0.55,         // the Ministry of Truth inspects this far into each week
   START: { supplies: 1500, troops: 6, morale: 55 },
   // Super Earth splits its allocation by rank: 1st, 2nd, 3rd, 4th.
-  ALLOC: { base: 650, mult: [1.5, 1.15, 0.85, 0.6], recruits: [5, 4, 3, 2] },
+  ALLOC: { base: 650, mult: [1.5, 1.15, 0.85, 0.6] },
+  FILL: [0.6, 0.5, 0.4, 0.3],   // share of empty bunks filled by each morning's recruits, by rank: housing is what makes a base grow
   STAND: { start: 40, rest: 30, drift: 0.12 },    // standings drift back toward "rest" every week
-  STORE: { base: 80, depot: 200, shed: 100 },                // how much E-710 and how many shells fit
+  PADLOAD: 140,            // most a supply pelican can bring to one landing pad
+  DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 8,   // hours: transports leave, supplies land, standing patrols go out
+  DEPLOY_PAY: 40,          // supplies for every trained trooper shipped to the front
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
   REFUND: 0.5,
   FLAGMOVE: 100,           // supplies to move the Super Earth flag
@@ -22,9 +25,23 @@ export const C = {
 };
 
 // The three Ministries a loyal faction answers to.
+// What a base runs on. Everything arrives by pelican and is billed per unit.
+export const GOODS = {
+  rations: { name: 'Rations', short: 'RAT', cost: 1, color: '#c9b37a' },
+  fuel:    { name: 'E-710 fuel', short: 'FUEL', cost: 2, color: '#b07ad8' },
+  ammo:    { name: 'Ammo', short: 'AMMO', cost: 2, color: '#d8a24a' },
+};
+export const GKEYS = Object.keys(GOODS);
+// Roads: tiles laid on the grid. People and vehicles move this many times faster on them.
+export const ROADS = { 1: { name: 'Dirt Road', cost: 3, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 8, speed: 2.4, walk: 1.4 } };
+// Vehicles: speed in tiles per game second off-road, and what they carry.
+export const VEHICLES = { lift: { name: 'Forklift', speed: 0.7, load: 12 }, truck: { name: 'Supply Truck', speed: 1.0, load: 30 } };
+// Training: points a recruit earns per game hour at each place; 100 makes a trooper.
+export const TRAIN = { range: 6, course: 4, lecture: 3, parade: 2 };
+
 export const MIN = {
-  def: { name: 'Ministry of Defence', short: 'DEFENCE', key: 'D', wants: 'Patrols that come back victorious.' },
-  pro: { name: 'Ministry of Expansion', short: 'EXPANSION', key: 'X', wants: 'Requisitions filled on time: extraction, industry and shipping.' },
+  def: { name: 'Ministry of Defence', short: 'DEFENCE', key: 'D', wants: 'Trained troopers shipped to the front on time, and patrols that come back.' },
+  pro: { name: 'Ministry of Expansion', short: 'EXPANSION', key: 'X', wants: 'Supply lines that never run dry, and housing for every vote. Audited every week.' },
   tru: { name: 'Ministry of Truth', short: 'TRUTH', key: 'T', wants: 'A base that inspires: morale, propaganda and upkeep.' },
 };
 
@@ -37,32 +54,38 @@ export const GROUPS = [
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).
 export const B = {
-  hq:       { name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true,
-              desc: 'The heart of the faction. Houses six votes and keeps a little power on.' },
+  hq:       { name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true, eat: 6, lifts: 1,
+              store: { rations: 40, fuel: 20, ammo: 20 },
+              desc: 'The heart of the faction. Houses and feeds six votes, keeps a little of everything and a forklift.' },
   seflag:   { name: 'Super Earth Flag', group: 'core', w: 2, d: 2, cost: 0, up: 0, prop: 6, mor: 2, unique: true, fixed: true,
               desc: 'Every base flies one, at its centre. It cannot be removed. Troops salute it, and medals are pinned beneath it.' },
-  pad:      { name: 'Landing Pad', group: 'core', w: 3, d: 3, cost: 300, up: 20, pw: -1,
-              desc: 'Pelicans land here with allocations, recruits and inspectors, and take your requisitions away.' },
-  depot:    { name: 'Supply Depot', group: 'core', w: 2, d: 2, cost: 180, up: 12,
-              desc: 'Stores 200 more E-710 and shells. Comes with a forklift.' },
-  shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6,
-              desc: 'A standard-issue storage bunker. Holds 100 more E-710 and shells, and looks exactly like a shed.' },
+  pad:      { name: 'Landing Pad', group: 'core', w: 3, d: 3, cost: 300, up: 20, pw: -1, pad: true,
+              desc: 'The supply pelican lands here every morning, and transports take trained troopers to the front every afternoon. More pads, bigger loads.' },
+  depot:    { name: 'Supply Depot', group: 'core', w: 2, d: 2, cost: 180, up: 12, lifts: 1, store: { rations: 150, ammo: 100 },
+              desc: 'Stores rations and ammo, and comes with a forklift to move them.' },
+  fueldepot: { name: 'Fuel Depot', group: 'core', w: 2, d: 2, cost: 200, up: 12, store: { fuel: 160 },
+              desc: 'Tanks of E-710, delivered not pumped. Generators and trucks run on it.' },
+  motorpool: { name: 'Motor Pool', group: 'core', w: 3, d: 2, cost: 320, up: 20, crew: 1, trucks: 2, need: { fuel: 30 }, burn: { fuel: 4 },
+              desc: 'Two supply trucks: faster and bigger than forklifts, and faster still on paved roads. Burns fuel.' },
+  shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6, store: { rations: 50, fuel: 50, ammo: 50 },
+              desc: 'A standard-issue storage bunker. Holds a little of everything, and looks exactly like a shed.' },
 
   solar:    { name: 'Solar Array', group: 'power', w: 2, d: 1, cost: 90, up: 5, pw: 4,
               desc: 'Clean, quiet, patriotic power. Not much of it.' },
-  gen:      { name: 'E-710 Generator', group: 'power', w: 2, d: 2, cost: 220, up: 15, pw: 14, crew: 1, burn: 0.05, needs: ['pump'],
-              desc: 'Lots of power, but it burns E-710.' },
+  gen:      { name: 'E-710 Generator', group: 'power', w: 2, d: 2, cost: 220, up: 15, pw: 14, crew: 1, need: { fuel: 30 }, burn: { fuel: 8 },
+              desc: 'Lots of power, but it burns E-710 fuel, which has to be trucked in.' },
 
-  pump:     { name: 'E-710 Pump', group: 'industry', w: 2, d: 2, cost: 250, up: 15, pw: -2, crew: 2, onDeposit: true, make: 0.25,
-              desc: 'Pumps E-710 from a deposit. Must sit on the dark ground.' },
-  plant:    { name: 'Munitions Plant', group: 'industry', w: 3, d: 2, cost: 380, up: 25, pw: -5, crew: 3, needs: ['pump', 'depot'],
-              use: 0.2, out: 0.3, noise: 6,
-              desc: 'Turns E-710 into shells. Loud: troops sleeping nearby lose morale.' },
 
   barracks: { name: 'Barracks', group: 'military', w: 3, d: 2, cost: 260, up: 15, pw: -2, beds: 12,
               desc: 'Houses twelve votes. Every faction is judged by its soldiers.' },
-  parade:   { name: 'Parade Ground', group: 'military', w: 4, d: 3, cost: 150, up: 5, needs: ['barracks'], drill: true,
-              desc: 'Idle troops drill here. Drilled troops win more patrols.' },
+  parade:   { name: 'Parade Ground', group: 'military', w: 4, d: 3, cost: 150, up: 5, needs: ['barracks'], drill: true, train: 'parade', slots: 12,
+              desc: 'Recruits drill here in the morning. Slow training, but it takes twelve at once.' },
+  range:    { name: 'Firing Range', group: 'military', w: 4, d: 2, cost: 280, up: 15, crew: 1, needs: ['barracks'], train: 'range', slots: 6, need: { ammo: 40 },
+              desc: 'The fastest training there is. Needs an instructor and burns through ammo.' },
+  course:   { name: 'Obstacle Course', group: 'military', w: 3, d: 3, cost: 200, up: 8, needs: ['barracks'], train: 'course', slots: 8,
+              desc: 'Walls, nets and mud. Good training, no ammo needed.' },
+  patrol:   { name: 'Patrol Office', group: 'military', w: 2, d: 2, cost: 240, up: 12, crew: 1, needs: ['barracks'], need: { ammo: 24 }, squads: 1,
+              desc: 'Sends out standing patrols of three trained troopers every morning and brings them home. Set how many squads it keeps out.' },
   armory:   { name: 'Armory', group: 'military', w: 2, d: 2, cost: 320, up: 20, pw: -2, crew: 1, needs: ['barracks'],
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
   hdbarracks: { name: 'Helldiver Barracks', group: 'military', w: 3, d: 2, cost: 420, up: 22, pw: -4, crew: 1, needs: ['barracks'], cryo: true,
@@ -76,17 +99,19 @@ export const B = {
               desc: 'Liberty Cola. Tastes like freedom, mostly.' },
   potty:    { name: 'Porta Potty', group: 'living', w: 1, d: 1, cost: 35, up: 2, mor: 2, potty: true,
               desc: 'Somewhere to go. Gets dirtier the more votes use it; idle troopers clean it. Filthy ones hurt morale, and too few means queues.' },
-  mess:     { name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8,
-              desc: 'Hot food. The single biggest thing for morale.' },
-  burger:   { name: 'Big Liberty Burger', group: 'living', w: 2, d: 2, cost: 260, up: 34, pw: -2, mor: 10, chain: true, needs: ['mess'],
-              desc: 'A franchise with a cheerful mascot. The biggest morale boost money can buy, and it costs a lot of money. One chain per base.' },
-  chicken:  { name: 'Patriot Clucks', group: 'living', w: 2, d: 2, cost: 220, up: 8, pw: -2, mor: 6, chain: true, sluggish: 0.08, needs: ['mess'],
-              desc: 'Cheap, fried and fiercely patriotic. Votes who eat here work 8% slower. One chain per base.' },
-  cola:     { name: 'Bureau Cola & Fries', group: 'living', w: 2, d: 2, cost: 200, up: 4, pw: -2, mor: 4, chain: true, kickback: 70, needs: ['mess'],
-              desc: 'Run by the Bureau. Modest morale, but it pays the base a 70 supply "consulting fee" every week. One chain per base.' },
+  mess:     { name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8, eat: 24, need: { rations: 40 },
+              desc: 'Feeds 24 votes a day, if the rations keep coming. The single biggest thing for morale.' },
+  burger:   { name: 'Big Liberty Burger', group: 'living', w: 2, d: 2, cost: 260, up: 34, pw: -2, mor: 10, chain: true, needs: ['mess'], eat: 16, need: { rations: 30 },
+              desc: 'A franchise with a cheerful mascot. Feeds 16. The biggest morale boost money can buy, and it costs a lot of money. One chain per base.' },
+  chicken:  { name: 'Patriot Clucks', group: 'living', w: 2, d: 2, cost: 220, up: 8, pw: -2, mor: 6, chain: true, sluggish: 0.08, needs: ['mess'], eat: 16, need: { rations: 30 },
+              desc: 'Cheap, fried and fiercely patriotic. Feeds 16. Votes who eat here work 8% slower. One chain per base.' },
+  cola:     { name: 'Bureau Cola & Fries', group: 'living', w: 2, d: 2, cost: 200, up: 4, pw: -2, mor: 4, chain: true, kickback: 70, needs: ['mess'], eat: 16, need: { rations: 30 },
+              desc: 'Run by the Bureau. Feeds 16. Modest morale, but it pays the base a 70 supply "consulting fee" every week. One chain per base.' },
   dome:     { name: 'Hydro Dome', group: 'living', w: 2, d: 2, cost: 240, up: 12, pw: -2, crew: 1, mor: 5, prop: 2,
               desc: 'Fresh greens under glass. Good for morale, nice to look at.' },
 
+  lecture:  { name: 'Citizenship Hall', group: 'propaganda', w: 3, d: 2, cost: 240, up: 12, pw: -1, crew: 1, needs: ['truth'], train: 'lecture', slots: 10, prop: 4,
+              desc: 'Lectures on Managed Democracy. Trains recruits a little, and the Ministry of Truth likes the sound of it.' },
   truth:    { name: 'Truth Office', group: 'propaganda', w: 2, d: 2, cost: 220, up: 15, pw: -2, crew: 1, prop: 6, mor: 1,
               desc: 'A Ministry of Truth branch office. Unlocks loudspeakers, billboards and statues.' },
   flag:     { name: 'Faction Flag', group: 'propaganda', w: 1, d: 1, cost: 40, up: 1, prop: 4, mor: 1,
@@ -108,7 +133,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'pump', 'plant', 'mess', 'armory', 'truth', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [

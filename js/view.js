@@ -2,7 +2,7 @@
 import * as THREE from './vendor/three.js';
 import { B } from './config.js';
 import { dims } from './sim.js';
-import { makeMats, buildModel, makePerson, makeForklift, makeCrate, makePelican, wrap } from './models.js';
+import { makeMats, buildModel, makePerson, makeForklift, makeTruck, makeCrate, makePelican, wrap } from './models.js';
 import { Noise } from './noise.js';
 
 const TAU = Math.PI * 2;
@@ -35,7 +35,7 @@ export class View {
   attach(sim, life) {
     this.sim = sim; this.life = life; this.N = sim.N;
     this.world.clear();
-    this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.lm = new Map(); this.smoke = [];
+    this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
     this.ghostKey = '';
     this.buildGround();
     this.setFaction(sim.faction);
@@ -45,18 +45,13 @@ export class View {
     this.m = makeMats(f);
     for (const g of this.bm.values()) this.world.remove(g); this.bm.clear();
     for (const g of this.pm.values()) this.world.remove(g); this.pm.clear();
-    for (const g of this.lm.values()) this.world.remove(g); this.lm.clear();
+    for (const g of this.vm.values()) this.world.remove(g); this.vm.clear();
     this.ghostKey = '';
     if (this.gate) this.world.remove(this.gate);
     this.gate = this.buildGate(f); this.world.add(this.gate);
   }
   wx(x) { return x - this.N / 2; }
 
-  depAt(fx, fz) {   // the deposit map, smoothed, so the oil reads as pools rather than squares
-    const N = this.N, d = this.sim.dep, x0 = Math.floor(fx), z0 = Math.floor(fz), u = fx - x0, v = fz - z0;
-    const at = (x, z) => (x < 0 || z < 0 || x >= N || z >= N) ? 0 : d[z * N + x];
-    return (at(x0, z0) * (1 - u) + at(x0 + 1, z0) * u) * (1 - v) + (at(x0, z0 + 1) * (1 - u) + at(x0 + 1, z0 + 1) * u) * v;
-  }
   buildGround() {
     const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = 16, c = document.createElement('canvas');
     c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P), d = img.data;
@@ -64,10 +59,6 @@ export class View {
     for (let y = 0; y < N * P; y++) for (let x = 0; x < N * P; x++) {
       const tx = Math.floor(x / P), tz = Math.floor(y / P), n = nz.fbm(x / 40, y / 40, 4), f = nz.v(x / 3, y / 3);
       let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
-      const dv = this.depAt(x / P - 0.5, y / P - 0.5) + (nz.fbm(x / 9, y / 9) - 0.5) * 0.5;
-      if (dv > 0.5) { const k = 0.6 + nz.v(x / 5, y / 5) * 0.5, sheen = Math.max(0, nz.v(x / 14 + 9, y / 14) - 0.6) * 160; r = 26 * k + sheen * 0.6; gg = 20 * k + sheen * 0.3; b = 34 * k + sheen; }
-      else if (dv > 0.38) { const e = (dv - 0.38) / 0.12; r *= 1 - e * 0.55; gg *= 1 - e * 0.6; b *= 1 - e * 0.5; }
-      if (s.road(tx, tz) || (tz === N - 1 && s.road(tx, N - 2))) { r = 68 + f * 8; gg = 68 + f * 8; b = 64 + f * 8; if (x % P === P / 2 && (tx === N / 2 - 1 || tx === N / 2) && (y % 12) < 6) { r = 230; gg = 200; b = 40; } }
       const i = (y * N * P + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
     }
     g.putImageData(img, 0, 0);
@@ -118,9 +109,6 @@ export class View {
     for (const [x, z] of [[0, 0], [N - 1, 0], [0, N - 1], [N - 1, N - 1]]) this.world.add(this.tower(x, z));
     // grid shown while building
     this.grid = new THREE.GridHelper(N - 2, N - 2, '#9dffb8', '#9dffb8'); this.grid.material.transparent = true; this.grid.material.opacity = 0.16; this.grid.position.y = 0.02; this.grid.visible = false; this.world.add(this.grid);
-    this.depLayer = new THREE.Group(); this.depLayer.visible = false; this.world.add(this.depLayer);
-    const dm = new THREE.MeshBasicMaterial({ color: '#c070ff', transparent: true, opacity: 0.28, depthWrite: false });
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (s.dep[z * N + x]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 0.96), dm); p.rotation.x = -Math.PI / 2; p.position.set(this.wx(x + 0.5), 0.03, this.wx(z + 0.5)); this.depLayer.add(p); }
     // selection and range markers
     this.sel = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: '#ffe600' }));
     this.sel.visible = false; this.world.add(this.sel);
@@ -129,6 +117,10 @@ export class View {
     this.foot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: 0.25, depthWrite: false }));
     this.foot.rotation.x = -Math.PI / 2; this.foot.position.y = 0.04; this.foot.visible = false; this.world.add(this.foot);
     this.smokeMat = []; this.smokeGeo = new THREE.SphereGeometry(0.12, 8, 6);
+    this.roadMats = { 1: new THREE.MeshStandardMaterial({ color: '#7a6346', roughness: 1 }), 2: new THREE.MeshStandardMaterial({ color: '#3e3f3c', roughness: 0.9 }) };
+    this.roadG = new THREE.Group(); this.world.add(this.roadG);
+    this.roadGhost = new THREE.Group(); this.world.add(this.roadGhost);
+    this.ghostTile = new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: 0.4, depthWrite: false });
     this.plazaG = new THREE.Group(); this.plazaG.visible = false; this.world.add(this.plazaG);
     this.plazaMat = new THREE.MeshBasicMaterial({ color: '#ffe600', transparent: true, opacity: 0.22, depthWrite: false });
   }
@@ -143,6 +135,33 @@ export class View {
     sign.position.set(0, 2.9, m - 0.5); sign.castShadow = true; g.add(sign);
     const boom = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.4, 0.08), this.m.red); boom.position.set(-1.6, 1.4, m - 0.2); boom.rotation.z = 0.15; g.add(boom);
     return g;
+  }
+
+  syncRoads() {
+    const s = this.sim; if (s.roadsV === this.roadsV) return; this.roadsV = s.roadsV;
+    this.roadG.clear();
+    const N = this.N, geo = new THREE.PlaneGeometry(1, 1), mx = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), one = new THREE.Vector3(1, 1, 1);
+    for (const t of [1, 2]) {
+      const tiles = []; for (let i = 0; i < N * N; i++) if (s.roads[i] === t) tiles.push(i);
+      if (!tiles.length) continue;
+      const im = new THREE.InstancedMesh(geo, this.roadMats[t], tiles.length);
+      tiles.forEach((i, k) => { mx.compose(new THREE.Vector3(this.wx(i % N + 0.5), 0.012 + t * 0.002, this.wx(Math.floor(i / N) + 0.5)), q, one); im.setMatrixAt(k, mx); });
+      im.receiveShadow = true; this.roadG.add(im);
+      if (t === 2) {   // a dashed centre line where paved road runs straight
+        const dash = new THREE.MeshBasicMaterial({ color: '#d8c35a' }), dg = new THREE.PlaneGeometry(0.06, 0.32), lines = [];
+        for (const i of tiles) { const x = i % N, z = Math.floor(i / N), up = s.roads[i - N] === 2, dn = s.roads[i + N] === 2, lf = s.roads[i - 1] === 2, rt = s.roads[i + 1] === 2;
+          if ((up || dn) && !lf && !rt) lines.push([x, z, 0]); else if ((lf || rt) && !up && !dn) lines.push([x, z, 1]); }
+        if (lines.length) { const dm = new THREE.InstancedMesh(dg, dash, lines.length); lines.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x + 0.5), 0.02, this.wx(z + 0.5)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, r ? Math.PI / 2 : 0)), one); dm.setMatrixAt(k, mx); }); this.roadG.add(dm); }
+      }
+    }
+  }
+  // tiles a road tool is about to lay (green) or clear (red)
+  showRoadGhost(tiles, ok = true) {
+    this.roadGhost.clear(); if (!tiles) return;
+    this.ghostTile.color.set(ok ? '#59ff8a' : '#ff4a4a');
+    const geo = new THREE.PlaneGeometry(0.94, 0.94);
+    for (const [x, z] of tiles) { const p = new THREE.Mesh(geo, this.ghostTile); p.rotation.x = -Math.PI / 2; p.position.set(this.wx(x + 0.5), 0.03, this.wx(z + 0.5)); this.roadGhost.add(p); }
+    this.grid.visible = true;
   }
 
   // the open ground the troops gather on, shown while the flag is selected or being moved
@@ -206,7 +225,7 @@ export class View {
 
   // ---------------------------------------------------------------- the build ghost and the selection
   setGhost(type, x, z, rot, ok) {
-    if (!type) { if (this.ghostG) this.ghostG.visible = false; this.foot.visible = false; this.range.visible = false; this.grid.visible = false; this.depLayer.visible = false; return; }
+    if (!type) { if (this.ghostG) this.ghostG.visible = false; this.foot.visible = false; this.range.visible = false; this.grid.visible = false; return; }
     const key = type + rot;
     if (key !== this.ghostKey) {
       if (this.ghostG) this.world.remove(this.ghostG);
@@ -219,7 +238,7 @@ export class View {
     this.ghostG.visible = true; this.ghostG.position.set(this.wx(x + w / 2), 0, this.wx(z + d / 2));
     this.ghostMat.color.set(ok ? '#59ff8a' : '#ff4a4a');
     this.foot.visible = true; this.foot.scale.set(w, d, 1); this.foot.position.set(this.wx(x + w / 2), 0.04, this.wx(z + d / 2)); this.foot.material.color.set(ok ? '#59ff8a' : '#ff4a4a');
-    this.grid.visible = true; this.depLayer.visible = !!B[type].onDeposit;
+    this.grid.visible = true;
     const nr = B[type].noise; this.range.visible = !!nr;
     if (nr) { this.range.scale.setScalar(nr); this.range.position.set(this.wx(x + w / 2), 0.05, this.wx(z + d / 2)); }
   }
@@ -236,6 +255,7 @@ export class View {
   frame(dt) {
     this.t += dt; const s = this.sim, t = this.t;
     this.camUpdate(dt);
+    this.syncRoads();
     this.syncBuildings(dt);
     this.syncPeople(dt);
     this.syncVehicles(dt);
@@ -294,7 +314,8 @@ export class View {
       }
       if (ud.plaques) ud.plaques.count = Math.min(64, s.fallen.length);
       if (ud.dirt) { if (ud.dirt.material === this.m.grime) ud.dirt.material = this.m.grime.clone(); ud.dirt.material.opacity = Math.max(0, 0.75 - (b.clean ?? 100) / 100 * 0.9); }
-      if (ud.crates) { const n = Math.round(Math.min(1, (s.e710 + s.shells) / Math.max(1, s.cap)) * 12); ud.crates.forEach((c, i) => c.visible = i < n); }
+      if (ud.crates) { const cap = (B[b.type].store?.rations || 0) + (B[b.type].store?.ammo || 0), n = Math.round(Math.min(1, ((b.stock?.rations || 0) + (b.stock?.ammo || 0)) / Math.max(1, cap)) * 12); ud.crates.forEach((c, i) => c.visible = i < n); }
+      if (B[b.type].pad) this.padCrates(g, b);
       model.traverse(o => { const wv = o.userData.wave; if (!wv) return;
         const pos = o.geometry.attributes.position, a = pos.array, base = wv.base;
         for (let i = 0; i < a.length; i += 3) {
@@ -306,6 +327,11 @@ export class View {
     for (const [id, g] of this.bm) if (!s.byId(id)) { this.world.remove(g); this.bm.delete(id); if (this.selId === id) this.select(null); }
   }
 
+  padCrates(g, b) {   // supplies waiting on the pad, as stacks of crates
+    const st = b.stock || {}, n = Math.min(18, Math.ceil(((st.rations || 0) + (st.fuel || 0) + (st.ammo || 0)) / 12));
+    if (!g.userData.pc) { g.userData.pc = []; for (let i = 0; i < 18; i++) { const c = makeCrate(this.m); c.position.set(-1.1 + (i % 3) * 0.36, 0.1 + Math.floor(i / 9) * 0.27, 0.75 + (Math.floor(i / 3) % 3) * 0.33); g.add(c); g.userData.pc.push(c); } }
+    g.userData.pc.forEach((c, i) => c.visible = i < n);
+  }
   puff(p) {
     let m = this.smoke.find(q => !q.visible);
     if (!m) { if (this.smoke.length > 120) return; m = new THREE.Mesh(this.smokeGeo, new THREE.MeshStandardMaterial({ color: '#8d8a84', transparent: true, opacity: 0.6, depthWrite: false })); this.world.add(m); this.smoke.push(m); }
@@ -338,6 +364,8 @@ export class View {
         case 'mourn': p.head.rotation.x = 0.5; p.armL.rotation.x = -0.3; p.armR.rotation.x = -0.3; eL.rotation.x = eR.rotation.x = -1.2; break;
         case 'inspect': p.armR.rotation.x = -0.4; eR.rotation.x = -1.2; p.head.rotation.x = 0.3; p.head.rotation.y = Math.sin(t * 1.5 + a.seed) * 0.4; break;
         case 'look': p.head.rotation.x = -0.25; break;
+        case 'run': p.legL.rotation.x = Math.sin(ph * 1.4) * 0.9; p.legR.rotation.x = -Math.sin(ph * 1.4) * 0.9; p.armL.rotation.x = -Math.sin(ph * 1.4) * 0.8; p.armR.rotation.x = Math.sin(ph * 1.4) * 0.8; eL.rotation.x = eR.rotation.x = -1.2; g.position.y = Math.abs(Math.sin(ph * 1.4)) * 0.03; break;
+        case 'aim': p.armR.rotation.set(-1.5, 0, -0.25); p.armL.rotation.set(-1.45, 0, 0.35); eR.rotation.x = -0.2; eL.rotation.x = -0.3; p.head.rotation.x = 0.1; break;
         case 'lie': g.rotation.set(-Math.PI / 2, a.yaw, 0, 'YXZ'); g.position.y = 0.06; break;
         default: p.armL.rotation.x = Math.sin(t * 1.5 + a.seed) * 0.05;
       }
@@ -347,13 +375,13 @@ export class View {
 
   syncVehicles(dt) {
     const L = this.life, t = this.t;
-    for (const [id, f] of L.lifts) {
-      let g = this.lm.get(id); if (!g) { g = makeForklift(this.m); g.scale.setScalar(1.2); this.world.add(g); this.lm.set(id, g); }
-      g.position.set(this.wx(f.x), 0, this.wx(f.z)); g.rotation.y = f.yaw;
+    for (const v of this.sim.veh) {
+      let g = this.vm.get(v.id);
+      if (!g) { g = v.kind === 'truck' ? makeTruck(this.m) : makeForklift(this.m); g.scale.setScalar(1.2); this.world.add(g); this.vm.set(v.id, g); }
+      g.position.set(this.wx(v.x), 0, this.wx(v.z)); g.rotation.y = v.yaw;
+      if (g.userData.cargo) g.userData.cargo.visible = v.load > 0;
     }
-    for (const [id, g] of this.lm) if (!L.lifts.has(id)) { this.world.remove(g); this.lm.delete(id); }
-    while (this.cm.length < L.crates.length) { const c = makeCrate(this.m); this.world.add(c); this.cm.push(c); }
-    this.cm.forEach((c, i) => { const k = L.crates[i]; c.visible = !!k; if (k) c.position.set(this.wx(k.x), k.y, this.wx(k.z)); });
+    for (const [id, g] of this.vm) if (!this.sim.veh.some(v => v.id === id)) { this.world.remove(g); this.vm.delete(id); }
     const live = new Set();
     for (const f of L.flights) {
       if (!f.mid) f.mid = Math.random();

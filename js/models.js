@@ -174,26 +174,6 @@ const MAKE = {
     const glow = box(g, 0.9, 0.12, 0.03, m.glowY, -0.1, 0.55, 0.42); g.userData.glow = glow;
     cyl(g, 0.22, 0.22, 0.9, m.prim, 0.72, 0.3, 0.25, { rz: Math.PI / 2 }); box(g, 0.05, 0.05, 0.6, m.steel, 0.55, 0.5, -0.1);
   },
-  pump(g, m) {
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(0.85, 24), m.e710); pool.rotation.x = -Math.PI / 2; pool.position.y = 0.02; g.add(pool);
-    box(g, 1.2, 0.12, 0.4, m.concrete, 0, 0.06, 0, { cast: false });
-    box(g, 0.08, 0.95, 0.08, m.steel, 0, 0.5, -0.12, { rx: 0.2 }); box(g, 0.08, 0.95, 0.08, m.steel, 0, 0.5, 0.12, { rx: -0.2 });
-    const beam = new THREE.Group(); beam.position.set(0, 0.98, 0); g.add(beam);
-    box(beam, 1.2, 0.1, 0.1, m.prim, 0, 0, 0); box(beam, 0.14, 0.32, 0.14, m.prim, 0.62, -0.08, 0); box(beam, 0.2, 0.2, 0.18, m.dark, -0.55, -0.12, 0);
-    g.userData.beam = beam;
-    cyl(g, 0.03, 0.03, 0.8, m.metal, 0.62, 0.45, 0);
-    cyl(g, 0.3, 0.3, 0.7, m.metal, -0.6, 0.35, 0.6); box(g, 0.62, 0.08, 0.02, m.hazard, -0.6, 0.45, 0.91);
-  },
-  plant(g, m) {
-    slab(g, m, 3, 2);
-    box(g, 2.7, 1.1, 1.5, m.wall, 0, 0.6, -0.1);
-    for (let i = 0; i < 3; i++) box(g, 0.9, 0.45, 1.5, m.prim, -0.9 + i * 0.9, 1.3, -0.1, { rz: 0.35 });
-    for (let i = 0; i < 3; i++) box(g, 0.05, 0.3, 1.45, m.window, -0.55 + i * 0.9, 1.35, -0.1, { rz: 0.35 });
-    cyl(g, 0.12, 0.16, 1.4, m.concrete, 0.95, 1.6, -0.55); cyl(g, 0.12, 0.16, 1.2, m.concrete, 1.25, 1.5, -0.25);
-    g.userData.smoke = [[0.95, 2.35, -0.55], [1.25, 2.15, -0.25]];
-    box(g, 0.8, 0.7, 0.05, m.dark, -0.4, 0.39, 0.67); box(g, 2.7, 0.08, 0.03, m.hazard, 0, 0.12, 0.66);
-    box(g, 0.9, 0.1, 0.3, m.steel, 0.7, 0.35, 0.8); for (let i = 0; i < 3; i++) box(g, 0.18, 0.14, 0.18, m.crate, 0.45 + i * 0.25, 0.47, 0.8);
-  },
   barracks(g, m) {
     slab(g, m, 3, 2);
     box(g, 2.7, 0.75, 1.5, m.wall, 0, 0.45, -0.1); prism(g, 2.8, 1.62, 0.45, m.prim, 0, 0.82, -0.1);
@@ -335,6 +315,50 @@ const MAKE = {
     cyl(g, 0.22, 0.22, 0.7, m.cola, 0.55, 1.0, -0.4); cyl(g, 0.2, 0.2, 0.04, m.metal, 0.55, 1.37, -0.4); box(g, 0.45, 0.12, 0.01, m.white, 0.55, 1.0, -0.17);
     for (const x of [-0.6, 0.2]) { cyl(g, 0.18, 0.18, 0.03, m.white, x, 0.3, 0.65); cyl(g, 0.02, 0.02, 0.3, m.steel, x, 0.15, 0.65); cyl(g, 0.01, 0.01, 0.5, m.steel, x, 0.55, 0.65); add(g, new THREE.ConeGeometry(0.28, 0.12, 12), m.cola, x, 0.82, 0.65); }
   },
+  fueldepot(g, m) {
+    slab(g, m, 2, 2);
+    for (const [x, z] of [[-0.45, -0.4], [0.45, -0.4]]) { cyl(g, 0.38, 0.38, 0.9, m.white, x, 0.55, z, { seg: 18 }); add(g, new THREE.SphereGeometry(0.38, 16, 6, 0, 6.3, 0, 0.9), m.white, x, 1.0, z); box(g, 0.78, 0.07, 0.02, m.hazard, x, 0.45, z + 0.39); }
+    box(g, 1.7, 0.04, 0.04, m.steel, 0, 0.3, 0.2); for (const x of [-0.6, 0, 0.6]) box(g, 0.05, 0.3, 0.05, m.steel, x, 0.15, 0.2);
+    box(g, 0.3, 0.45, 0.25, m.prim, 0.6, 0.23, 0.6); box(g, 0.18, 0.12, 0.02, m.glowY, 0.6, 0.35, 0.73);
+    for (let i = 0; i < 4; i++) box(g, 0.1, 0.3, 0.02, m.steel, -0.75 + i * 0.5, 0.15, 0.95);
+  },
+  motorpool(g, m) {
+    slab(g, m, 3, 2, m.asphalt);
+    box(g, 2.7, 0.85, 1.2, m.metal, 0, 0.5, -0.3); box(g, 2.76, 0.08, 1.26, m.prim, 0, 0.96, -0.3);
+    for (const x of [-0.65, 0.65]) { box(g, 1.05, 0.65, 0.03, m.dark, x, 0.37, 0.31); for (let i = 0; i < 6; i++) box(g, 1.05, 0.012, 0.035, m.steel, x, 0.1 + i * 0.1, 0.32); }
+    box(g, 2.7, 0.1, 0.04, m.hazard, 0, 0.75, 0.32); cyl(g, 0.12, 0.12, 0.4, m.red, 1.15, 0.22, 0.75);
+    for (let i = 0; i < 4; i++) cyl(g, 0.12, 0.12, 0.1, m.rubber, -1.1 + i * 0.12, 0.1 + (i % 2) * 0.05, 0.8, { rx: Math.PI / 2, seg: 10 });
+  },
+  range(g, m) {
+    box(g, 3.9, 0.05, 1.9, m.sand, 0, 0.025, 0, { cast: false });
+    for (let i = 0; i < 6; i++) { const x = -1.6 + i * 0.64; box(g, 0.04, 0.02, 1.4, m.white, x + 0.32, 0.055, -0.1, { cast: false }); box(g, 0.3, 0.4, 0.03, m.white, x, 0.3, -0.75); add(g, new THREE.RingGeometry(0.05, 0.1, 16), m.red, x, 0.32, -0.733, { cast: false }); cyl(g, 0.015, 0.015, 0.2, m.steel, x, 0.1, -0.75); }
+    box(g, 3.9, 0.45, 0.25, m.sandDark, 0, 0.22, -0.95); for (let i = 0; i < 9; i++) box(g, 0.2, 0.09, 0.14, m.sand, -1.8 + i * 0.45, 0.5, -0.95);
+    box(g, 3.8, 0.22, 0.15, m.concrete, 0, 0.11, 0.78); box(g, 3.8, 0.04, 0.2, m.hazard, 0, 0.23, 0.78);
+    box(g, 0.6, 0.6, 0.45, m.prim, 1.6, 0.3, 0.65); box(g, 0.5, 0.15, 0.02, m.window, 1.6, 0.45, 0.88);
+  },
+  course(g, m) {
+    box(g, 2.9, 0.04, 2.9, m.sandDark, 0, 0.02, 0, { cast: false });
+    box(g, 0.9, 0.6, 0.12, m.wood || m.crate, -0.7, 0.3, -0.9); box(g, 0.06, 0.8, 0.06, m.steel, 0.9, 0.4, -0.9); box(g, 0.06, 0.8, 0.06, m.steel, 0.1, 0.4, -0.9);
+    for (let i = 0; i < 5; i++) box(g, 0.8, 0.012, 0.012, m.dark, 0.5, 0.15 + i * 0.13, -0.9);
+    for (let i = 0; i < 6; i++) cyl(g, 0.13, 0.13, 0.1, m.rubber, -0.9 + (i % 3) * 0.3, 0.06, 0.2 + Math.floor(i / 3) * 0.3, { seg: 12 });
+    for (let i = 0; i < 4; i++) box(g, 0.08, 0.5, 0.08, m.crate, 0.6 + (i % 2) * 0.5, 0.25, 0.3 + Math.floor(i / 2) * 0.5);
+    box(g, 0.7, 0.04, 0.7, m.crate, 0.85, 0.5, 0.55);
+    box(g, 2.6, 0.06, 0.25, m.e710 || m.dark, 0, 0.03, 1.15, { cast: false });
+  },
+  patrol(g, m) {
+    slab(g, m, 2, 2);
+    box(g, 1.6, 0.8, 1.2, m.wall, 0, 0.45, -0.2); box(g, 1.66, 0.08, 1.26, m.prim, 0, 0.88, -0.2);
+    box(g, 0.4, 0.55, 0.04, m.dark, -0.4, 0.33, 0.41); box(g, 0.6, 0.4, 0.03, m.white, 0.35, 0.5, 0.41); for (let i = 0; i < 3; i++) box(g, 0.04, 0.04, 0.01, m.red, 0.2 + i * 0.15, 0.55 - i * 0.06, 0.43);
+    cyl(g, 0.02, 0.025, 1.5, m.steel, 0.6, 1.6, -0.6); for (const y of [1.9, 2.1, 2.3]) box(g, 0.3, 0.015, 0.015, m.steel, 0.6, y, -0.6); ball(g, 0.04, m.glowR, 0.6, 2.36, -0.6);
+    sandbags(g, m, 0, 0.75, 1.4);
+  },
+  lecture(g, m) {
+    slab(g, m, 3, 2);
+    box(g, 2.5, 0.85, 1.3, m.white, 0, 0.5, -0.15); prism(g, 2.7, 1.5, 0.4, m.prim, 0, 0.93, -0.15);
+    for (let i = 0; i < 5; i++) cyl(g, 0.06, 0.07, 0.85, m.white, -1.0 + i * 0.5, 0.5, 0.6, { seg: 10 });
+    box(g, 2.6, 0.08, 0.3, m.white, 0, 0.95, 0.6); box(g, 2.6, 0.1, 0.3, m.concrete, 0, 0.05, 0.62);
+    plane(g, 0.4, 0.4, m.logo, 0, 1.12, 0.66); box(g, 0.45, 0.55, 0.03, m.dark, 0, 0.33, 0.51);
+  },
   speaker(g, m) {
     box(g, 0.25, 0.08, 0.25, m.concrete, 0, 0.04, 0); cyl(g, 0.025, 0.03, 1.5, m.steel, 0, 0.78, 0);
     box(g, 0.12, 0.12, 0.12, m.dark, 0, 1.5, 0);
@@ -417,6 +441,17 @@ export function makeForklift(m) {
   box(g, 0.3, 0.02, 0.24, m.lift, 0, 0.53, -0.12);
   box(g, 0.1, 0.12, 0.07, m.uniform, 0, 0.3, -0.12); ball(g, 0.04, m.helmet, 0, 0.4, -0.12, { seg: 8 });
   box(g, 0.05, 0.05, 0.05, m.glowY, 0, 0.56, -0.12);
+  const cargo = new THREE.Group(); g.add(cargo); box(cargo, 0.22, 0.18, 0.2, m.crate, 0, 0.17, 0.36); g.userData.cargo = cargo;
+  return g;
+}
+export function makeTruck(m) {
+  const g = new THREE.Group();
+  box(g, 0.34, 0.06, 0.82, m.dark, 0, 0.12, 0);
+  box(g, 0.34, 0.26, 0.24, m.prim, 0, 0.26, 0.28); box(g, 0.3, 0.1, 0.02, m.glass, 0, 0.32, 0.405); box(g, 0.08, 0.04, 0.01, m.glowY, -0.1, 0.2, 0.405); box(g, 0.08, 0.04, 0.01, m.glowY, 0.1, 0.2, 0.405);
+  box(g, 0.36, 0.06, 0.5, m.primDark, 0, 0.18, -0.12);
+  const cargo = new THREE.Group(); g.add(cargo); for (let i = 0; i < 4; i++) box(cargo, 0.15, 0.13, 0.2, m.crate, -0.08 + (i % 2) * 0.16, 0.28, -0.24 + Math.floor(i / 2) * 0.22);
+  g.userData.cargo = cargo;
+  for (const [x, z] of [[-0.18, 0.28], [0.18, 0.28], [-0.18, -0.1], [0.18, -0.1], [-0.18, -0.28], [0.18, -0.28]]) cyl(g, 0.07, 0.07, 0.06, m.rubber, x, 0.07, z, { rz: Math.PI / 2, seg: 10 });
   return g;
 }
 export function makeCrate(m) {
