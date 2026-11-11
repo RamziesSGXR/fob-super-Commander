@@ -85,10 +85,22 @@
       </ul>
       <p>They pull against each other. Troops on patrol aren't working the pumps. The munitions plant is loud and keeps people awake. A statue costs what a barracks costs. Fall behind and your allocation shrinks, upkeep goes unpaid and the base wears down, but nothing ends: you can always climb back.</p>
       <p><b>Time.</b> A day lasts two minutes at normal speed and a week is seven days. The clock is bottom left: <kbd>[</kbd> and <kbd>]</kbd> slow down and speed up, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick normal, fast and very fast, <kbd>Space</kbd> pauses. Troops keep a routine: everyone salutes the Super Earth flag at reveille (05:00), drills in the morning, eats at 11:30, works, and turns in at 22:00.</p>
+      <p><b>Photo mode.</b> <kbd>P</kbd> or PHOTO in the top bar frees the camera: orbit, tilt down to ground level and close in on your troopers, then SAVE PICTURE.</p>
       <p><b>Controls.</b> Drag to move around, scroll or pinch to zoom, <kbd>Q</kbd> <kbd>E</kbd> or right-drag (two-finger twist) to rotate. Pick a building at the bottom, <kbd>R</kbd> turns it, click to build. Click a building to select it. <kbd>Space</kbd> pauses, <kbd>M</kbd> opens the Ministries, <kbd>H</kbd> hides the interface for screenshots.</p>
       <div class="btns"><button id="ht-x" class="btn primary" type="button">UNDERSTOOD</button></div>
     </div>
   </section>
+
+  <!-- ===================================================== photo mode -->
+  <div id="photobar" class="panel hidden">
+    <b>PHOTO MODE</b>
+    <span>Drag to move · right-drag (two fingers) to orbit and tilt · scroll or pinch to close in · <kbd>R</kbd> <kbd>F</kbd> tilt · <kbd>Q</kbd> <kbd>E</kbd> turn · <kbd>H</kbd> hides this bar</span>
+    <button id="ph-up" class="btn icon" type="button" title="Tilt up (R)">▲</button>
+    <button id="ph-dn" class="btn icon" type="button" title="Tilt down (F)">▼</button>
+    <button id="ph-pause" class="btn" type="button">FREEZE TIME</button>
+    <button id="ph-shot" class="btn primary" type="button">SAVE PICTURE</button>
+    <button id="ph-x" class="btn" type="button">EXIT (P)</button>
+  </div>
 
   <!-- ===================================================== HUD -->
   <div id="hud" class="hidden">
@@ -109,6 +121,7 @@
         <button id="b-rl" class="btn icon" type="button" title="Rotate left (Q)">⟲</button>
         <button id="b-rr" class="btn icon" type="button" title="Rotate right (E)">⟳</button>
         <button id="b-snd" class="btn icon" type="button" title="Sound on or off">SND</button>
+        <button id="b-photo" class="btn" type="button" title="Photo mode: a free 3D camera (P)">PHOTO</button>
         <button id="b-hide" class="btn icon" type="button" title="Hide the interface (H)">H</button>
         <button id="b-menu" class="btn" type="button" title="Menu">MENU</button>
       </div>

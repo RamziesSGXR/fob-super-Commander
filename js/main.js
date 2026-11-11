@@ -338,6 +338,24 @@ $('mi-x').onclick = () => $('mins').classList.add('hidden');
 $('b-week').onclick = () => toggleMins('st'); $('stand').onclick = () => toggleMins('st');
 $('or-x').onclick = () => $('orders').classList.toggle('min');
 
+// ---------------------------------------------------------------- photo mode: a free camera, no interface
+let photo = false, photoFrozen = false;
+function setPhoto(on) {
+  photo = on; view.setPhoto(on); tool = null; view.setGhost(null); view.showRoadGhost(null); select(null); hideTip();
+  $('hud').classList.toggle('hidden', on); $('photobar').classList.toggle('hidden', !on);
+  if (!on && photoFrozen) { photoFrozen = false; setPause(false); $('ph-pause').textContent = 'FREEZE TIME'; }
+  if (!on) buildBar();
+}
+$('b-photo').onclick = () => setPhoto(true); $('ph-x').onclick = () => setPhoto(false);
+$('ph-up').onclick = () => view.tiltBy(0.12); $('ph-dn').onclick = () => view.tiltBy(-0.12);
+$('ph-pause').onclick = () => { photoFrozen = !photoFrozen; setPause(photoFrozen); $('paused').classList.add('hidden'); $('ph-pause').textContent = photoFrozen ? 'UNFREEZE' : 'FREEZE TIME'; };
+$('ph-shot').onclick = () => {   // render a frame and save it straight away, before the buffer is cleared
+  view.r.render(view.scene, view.cam);
+  const a = document.createElement('a'); a.href = $('view').toDataURL('image/png');
+  a.download = `${(sim.faction.base || 'fob').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-day-${sim.time.day}.png`; a.click();
+  audio.play('built');
+};
+
 // ---------------------------------------------------------------- top bar and menu
 function setPause(p) { paused = p; $('ck-pause').textContent = p ? '▶' : 'II'; $('ck-pause').classList.toggle('on', p); $('paused').classList.toggle('hidden', !p); }
 function setSpeed(i) { speedI = Math.max(0, Math.min(C.SPEEDS.length - 1, i)); $('ck-speed').textContent = gameSpeed() + '×'; if (paused) setPause(false); audio.play('click'); }
@@ -399,13 +417,15 @@ cv.addEventListener('pointermove', e => {
     const dx = e.clientX - p0.x, dy = e.clientY - p0.y; p0.x = e.clientX; p0.y = e.clientY;
     if (pinch && ptrs.size === 2) {
       const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), ang = Math.atan2(b.y - a.y, b.x - a.x);
-      view.zoomBy(pinch.d / Math.max(1, d)); view.zoomT = view.zoom = Math.max(4, Math.min(30, view.zoomT));
+      if (photo) { view.dolly(pinch.d / Math.max(1, d)); view.tiltBy(((a.y + b.y) / 2 - (pinch.my ?? (a.y + b.y) / 2)) * -0.004); pinch.my = (a.y + b.y) / 2; }
+      else { view.zoomBy(pinch.d / Math.max(1, d)); view.zoomT = view.zoom = Math.max(4, Math.min(30, view.zoomT)); }
       view.spin(-(ang - pinch.ang)); pinch.d = d; pinch.ang = ang;
     } else if (drag) {
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
-      if (drag.moved) { if (drag.btn === 2 || drag.btn === 1) view.spin(-dx * 0.008); else view.pan(dx, dy); }
+      if (drag.moved) { if (drag.btn === 2 || drag.btn === 1) { view.spin(-dx * 0.008); if (photo) view.tiltBy(dy * 0.006); } else view.pan(dx, dy); }
     }
   }
+  if (photo) return;
   if (isRoad(tool)) { const p = view.pick(e.clientX, e.clientY), here = [Math.floor(p.x), Math.floor(p.z)]; roadPreview(roadDrag ? roadTiles(roadDrag, here) : [here], e); }
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
@@ -428,6 +448,7 @@ function up(e) {
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
   if (!drag) return;
   const d = drag; drag = null;
+  if (photo) return;
   if (d.moved) return;
   if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); buildBar(); } else select(null); return; }
   if (tool === 'moveflag') {
@@ -446,7 +467,7 @@ function up(e) {
   const p = view.pick(e.clientX, e.clientY); select(p.bid);
 }
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); drag = null; pinch = null; });
-cv.addEventListener('wheel', e => { e.preventDefault(); view.zoomBy(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
+cv.addEventListener('wheel', e => { e.preventDefault(); if (photo) view.dolly(Math.exp(e.deltaY * 0.0012)); else view.zoomBy(Math.exp(e.deltaY * 0.0012)); }, { passive: false });
 
 // ---------------------------------------------------------------- keys
 const held = new Set();
@@ -454,6 +475,15 @@ addEventListener('keydown', e => {
   if (e.target.closest('input, textarea')) return;
   const k = e.key.toLowerCase(); held.add(k);
   if (!playing) return;
+  if (k === 'p') { setPhoto(!photo); return; }
+  if (photo) {
+    if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1);
+    else if (k === 'r') view.tiltBy(0.1); else if (k === 'f') view.tiltBy(-0.1);
+    else if (k === 'h') $('photobar').classList.toggle('hidden');
+    else if (k === 'escape') setPhoto(false);
+    else if (k === ' ') { e.preventDefault(); $('ph-pause').click(); }
+    return;
+  }
   if (k === 'q') view.rotate(-1);
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }

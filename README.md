@@ -48,6 +48,7 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 | Build | pick at the bottom (`Tab` changes group), `R` turns it, click to place, `Shift`+click to keep placing | tap the building, then tap the ground |
 | Select | click a building | tap it |
 | Time | `[` `]` slower and faster, `1` `2` `3` speed, `Space` pause | the arrows by the clock |
+| Photo mode | `P`, then right-drag to orbit and tilt, scroll to close in, `R` `F` tilt, SAVE PICTURE | PHOTO, then two fingers to orbit, tilt and pinch |
 | Other | `M` Ministries, `H` hide the interface, `Del` demolish, `Esc` cancel | |
 
 ## The buildings

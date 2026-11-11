@@ -15,7 +15,9 @@ export class View {
     this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFShadowMap;
     this.r.toneMapping = THREE.ACESFilmicToneMapping; this.r.toneMappingExposure = 1.05;
     this.scene = new THREE.Scene();
-    this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
+    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
+    this.persp = new THREE.PerspectiveCamera(50, 1, 0.05, 700);   // photo mode: a free camera you can tilt down to ground level
+    this.cam = this.ortho; this.photo = false; this.dist = 18; this.distT = 18; this.tilt = 0.6; this.tiltT = 0.6;
     this.yaw = Math.PI / 4; this.yawT = this.yaw; this.pitch = 0.68; this.zoom = 9; this.zoomT = 9;
     this.target = new THREE.Vector3(0, 0, 2); this.ray = new THREE.Raycaster(); this.t = 0;
     const hemi = this.hemi = new THREE.HemisphereLight('#dfe9ff', '#6b5638', 1.1); this.scene.add(hemi);
@@ -193,6 +195,14 @@ export class View {
     this.yaw += (this.yawT - this.yaw) * Math.min(1, dt * 8);
     this.zoom += (this.zoomT - this.zoom) * Math.min(1, dt * 10);
     const h = this.N / 2 + 6; this.target.x = Math.max(-h, Math.min(h, this.target.x)); this.target.z = Math.max(-h, Math.min(h + 8, this.target.z));
+    if (this.photo) {
+      this.dist += (this.distT - this.dist) * Math.min(1, dt * 8); this.tilt += (this.tiltT - this.tilt) * Math.min(1, dt * 8);
+      const c = this.persp, cp = Math.cos(this.tilt), d = this.dist;
+      c.aspect = this.aspect; c.updateProjectionMatrix();
+      const look = this.target.clone(); look.y = Math.min(1.2, d * 0.04);
+      c.position.set(look.x + Math.sin(this.yaw) * cp * d, look.y + Math.sin(this.tilt) * d, look.z + Math.cos(this.yaw) * cp * d);
+      c.lookAt(look); this.sun.target.position.copy(this.target); return;
+    }
     const c = this.cam, z = this.zoom;
     const off = (this.shift || 0) * z * this.aspect;   // the title screen pushes the base to the right of the card
     c.left = -z * this.aspect + off; c.right = z * this.aspect + off; c.top = z; c.bottom = -z; c.updateProjectionMatrix();
@@ -202,14 +212,21 @@ export class View {
     this.sun.target.position.copy(this.target);
   }
   rotate(steps) { this.yawT += steps * Math.PI / 4; }
+  // photo mode: a perspective camera that orbits, tilts from overhead down to eye level, and closes in
+  setPhoto(on) {
+    this.photo = on; this.cam = on ? this.persp : this.ortho;
+    if (on) { this.distT = this.dist = this.zoom * 1.6; this.tiltT = this.tilt = this.pitch; }
+  }
+  tiltBy(d) { this.tiltT = Math.max(0.03, Math.min(1.5, this.tiltT + d)); }
+  dolly(f) { this.distT = Math.max(1.2, Math.min(90, this.distT * f)); }
   spin(dx) { this.yawT += dx; this.yaw = this.yawT; }
   zoomBy(f) { this.zoomT = Math.max(4, Math.min(30, this.zoomT * f)); }
   pan(dxPx, dyPx) {   // drag the ground under the pointer
-    const k = this.zoom * 2 / this.h, s = Math.sin(this.yaw), c = Math.cos(this.yaw);
-    const ax = -dxPx * k, az = -dyPx * k / Math.sin(this.pitch);
+    const k = this.photo ? this.dist * 1.1 / this.h : this.zoom * 2 / this.h, s = Math.sin(this.yaw), c = Math.cos(this.yaw);
+    const ax = -dxPx * k, az = -dyPx * k / Math.sin(this.photo ? Math.max(0.35, this.tilt) : this.pitch);
     this.target.x += ax * c + az * -s; this.target.z += ax * -s + az * -c;
   }
-  move(fx, fz, dt) { const k = this.zoom * 1.2 * dt, s = Math.sin(this.yaw), c = Math.cos(this.yaw); this.target.x += (fx * c - fz * s) * k; this.target.z += (-fx * s - fz * c) * k; }
+  move(fx, fz, dt) { const k = (this.photo ? this.dist * 0.7 : this.zoom * 1.2) * dt, s = Math.sin(this.yaw), c = Math.cos(this.yaw); this.target.x += (fx * c - fz * s) * k; this.target.z += (-fx * s - fz * c) * k; }
   lookAt(tx, tz) { this.target.set(this.wx(tx), 0, this.wx(tz)); }
 
   // where the pointer is: the tile under it and the building it's over
