@@ -1,31 +1,52 @@
 // Road-aware pathfinding on the base grid, shared by the simulation (trucks and forklifts) and the ant farm (people).
 // A step costs its length divided by how fast you go on that tile, so routes bend toward roads when roads help.
+// A* with a typed-array heap and buffers kept between calls: hundreds of people re-route every phase change, so
+// nothing here allocates per call except the finished path.
+
+let size = 0, cost, prev, seen, heapN, heapC, stamp = 0;
+function buffers(n) {
+  if (n === size) return;
+  size = n; cost = new Float32Array(n); prev = new Int32Array(n); seen = new Uint32Array(n);
+  heapN = new Int32Array(n * 8); heapC = new Float32Array(n * 8);
+}
+const DX = [1, -1, 0, 0, 1, 1, -1, -1], DZ = [0, 0, 1, -1, 1, -1, 1, -1], LEN = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
 
 // walk: 1 where you can go. roads: 0 none, 1 dirt, 2 paved. fast: speed multiplier for each road type.
 export function findPath(N, walk, roads, fast, sx, sz, ex, ez) {
   const start = sz * N + sx, end = ez * N + ex;
   if (start === end) return [];
-  const cost = new Float32Array(N * N).fill(Infinity), prev = new Int32Array(N * N).fill(-1), heap = [];
-  const push = (n, c) => { heap.push([c, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-  const pop = () => {
-    const top = heap[0], last = heap.pop();
-    if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } }
-    return top;
+  buffers(N * N);
+  if (++stamp === 0xffffffff) { seen.fill(0); stamp = 1; }
+  const top = Math.max(...fast);   // keeps the estimate optimistic, so the route is still the cheapest
+  const h = n => { const dx = Math.abs(n % N - ex), dz = Math.abs(((n / N) | 0) - ez); return (Math.max(dx, dz) + 0.414 * Math.min(dx, dz)) / top; };
+  let len = 0;
+  const push = (n, c) => {
+    let i = len++;
+    while (i > 0) { const p = (i - 1) >> 1; if (heapC[p] <= c) break; heapN[i] = heapN[p]; heapC[i] = heapC[p]; i = p; }
+    heapN[i] = n; heapC[i] = c;
   };
-  cost[start] = 0; push(start, 0);
-  const D = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
-  while (heap.length) {
-    const [c, n] = pop(); if (n === end) break; if (c > cost[n]) continue;
-    const cx = n % N, cz = (n / N) | 0;
-    for (const [dx, dz, len] of D) {
-      const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+  const pop = () => {
+    const n = heapN[0], ln = heapN[--len], lc = heapC[len];
+    let i = 0;
+    for (;;) { const l = 2 * i + 1; if (l >= len) break; const r = l + 1, m = r < len && heapC[r] < heapC[l] ? r : l; if (heapC[m] >= lc) break; heapN[i] = heapN[m]; heapC[i] = heapC[m]; i = m; }
+    heapN[i] = ln; heapC[i] = lc;
+    return n;
+  };
+  seen[start] = stamp; cost[start] = 0; prev[start] = -1; push(start, h(start));
+  let found = false;
+  while (len) {
+    if (len >= heapN.length - 8) break;   // never happens on a sane grid; a guard rather than a crash
+    const n = pop(); if (n === end) { found = true; break; }
+    const c = cost[n], cx = n % N, cz = (n / N) | 0;
+    for (let k = 0; k < 8; k++) {
+      const nx = cx + DX[k], nz = cz + DZ[k]; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
       const m = nz * N + nx; if (!walk[m] && m !== end) continue;
-      if (dx && dz && (!walk[cz * N + nx] || !walk[nz * N + cx])) continue;   // no cutting corners
-      const sp = (fast[roads[n]] + fast[roads[m]]) / 2, nc = c + len / sp;
-      if (nc < cost[m]) { cost[m] = nc; prev[m] = n; push(m, nc); }
+      if (k > 3 && (!walk[cz * N + nx] || !walk[nz * N + cx])) continue;   // no cutting corners
+      const nc = c + LEN[k] / ((fast[roads[n]] + fast[roads[m]]) / 2);
+      if (seen[m] !== stamp || nc < cost[m]) { seen[m] = stamp; cost[m] = nc; prev[m] = n; push(m, nc + h(m)); }
     }
   }
-  if (prev[end] < 0) return null;
+  if (!found) return null;
   const out = []; for (let n = end; n !== start; n = prev[n]) out.push([n % N + 0.5, ((n / N) | 0) + 0.5]);
   return out.reverse();
 }

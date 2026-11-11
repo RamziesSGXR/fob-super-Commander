@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.3';
+export const VERSION = '0.4';
 
 export const C = {
   N: 40,                    // the base is N x N tiles; the outer ring is the perimeter wall
@@ -16,6 +16,9 @@ export const C = {
   FILL: [0.6, 0.5, 0.4, 0.3],   // share of empty bunks filled by each morning's recruits, by rank: housing is what makes a base grow
   STAND: { start: 40, rest: 30, drift: 0.12 },    // standings drift back toward "rest" every week
   PADLOAD: 140,            // most a supply pelican can bring to one landing pad
+  PADSEATS: 8,             // recruits in, or troopers out, per pad per flight
+  BRIEF: 7.5,              // a squad's briefing before it marches out (1.5 game hours)
+  REBUILD: 240,            // a wrecked FRV or tank is replaced in two days
   DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 8,   // hours: transports leave, supplies land, standing patrols go out
   DEPLOY_PAY: 40,          // supplies for every trained trooper shipped to the front
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
@@ -35,7 +38,25 @@ export const GKEYS = Object.keys(GOODS);
 // Roads: tiles laid on the grid. People and vehicles move this many times faster on them.
 export const ROADS = { 1: { name: 'Dirt Road', cost: 3, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 8, speed: 2.4, walk: 1.4 } };
 // Vehicles: speed in tiles per game second off-road, and what they carry.
-export const VEHICLES = { lift: { name: 'Forklift', speed: 0.7, load: 12 }, truck: { name: 'Supply Truck', speed: 1.0, load: 30 } };
+export const VEHICLES = {
+  lift: { name: 'Forklift', speed: 0.7, load: 12 }, truck: { name: 'Supply Truck', speed: 1.0, load: 30 },
+  // armour sits in a Vehicle Bay until a special operation takes it along. bonus: added to the odds. fuel: burned per operation.
+  frv: { name: 'FRV', speed: 1.4, load: 0, armour: true, bonus: 0.12, guard: 0.7, fuel: 10, desc: 'Fast and light. Better odds, and it gets wounded troopers home.' },
+  tank: { name: 'Tank', speed: 0.7, load: 0, armour: true, bonus: 0.28, guard: 0.4, fuel: 25, desc: 'For the really big actions. Much better odds, far fewer casualties.' },
+};
+
+// The light tech tree: a Science Lab researches one of these at a time. needs: research that must come first.
+export const TECH = {
+  radio:    { name: 'Long-Range Radio', tier: 1, cost: 120, hrs: 18, desc: 'Each Comms Tower runs three landing pads instead of two.' },
+  shelving: { name: 'Reinforced Shelving', tier: 1, cost: 150, hrs: 24, desc: 'All storage holds 25% more.' },
+  drill:    { name: 'Drill Sergeant Manuals', tier: 1, cost: 150, hrs: 24, desc: 'Recruits train 20% faster everywhere.' },
+  solar:    { name: 'Patriotic Photovoltaics', tier: 1, cost: 160, hrs: 24, desc: 'Solar Arrays make 6 power instead of 4.' },
+  cargo:    { name: 'Heavy-Lift Pelicans', tier: 2, cost: 260, hrs: 36, needs: ['radio'], desc: 'Every pelican carries 60 more goods and 4 more recruits or troopers.' },
+  trucks:   { name: 'Third Truck', tier: 2, cost: 240, hrs: 30, needs: ['shelving'], desc: 'Every Motor Pool gets a third supply truck.' },
+  asphalt:  { name: 'Bureau Asphalt', tier: 2, cost: 180, hrs: 24, needs: ['shelving'], desc: 'Paved road costs half. The Bureau supplies the asphalt, at a price it would rather not discuss.' },
+  frv:      { name: 'Fast Recon Vehicles', tier: 2, cost: 300, hrs: 36, needs: ['drill'], desc: 'Unlocks the Vehicle Bay and its FRV, which special operations can take along.' },
+  tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
+};
 // Training: points a recruit earns per game hour at each place; 100 makes a trooper.
 export const TRAIN = { range: 6, course: 4, lecture: 3, parade: 2 };
 
@@ -67,11 +88,15 @@ export const B = {
               desc: 'Tanks of E-710, delivered not pumped. Generators and trucks run on it.' },
   motorpool: { name: 'Motor Pool', group: 'core', w: 3, d: 2, cost: 320, up: 20, crew: 1, trucks: 2, need: { fuel: 30 }, burn: { fuel: 4 },
               desc: 'Two supply trucks: faster and bigger than forklifts, and faster still on paved roads. Burns fuel.' },
+  comms:    { name: 'Comms Tower', group: 'core', w: 2, d: 2, cost: 260, up: 12, pw: -2, prop: 2,
+              desc: 'A tall mast and a lot of static. Your first landing pad needs none; every tower lets you run two more.' },
   shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6, store: { rations: 50, fuel: 50, ammo: 50 },
               desc: 'A standard-issue storage bunker. Holds a little of everything, and looks exactly like a shed.' },
 
   solar:    { name: 'Solar Array', group: 'power', w: 2, d: 1, cost: 90, up: 5, pw: 4,
               desc: 'Clean, quiet, patriotic power. Not much of it.' },
+  lab:      { name: 'Science Lab', group: 'industry', w: 3, d: 2, cost: 320, up: 18, pw: -3, crew: 1, needs: ['comms'], lab: true,
+              desc: 'Researches upgrades, one at a time, while it is staffed and powered. Pick what to study in the Science tab. More labs, faster research.' },
   gen:      { name: 'E-710 Generator', group: 'power', w: 2, d: 2, cost: 220, up: 15, pw: 14, crew: 1, need: { fuel: 30 }, burn: { fuel: 8 },
               desc: 'Lots of power, but it burns E-710 fuel, which has to be trucked in.' },
 
@@ -90,6 +115,8 @@ export const B = {
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
   hdbarracks: { name: 'Helldiver Barracks', group: 'military', w: 3, d: 2, cost: 420, up: 22, pw: -4, crew: 1, needs: ['barracks'], cryo: true,
               desc: 'Helldivers pass through on their way to the front, kept in cryo until needed. Staffed and powered, it earns +3 Defence standing every week.' },
+  vbay:     { name: 'Vehicle Bay', group: 'military', w: 3, d: 3, cost: 380, up: 20, crew: 1, needs: ['motorpool'], tech: 'frv', need: { fuel: 40 }, armour: true,
+              desc: 'Keeps an FRV, and a tank once Armoured Doctrine is researched. Special operations can take them along. A wrecked vehicle is replaced in two days.' },
   shelter:  { name: 'Underground Bunker', group: 'military', w: 2, d: 2, cost: 280, up: 10, pw: -1, mor: 3, needs: ['barracks'],
               desc: 'A blast door and a long stairway down. Knowing it is there helps everyone sleep.' },
 
@@ -133,7 +160,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [
@@ -144,6 +171,7 @@ export const MISSIONS = [
   { kind: 'Civilian evacuation', diff: [2, 4], size: [3, 5], dur: [70, 110] },
   { kind: 'Retrieve stolen flag', diff: [1, 1], size: [2, 2], dur: [40, 50] },
   { kind: 'Orbital spotting run', diff: [2, 3], size: [2, 3], dur: [50, 80] },
+  { kind: 'Armoured assault', diff: [5, 5], size: [5, 6], dur: [110, 140], heavy: true },
 ];
 export const OP_A = ['Righteous', 'Unyielding', 'Glorious', 'Patriotic', 'Steadfast', 'Liberty', 'Iron', 'Free', 'Lawful', 'Radiant', 'Vigilant', 'Sovereign'];
 export const OP_B = ['Harvest', 'Thunder', 'Gavel', 'Lantern', 'Ballot', 'Anvil', 'Sunrise', 'Verdict', 'Beacon', 'Hammer', 'Mandate', 'Anthem'];

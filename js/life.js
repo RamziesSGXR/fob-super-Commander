@@ -15,7 +15,7 @@ export class Life {
   constructor(sim) {
     this.sim = sim; this.N = sim.N;
     this.actors = new Map();      // id -> person (troops by their sim id, inspectors by negative ids)
-    this.flights = []; this.queue = [];
+    this.flights = []; this.queue = []; this.plans = [];
     this.hold = new Set();        // recruits still on the pelican
     this.ceremony = null; this.nextFake = -1; this.t = 0;
     this.gridKey = '';
@@ -34,7 +34,16 @@ export class Life {
   path(fx, fz, tx, tz) {
     const p = this.sim.pathTo(fx, fz, tx, tz); p.push([tx, tz]); return p;
   }
-  go(a, tx, tz, then) { a.path = this.path(a.x, a.z, tx, tz); a.then = then; a.act = 'walk'; }
+  // paths are worked out a few milliseconds' worth per frame, so a whole base changing activity at once doesn't freeze
+  // the game: people set off a beat apart instead
+  go(a, tx, tz, then) { a.path = []; a.then = then; a.act = 'plan'; a.goal = [tx, tz]; this.plans.push(a); }
+  planPaths() {
+    const t0 = performance.now();
+    while (this.plans.length && performance.now() - t0 < 3) {
+      const a = this.plans.shift(); if (a.act !== 'plan' || !a.goal) continue;
+      a.path = this.path(a.x, a.z, a.goal[0], a.goal[1]); a.goal = null; a.act = 'walk';
+    }
+  }
   doorOf(b) { const [x, z] = this.sim.door(b); return [x + 0.5, z + 0.5]; }
   centre(b) { return [b.x + b.w / 2, b.z + b.d / 2]; }
   front(b, dist, side = 0) {   // a point in front of a building, dist tiles out, side tiles across
@@ -52,11 +61,29 @@ export class Life {
   // ---------------------------------------------------------------- events from the simulation
   event(e) {
     const s = this.sim;
-    if (e.t === 'patrolOut') for (const id of e.members) {
-      const a = this.actors.get(id); if (!a) continue;
-      a.hidden = false; a.leaving = true;
-      const [gx, gz] = this.inGate();
-      this.go(a, gx, gz, () => { const [ox, oz] = this.out(); a.path = [[ox, oz]]; a.act = 'walk'; a.then = () => this.actors.delete(id); });
+    if (e.t === 'patrolOut') {   // the leader takes his squad aside and gives them the plan
+      const b = s.byId(e.at) || s.b.find(o => o.type === 'hq'), [lx, lz] = this.front(b, 1.6, 0), [cx, cz] = this.centre(b);
+      const n = e.members.length - 1;
+      e.members.forEach((id, i) => {
+        let a = this.actors.get(id);
+        if (!a) { const [x, z] = this.doorOf(b); a = this.person(id, 'troop', x, z); }
+        a.hidden = false; a.leaving = true; a.briefing = e.id; a.task = 'brief';
+        if (id === e.leader) { this.go(a, lx, lz, () => { a.act = 'inspect'; a.face = [lx + (lx - cx), lz + (lz - cz)]; }); return; }
+        // a half circle in front of the leader, facing him
+        const k = n > 1 ? (i - 1) / (n - 1) - 0.5 : 0, ang = Math.atan2(lz - cz, lx - cx) + k * 2.2;
+        const x = lx + Math.cos(ang) * 1.1, z = lz + Math.sin(ang) * 1.1;
+        this.go(a, x, z, () => { a.act = 'idle'; a.face = [lx, lz]; });
+      });
+    }
+    if (e.t === 'patrolGo') {   // plan given: they move out together, in a column behind the leader
+      const order = [e.leader, ...e.members.filter(id => id !== e.leader)], gx = this.N / 2;
+      order.forEach((id, i) => {
+        const a = this.actors.get(id); if (!a) return;
+        a.briefing = null; a.leaving = true; a.face = null;
+        const col = (i % 2) * 0.7 - 0.35, row = Math.floor(i / 2) * 0.7;
+        this.go(a, gx + col, this.N - 3 + row * 0.2, () => { a.path = [[gx + col, this.N + 5 + row]]; a.act = 'walk'; a.then = () => this.actors.delete(id); });
+        a.delay = i * 0.35;
+      });
     }
     if (e.t === 'patrolBack') {
       e.members.forEach((id, i) => {
@@ -68,11 +95,14 @@ export class Life {
       });
       if (e.hero) this.startCeremony(e.hero);
     }
-    if (e.t === 'supply') { for (const id of e.fresh) this.hold.add(id); this.queue.push({ kind: 'supply', ids: e.fresh }); }
+    if (e.t === 'supply') { for (const id of e.fresh) this.hold.add(id); for (const p of e.pads || [{ ids: e.fresh }]) this.queue.push({ kind: 'supply', ids: p.ids, pad: p.id }); }
     if (e.t === 'deploy') {   // the shipped troopers walk to the pad and board the transport
-      const [px, pz] = this.landAt();
-      e.ids.forEach((id, i) => { const a = this.actors.get(id); if (!a) return; a.boarding = true; a.hidden = false; this.go(a, px - 1 + (i % 4) * 0.5, pz + 1.6 + Math.floor(i / 4) * 0.5, () => { a.act = 'salute'; a.face = [px, pz]; }); });
-      this.queue.push({ kind: 'deploy', ids: e.ids });
+      for (const p of e.pads || [{ ids: e.ids }]) {
+        if (!p.ids.length) continue;
+        const [px, pz] = this.landAt(p.id);
+        p.ids.forEach((id, i) => { const a = this.actors.get(id); if (!a) return; a.boarding = true; a.hidden = false; this.go(a, px - 1 + (i % 4) * 0.5, pz + 1.6 + Math.floor(i / 4) * 0.5, () => { a.act = 'salute'; a.face = [px, pz]; }); });
+        this.queue.push({ kind: 'deploy', ids: p.ids, pad: p.id });
+      }
     }
     if (e.t === 'inspector') this.queue.push({ kind: 'inspector' });
   }
@@ -82,12 +112,16 @@ export class Life {
   }
 
   // ---------------------------------------------------------------- pelicans
-  pad() { return this.sim.b.find(b => b.type === 'pad' && b.done); }
-  landAt() { const p = this.pad(); return p ? this.centre(p) : [this.N / 2, this.N - 4]; }
+  pad(id) { const pads = this.sim.b.filter(b => b.type === 'pad' && b.done); return pads.find(b => b.id === id) || pads[0]; }
+  landAt(id) { const p = this.pad(id); return p ? this.centre(p) : [this.N / 2, this.N - 4]; }
   flightsUpdate(dt) {
-    if (!this.flights.length && this.queue.length) {
-      const job = this.queue.shift(), [lx, lz] = this.landAt(), from = rnd(0, Math.PI * 2);
-      this.flights.push({ ...job, lx, lz, from, ph: 'in', k: 0, wait: 0, x: lx + Math.cos(from) * 40, z: lz + Math.sin(from) * 40, y: 14, yaw: from + Math.PI });
+    // one pelican per pad at a time; pads work side by side
+    for (let i = 0; i < this.queue.length; i++) {
+      const job = this.queue[i], p = this.pad(job.pad), key = p ? p.id : 0;
+      if (this.flights.some(f => f.padKey === key)) continue;
+      this.queue.splice(i--, 1);
+      const [lx, lz] = this.landAt(key), from = rnd(0, Math.PI * 2);
+      this.flights.push({ ...job, padKey: key, lx, lz, from, ph: 'in', k: -rnd(0, 1.5), wait: 0, x: lx + Math.cos(from) * 40, z: lz + Math.sin(from) * 40, y: 14, yaw: from + Math.PI });
     }
     for (const f of this.flights) {
       f.k += dt;
@@ -126,7 +160,7 @@ export class Life {
   }
   flightDone(f) {
     if (f.kind === 'supply') return f.k > 5;
-    if (f.kind === 'deploy') return f.k > 3 && f.ids.every(id => { const a = this.actors.get(id); return !a || !a.path.length; });
+    if (f.kind === 'deploy') return f.k > 3 && f.ids.every(id => { const a = this.actors.get(id); return !a || (!a.path.length && a.act !== 'plan'); });
     if (f.kind === 'inspector') return f.k > 6 && !this.actors.has(f.inspector);
     return true;
   }
@@ -176,7 +210,7 @@ export class Life {
   update(dt) {
     this.t += dt;
     const s = this.sim;
-    this.flightsUpdate(dt);
+    this.flightsUpdate(dt); this.planPaths();
     if (this.cleaner) { const c = this.actors.get(this.cleaner); if (!c || c.task !== 'free') this.cleaner = null; }
     if (this.ceremony) { this.ceremony.t -= dt; if (this.ceremony.t <= 0 || !s.byId(this.ceremony.flag)) this.ceremony = null; }
     // troops: make sure everyone at home has a body, and nobody who left still does
@@ -191,7 +225,8 @@ export class Life {
       if (a.kind === 'troop' && !s.troop(id)) { this.actors.delete(id); continue; }
       if (a.kind === 'inspector') { this.inspector(a, dt); continue; }
       const t = s.troop(id);
-      if (a.leaving || a.returning) { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
+      if (a.delay > 0) { a.delay -= dt; continue; }
+      if (a.leaving || a.returning) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (t.state === 'patrol') continue;
       // the daily routine: a ceremony beats everything, then reveille, lights out and meals, then the job, then drill
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
@@ -270,6 +305,7 @@ export class Life {
   }
 
   inspector(a, dt) {
+    if (a.act === 'plan') return;
     if (a.act === 'walk') { if (this.move(a, dt * WALK * 0.8) && a.then) { const f = a.then; a.then = null; f(); } return; }
     a.wait -= dt;
     if (a.wait > 0) return;

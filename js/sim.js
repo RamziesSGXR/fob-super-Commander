@@ -5,7 +5,7 @@
 // obstacle course, the parade ground and the Citizenship Hall, and Defence's deployment orders ship the trained ones
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
-import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN } from './config.js';
+import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 
@@ -37,6 +37,7 @@ export class Sim {
     this.b = []; this.nid = 1; this.troops = []; this.fallen = []; this.honours = [];
     this.patrols = []; this.offers = []; this.orders = []; this.inspection = null; this.veh = [];
     this.events = []; this.log = []; this.audit = null; this.bill = null;
+    this.tech = { done: [], cur: null, pts: 0 };
     this.stats = { patrolsWon: 0, patrolsLost: 0, deployed: 0, trained: 0, inspections: 0, delivered: 0 };
     this.week_ = { short: 0, total: 0, fed: 0, eat: 0 };   // this week's supply record, for the Expansion audit
     this.genMap();
@@ -80,7 +81,14 @@ export class Sim {
     const N = this.N, w = this.walkGrid(), cl = v => Math.max(0, Math.min(N - 1, Math.floor(v)));
     let [ax, az] = [cl(sx), cl(sz)], [bx, bz] = this.nearWalk(cl(ex), cl(ez));
     if (!w[az * N + ax]) [ax, az] = this.nearWalk(ax, az);
-    return findPath(N, w, this.roads, FAST, ax, az, bx, bz) || [[bx + 0.5, bz + 0.5]];
+    // many people walk the same routes (bunks to the flag, the mess to the range): remember them until the layout changes
+    if (this._pathV !== this._walkV) { this._paths = new Map(); this._pathV = this._walkV; }
+    const key = ((az * N + ax) * N + bz) * N + bx, hit = this._paths.get(key);
+    if (hit) return hit.map(p => [p[0], p[1]]);
+    const p = findPath(N, w, this.roads, FAST, ax, az, bx, bz) || [[bx + 0.5, bz + 0.5]];
+    if (this._paths.size > 4000) this._paths.clear();
+    this._paths.set(key, p.map(q => [q[0], q[1]]));
+    return p;
   }
   nearWalk(x, z) {
     const w = this.walkGrid(), N = this.N;
@@ -99,19 +107,20 @@ export class Sim {
     if (this.roads[z * this.N + x] >= type) return 'Already a road';
     return null;
   }
-  roadCost(tiles, type) { return tiles.filter(([x, z]) => !this.canRoad(x, z, type)).length * ROADS[type].cost; }
+  roadPrice(type) { return type === 2 && this.hasTech('asphalt') ? Math.ceil(ROADS[2].cost / 2) : ROADS[type].cost; }
+  roadCost(tiles, type) { return tiles.filter(([x, z]) => !this.canRoad(x, z, type)).length * this.roadPrice(type); }
   layRoad(tiles, type) {
     let n = 0;
     for (const [x, z] of tiles) {
-      if (this.canRoad(x, z, type) || this.supplies < ROADS[type].cost) continue;
-      this.supplies -= ROADS[type].cost; this.roads[z * this.N + x] = type; n++;
+      if (this.canRoad(x, z, type) || this.supplies < this.roadPrice(type)) continue;
+      this.supplies -= this.roadPrice(type); this.roads[z * this.N + x] = type; n++;
     }
     if (n) { this.roadsV++; this.events.push({ t: 'roads' }); }
     return n;
   }
   clearRoad(tiles) {
     let n = 0;
-    for (const [x, z] of tiles) { const i = z * this.N + x, r = this.roads[i]; if (!r || !this.inside(x, z)) continue; this.supplies += Math.floor(ROADS[r].cost / 2); this.roads[i] = 0; n++; }
+    for (const [x, z] of tiles) { const i = z * this.N + x, r = this.roads[i]; if (!r || !this.inside(x, z)) continue; this.supplies += Math.floor(this.roadPrice(r) / 2); this.roads[i] = 0; n++; }
     if (n) { this.roadsV++; this.events.push({ t: 'roads' }); }
     return n;
   }
@@ -120,7 +129,39 @@ export class Sim {
   has(type) { return this.b.some(b => b.type === type && b.done); }
   count(type) { return this.b.filter(b => b.type === type).length; }
   byId(id) { return this.b.find(b => b.id === id); }
-  locked(type) { const n = (B[type].needs || []).filter(t => !this.has(t)); return n.length ? n : null; }
+  // what still stands between you and a building, as names: buildings, research, or another Comms Tower for a pad
+  locked(type) {
+    const d = B[type], n = (d.needs || []).filter(t => !this.has(t)).map(t => B[t].name);
+    if (d.tech && !this.hasTech(d.tech)) n.push(TECH[d.tech].name + ' research');
+    if (d.pad && this.count('pad') >= this.padCap()) n.push(this.has('comms') || this.count('comms') ? 'another Comms Tower' : 'a Comms Tower');
+    return n.length ? n : null;
+  }
+  padCap() { return 1 + this.count('comms') * (this.hasTech('radio') ? 3 : 2); }
+  padLoad() { return C.PADLOAD + (this.hasTech('cargo') ? 60 : 0); }
+  padSeats() { return C.PADSEATS + (this.hasTech('cargo') ? 4 : 0); }
+  hasTech(k) { return !!this.tech?.done.includes(k); }
+  techState(k) {
+    if (this.hasTech(k)) return 'done';
+    if (this.tech.cur === k) return 'busy';
+    return (TECH[k].needs || []).every(t => this.hasTech(t)) ? 'open' : 'locked';
+  }
+  research(k) {
+    if (!TECH[k] || this.techState(k) !== 'open' || this.tech.cur) return false;
+    if (!this.b.some(b => b.type === 'lab' && b.done)) return false;
+    if (this.supplies < TECH[k].cost) return false;
+    this.supplies -= TECH[k].cost; this.tech.cur = k; this.tech.pts = 0;
+    this.say('base', `The Science Lab begins work on ${TECH[k].name}. Results in about ${TECH[k].hrs} lab hours.`);
+    return true;
+  }
+  labRate() { return this.b.filter(b => b.type === 'lab' && b.done && !b.off).reduce((a, b) => a + this.work(b), 0); }
+  study(dt) {
+    const k = this.tech.cur; if (!k) return;
+    this.tech.pts += this.labRate() * dt / C.DAY * 24;
+    if (this.tech.pts < TECH[k].hrs) return;
+    this.tech.done.push(k); this.tech.cur = null; this.tech.pts = 0;
+    this.events.push({ t: 'tech', k });
+    this.say('base', `Research complete: ${TECH[k].name}. ${TECH[k].desc} The scientists have been thanked and reassigned.`);
+  }
 
   canPlace(type, x, z, rot = 0) {
     const d = B[type]; if (!d) return { ok: false, why: 'Unknown building' };
@@ -150,6 +191,7 @@ export class Sim {
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) this.occ[(z + j) * this.N + x + i] = b.id;
     this.b.push(b);
     if (!free) this.events.push({ t: 'placed', id: b.id });
+    this.roadsV = (this.roadsV || 0) + 1;   // roadside lamps step around new buildings
     return b;
   }
   raiseFlag() {   // the nearest clear spot to the middle of the base
@@ -169,7 +211,7 @@ export class Sim {
     for (const v of this.veh) if (v.job && (v.job.src === id || v.job.dst === id)) this.dropJob(v);
     this.veh = this.veh.filter(v => v.home !== id);
     if (this.cleaning === id) this.cleaning = null;
-    this.events.push({ t: 'removed', id });
+    this.events.push({ t: 'removed', id }); this.roadsV++;
     return true;
   }
   repairCost(b) { return Math.ceil(B[b.type].cost * 0.25 * (1 - b.cond / 100)) + (b.cond < 100 ? 5 : 0); }
@@ -194,7 +236,7 @@ export class Sim {
   trained(t) { return t.train >= 100; }
 
   // ---------------------------------------------------------------- goods: who stores what, who needs what
-  storeCap(b, g) { return b.done && B[b.type].store ? B[b.type].store[g] || 0 : 0; }
+  storeCap(b, g) { return b.done && B[b.type].store ? Math.floor((B[b.type].store[g] || 0) * (this.hasTech('shelving') ? 1.25 : 1)) : 0; }
   needCap(b, g) { return b.done && !b.off && B[b.type].need ? B[b.type].need[g] || 0 : 0; }
   stored(g) { return this.b.reduce((a, b) => a + (this.storeCap(b, g) ? b.stock[g] : 0), 0); }
   storage(g) { return this.b.reduce((a, b) => a + this.storeCap(b, g), 0); }
@@ -241,9 +283,10 @@ export class Sim {
     for (const b of done) {
       const d = B[b.type]; if (b.off || !(d.pw > 0)) continue;
       if (b.type === 'gen') made += d.pw * this.crewFrac(b) * (b.stock.fuel > 0.01 ? 1 : 0) * this.condF(b);
-      else made += d.pw;
+      else made += d.pw + (b.type === 'solar' && this.hasTech('solar') ? 2 : 0);
     }
     this.power = { made: Math.round(made), used, ratio: used > 0 ? Math.min(1, made / used) : 1 };
+    this.slowF = done.some(o => B[o.type].sluggish) ? 1 - B.chicken.sluggish : 1;
     this.beds = beds;
     this.idle = home.filter(t => t.state === 'idle' && !t.at).length;
     // propaganda and morale, each kind worth less the more of it you already have, so variety pays
@@ -282,7 +325,7 @@ export class Sim {
   work(b) {   // how hard a building runs right now, 0..1+
     const d = B[b.type]; if (!b.done || b.off) return 0;
     const pw = d.pw < 0 ? this.power.ratio : 1;
-    const slow = this.b.some(o => o.done && B[o.type].sluggish) ? 1 - B.chicken.sluggish : 1;
+    const slow = this.slowF ?? 1;
     return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100) * slow;
   }
 
@@ -294,10 +337,10 @@ export class Sim {
     for (const b of this.b) if (!b.done) {
       const helpers = Math.min(3, this.idle);
       b.prog += dt / (b.time * C.BUILD) * (0.4 + 0.2 * helpers);
-      if (b.prog >= 1) { b.prog = 1; b.done = true; this.events.push({ t: 'built', id: b.id }); this.say('base', `${B[b.type].name} complete.`); }
+      if (b.prog >= 1) { b.prog = 1; b.done = true; this.events.push({ t: 'built', id: b.id }); this.roadsV++; this.say('base', `${B[b.type].name} complete.`); }
     }
     this.consume(day);
-    this.train(dt);
+    this.train(dt); this.study(dt);
     this.drive(dt);
     const pots = this.b.filter(b => b.done && B[b.type].potty);
     if (pots.length) {
@@ -310,7 +353,7 @@ export class Sim {
     } else this.cleaning = null;
     this.morale += (this.moraleTarget - this.morale) * Math.min(1, k * 0.03);
     this.grief *= Math.exp(-k / 220); this.pride *= Math.exp(-k / 260);
-    for (const p of this.patrols) { p.t += dt / C.PATROL; }
+    for (const p of this.patrols) { if (p.brief > 0) { p.brief -= dt; if (p.brief <= 0) this.patrolGo(p); } else p.t += dt / C.PATROL; }
     const before = this.time;
     this.tick();
     if (before && Math.floor(before.hour) !== Math.floor(this.time.hour)) this.hourly(Math.floor(this.time.hour));
@@ -374,7 +417,7 @@ export class Sim {
     for (const t of this.troops) if (t.at && (t.state !== 'idle' || this.trained(t))) t.at = null;
     for (const t of recruits) {
       if (!t.at) continue;
-      const p = this.byId(t.at), kind = B[p.type].train, rate = TRAIN[kind] * this.condF(p) * (0.7 + 0.6 * this.morale / 100);
+      const p = this.byId(t.at), kind = B[p.type].train, rate = TRAIN[kind] * this.condF(p) * (0.7 + 0.6 * this.morale / 100) * (this.hasTech('drill') ? 1.2 : 1);
       t.train = Math.min(100, t.train + rate * hours);
       if (kind === 'parade' || kind === 'course') t.drill = Math.min(1, t.drill + hours * 0.01);
       if (kind === 'range') p.stock.ammo = Math.max(0, p.stock.ammo - 0.5 * hours);
@@ -386,7 +429,8 @@ export class Sim {
   fleet() {   // one vehicle per forklift or truck a building provides
     for (const b of this.b) {
       if (!b.done) continue;
-      const d = B[b.type], want = [['lift', d.lifts || 0], ['truck', d.trucks || 0]];
+      const d = B[b.type], w = b.wreck || {};
+      const want = [['lift', d.lifts || 0], ['truck', (d.trucks || 0) + (d.trucks && this.hasTech('trucks') ? 1 : 0)], ['frv', d.armour && !w.frv ? 1 : 0], ['tank', d.armour && !w.tank && this.hasTech('tank') ? 1 : 0]];
       for (const [kind, n] of want) {
         const have = this.veh.filter(v => v.home === b.id && v.kind === kind).length;
         for (let i = have; i < n; i++) { const [x, z] = this.door(b); this.veh.push({ id: this.nid++, kind, home: b.id, x: x + 0.5, z: z + 0.5, yaw: 0, path: [], job: null, load: 0, wait: 0 }); }
@@ -427,12 +471,31 @@ export class Sim {
     best.src.out[best.g] += best.qty; best.dst.in[best.g] += best.qty;
     return { src: best.src.id, dst: best.dst.id, g: best.g, qty: best.qty, leg: 'src' };
   }
-  drive(dt) {
-    this.fleet();
+  roll(v, dt) {   // move along the path, faster on roads
     const N = this.N;
+    let step = VEHICLES[v.kind].speed * dt;
+    while (v.path.length && step > 0) {
+      const tx = Math.floor(v.x), tz = Math.floor(v.z), r = tx >= 0 && tz >= 0 && tx < N && tz < N ? this.roads[tz * N + tx] : 0;
+      const sp = FAST[r] || 1, [px, pz] = v.path[0], dx = px - v.x, dz = pz - v.z, d = Math.hypot(dx, dz);
+      if (d > 1e-4) v.yaw = Math.atan2(dx, dz);
+      const can = step * sp;
+      if (d <= can) { v.x = px; v.z = pz; v.path.shift(); step -= d / sp; } else { v.x += dx / d * can; v.z += dz / d * can; step = 0; }
+    }
+  }
+  drive(dt) {
+    for (const b of this.b) if (b.wreck) for (const k in b.wreck) if ((b.wreck[k] -= dt) <= 0) delete b.wreck[k];
+    this.fleet();
     for (const v of this.veh) {
       const home = this.byId(v.home), spec = VEHICLES[v.kind];
       if (!home) continue;
+      if (this.time?.phase === 'reveille' && !v.go) continue;   // everyone stops for the dawn salute, drivers included
+      if (VEHICLES[v.kind].armour) {
+        if (v.away) continue;
+        if (!v.mission && !v.path.length && !v.parked) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.pathTo(v.x, v.z, x, z); else v.parked = true; }
+        this.roll(v, dt);
+        if (v.go && !v.path.length) v.away = true;
+        continue;
+      }
       if (v.kind === 'truck' && (home.stock.fuel <= 0 || home.crew < 1 || home.off)) continue;   // no fuel or no driver: the trucks stay parked
       if (!v.job) {
         v.wait -= dt;
@@ -442,15 +505,8 @@ export class Sim {
           else if (!v.path.length) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.pathTo(v.x, v.z, x, z); }
         }
       }
-      // move along the path, faster on roads
-      let step = spec.speed * dt;
-      while (v.path.length && step > 0) {
-        const tx = Math.floor(v.x), tz = Math.floor(v.z), r = tx >= 0 && tz >= 0 && tx < N && tz < N ? this.roads[tz * N + tx] : 0;
-        const sp = FAST[r] || 1, [px, pz] = v.path[0], dx = px - v.x, dz = pz - v.z, d = Math.hypot(dx, dz);
-        if (d > 1e-4) v.yaw = Math.atan2(dx, dz);
-        const can = step * sp;
-        if (d <= can) { v.x = px; v.z = pz; v.path.shift(); step -= d / sp; } else { v.x += dx / d * can; v.z += dz / d * can; step = 0; }
-      }
+      this.roll(v, dt);
+      void spec;
       if (!v.job || v.path.length) continue;
       const j = v.job, s = this.byId(j.src), d = this.byId(j.dst);
       if (!s || !d) { this.dropJob(v); continue; }
@@ -469,7 +525,7 @@ export class Sim {
   supplyRun() {
     const pads = this.b.filter(b => b.done && B[b.type].pad);
     if (!pads.length) { this.say('log', 'No landing pad: the supply pelican circled and went home.'); return; }
-    let room = pads.length * C.PADLOAD;
+    let room = pads.length * this.padLoad();
     const order = zero();
     for (const g of GKEYS) {
       const want = this.storage(g) + this.b.reduce((a, b) => a + this.needCap(b, g), 0) - this.amount(g);
@@ -482,17 +538,20 @@ export class Sim {
     if (cost > this.supplies) { const f = Math.max(0, this.supplies) / cost; for (const g of GKEYS) order[g] = Math.floor(order[g] * f); cost = GKEYS.reduce((a, g) => a + order[g] * GOODS[g].cost, 0); }
     const n = GKEYS.reduce((a, g) => a + order[g], 0);
     // recruits come on the same flight, as many as there are bunks for
-    const free = Math.max(0, this.beds - this.troops.length), r = Math.min(free ? Math.max(1, Math.round(free * C.FILL[this.rank])) : 0, pads.length * 8), fresh = [];
+    const free = Math.max(0, this.beds - this.troops.length), r = Math.min(free ? Math.max(1, Math.round(free * C.FILL[this.rank])) : 0, pads.length * this.padSeats()), fresh = [];
     for (let i = 0; i < r; i++) fresh.push(this.addTroop().id);
     if (!n && !fresh.length) return;
     this.supplies -= cost;
     for (const g of GKEYS) { let left = order[g]; for (const p of pads) { const put = Math.ceil(left / pads.length); p.stock[g] += Math.min(put, left); left -= Math.min(put, left); } }
     this.bill = { day: this.time.day, order, cost };
-    this.events.push({ t: 'supply', n, fresh });
+    this.events.push({ t: 'supply', n, fresh, pads: this.byPad(pads, fresh) });
     if (fresh.length) this.events.push({ t: 'recruits', ids: fresh });
     const parts = GKEYS.filter(g => order[g]).map(g => `${order[g]} ${GOODS[g].name.toLowerCase()}`);
     this.say('log', (parts.length ? `Supply pelican down: ${parts.join(', ')}. Billed ${cost} supplies.` : 'Supply pelican down.') + (fresh.length ? ` ${fresh.length} vote${fresh.length > 1 ? 's' : ''} delivered.` : ''));
   }
+
+  // every pad gets its own pelican: share the passengers out, eight to a pad
+  byPad(pads, ids) { return pads.map((p, i) => ({ id: p.id, ids: ids.filter((_, k) => k % pads.length === i) })); }
 
   // ---------------------------------------------------------------- Ministry of Defence: deployment orders, shipped automatically
   newOrder() {
@@ -506,13 +565,13 @@ export class Sim {
     // the Patrol Office keeps its squads back: three trained troopers for every squad it sends out
     const keep = this.b.filter(b => b.type === 'patrol' && b.done && !b.off).reduce((a, b) => a + (b.squads || 0) * 3, 0) - this.patrols.filter(p => p.office).length * 3;
     const ready = this.troops.filter(t => this.trained(t) && t.state === 'idle').sort((a, b) => b.missions - a.missions).slice(Math.max(0, keep));
-    const go = ready.slice(0, Math.min(o.n - o.sent, pads.length * 8));
+    const go = ready.slice(0, Math.min(o.n - o.sent, pads.length * this.padSeats()));
     if (!go.length) return;
     const ids = go.map(t => t.id);
     this.troops = this.troops.filter(t => !ids.includes(t.id));
     o.sent += go.length; this.stats.deployed += go.length;
     const pay = go.length * C.DEPLOY_PAY; this.supplies += pay;
-    this.events.push({ t: 'deploy', ids, names: go.map(t => t.name) });
+    this.events.push({ t: 'deploy', ids, names: go.map(t => t.name), pads: this.byPad(pads, ids) });
     this.say('def', `${go.length} trooper${go.length > 1 ? 's' : ''} shipped to the front (${o.sent} of ${o.n}). +${pay} supplies.`);
     if (o.sent >= o.n) {
       this.orders.shift(); this.gain('def', o.def);
@@ -582,9 +641,7 @@ export class Sim {
         const p = { id: this.nid++, op: `${this.rng.pick(['North', 'South', 'East', 'West', 'Perimeter', 'Ridge', 'Valley'])} sector patrol`, kind: 'Standing patrol', diff, size: 3,
           dur: C.DAY / C.PATROL, def: 2 + diff, sup: 15 * diff, office: b.id, t: 0, members: squad.map(t => t.id) };
         p.chance = this.chance(p, squad);
-        for (const t of squad) { t.state = 'patrol'; t.job = null; t.at = null; }
-        this.patrols.push(p);
-        this.events.push({ t: 'patrolOut', members: p.members });
+        this.startPatrol(p, squad, b.id);
       }
     }
   }
@@ -592,11 +649,12 @@ export class Sim {
     this.offers = [];
     const used = new Set();
     for (let i = 0; i < 3; i++) {
-      let m; do { m = this.rng.pick(MISSIONS); } while (used.has(m.kind)); used.add(m.kind);
+      const pool = MISSIONS.filter(m => !m.heavy || this.has('vbay'));
+      let m; do { m = this.rng.pick(pool); } while (used.has(m.kind)); used.add(m.kind);
       const diff = m.diff[0] + this.rng.int(m.diff[1] - m.diff[0] + 1) + (this.week > 6 && this.rng.chance(0.3) ? 1 : 0);
       const size = m.size[0] + this.rng.int(m.size[1] - m.size[0] + 1);
       this.offers.push({ id: this.nid++, op: `Operation ${this.rng.pick(OP_A)} ${this.rng.pick(OP_B)}`, kind: m.kind, diff: Math.min(5, diff), size,
-        dur: Math.round(this.rng.range(m.dur[0], m.dur[1])), def: 4 + diff * 3, sup: diff * 40 });
+        dur: Math.round(this.rng.range(m.dur[0], m.dur[1])), def: Math.round((4 + diff * 3) * (m.heavy ? 1.5 : 1)), sup: Math.round(diff * 40 * (m.heavy ? 1.5 : 1)), heavy: !!m.heavy });
     }
   }
   squadFor(size) {   // trained troopers first, idle before busy
@@ -604,30 +662,66 @@ export class Sim {
     const order = t => (this.trained(t) ? 200 : 0) + (t.job ? 10 - CREW_ORDER.indexOf(this.byId(t.job)?.type) : 100);
     return home.sort((a, b) => order(b) - order(a) || b.missions - a.missions).slice(0, size);
   }
-  chance(o, squad = this.squadFor(o.size)) {
+  chance(o, squad = this.squadFor(o.size), kinds = o.veh || []) {
     if (squad.length < o.size) return 0;
+    const armour = kinds.reduce((a, k) => a + VEHICLES[k].bonus, 0);
     const vet = squad.reduce((a, t) => a + Math.min(1, t.missions / 6), 0) / squad.length;
     const drill = squad.reduce((a, t) => a + t.drill, 0) / squad.length;
     const raw = squad.reduce((a, t) => a + (this.trained(t) ? 0 : 0.15), 0) / squad.length;
     const arm = this.b.some(b => b.type === 'armory' && b.done && b.crew > 0 && !b.off) ? 0.1 : 0;
-    return clamp(0.66 + 0.15 * vet + 0.1 * drill + 0.2 * (this.morale - 50) / 50 + arm + 0.03 * (o.size - 2) - 0.1 * o.diff - raw, 0.05, 0.97);
+    return clamp(0.66 + 0.15 * vet + 0.1 * drill + 0.2 * (this.morale - 50) / 50 + arm + armour + 0.03 * (o.size - 2) - 0.1 * o.diff - raw, 0.05, 0.97);
   }
-  send(offerId) {
+  // armour parked in a staffed Vehicle Bay with fuel for the trip
+  armourFree(kind) {
+    return this.veh.filter(v => v.kind === kind && !v.mission && !v.away).find(v => {
+      const h = this.byId(v.home); return h && h.done && !h.off && h.crew > 0 && h.stock.fuel >= VEHICLES[kind].fuel;
+    });
+  }
+  send(offerId, kinds = []) {
     const o = this.offers.find(o => o.id === offerId); if (!o) return false;
     const squad = this.squadFor(o.size); if (squad.length < o.size) return false;
-    const p = { ...o, id: this.nid++, t: 0, chance: this.chance(o, squad), members: squad.map(t => t.id) };
-    for (const t of squad) { t.state = 'patrol'; t.job = null; t.at = null; }
-    this.patrols.push(p); this.offers = this.offers.filter(x => x !== o);
-    this.events.push({ t: 'patrolOut', members: p.members });
-    this.say('def', `${p.op} is under way: ${p.kind.toLowerCase()}, ${p.size} troopers. Odds ${Math.round(p.chance * 100)}%.`);
+    const vs = [...new Set(kinds)].map(k => this.armourFree(k)).filter(Boolean);
+    const p = { ...o, id: this.nid++, t: 0, veh: vs.map(v => v.kind), vids: vs.map(v => v.id), members: squad.map(t => t.id) };
+    p.chance = this.chance(p, squad);
+    for (const v of vs) { v.mission = p.id; v.parked = false; const h = this.byId(v.home); h.stock.fuel -= VEHICLES[v.kind].fuel; }
+    this.offers = this.offers.filter(x => x !== o);
+    this.startPatrol(p, squad, this.b.find(b => b.type === 'patrol' && b.done)?.id ?? this.b.find(b => b.type === 'hq').id);
+    const with_ = vs.length ? ` with ${vs.map(v => 'a ' + VEHICLES[v.kind].name).join(' and ')}` : '';
+    this.say('def', `${p.op}: ${squad[0].name} is briefing ${p.size} troopers${with_}. Odds ${Math.round(p.chance * 100)}%.`);
     return true;
+  }
+  // the squad gathers round its leader for the plan, then marches out together
+  startPatrol(p, squad, at) {
+    p.brief = C.BRIEF; p.at = at; p.leader = squad[0].id;
+    for (const t of squad) { t.state = 'patrol'; t.job = null; t.at = null; }
+    this.patrols.push(p);
+    this.events.push({ t: 'patrolOut', id: p.id, members: p.members, at, leader: p.leader });
+  }
+  patrolGo(p) {
+    p.brief = 0;
+    const g = this.gate();
+    for (const id of p.vids || []) { const v = this.veh.find(v => v.id === id); if (v) { v.go = true; v.path = this.pathTo(v.x, v.z, g.x, g.z - 1); } }
+    this.events.push({ t: 'patrolGo', id: p.id, members: p.members, leader: p.leader });
   }
   resolve(p) {
     this.patrols = this.patrols.filter(x => x !== p);
     const win = this.rng.chance(p.chance), dead = [], back = [];
+    const vs = (p.vids || []).map(id => this.veh.find(v => v.id === id)).filter(Boolean);
+    const guard = vs.reduce((a, v) => Math.min(a, VEHICLES[v.kind].guard), 1);
     for (const id of p.members) {
       const t = this.troop(id); if (!t) continue;
-      if (this.rng.chance(win ? 0.04 * p.diff : 0.11 * p.diff)) dead.push(t); else back.push(t);
+      if (this.rng.chance((win ? 0.04 * p.diff : 0.11 * p.diff) * guard)) dead.push(t); else back.push(t);
+    }
+    const g = this.gate();
+    for (const v of vs) {
+      const h = this.byId(v.home);
+      if (this.rng.chance(win ? 0.05 : v.kind === 'tank' ? 0.3 : 0.5)) {
+        this.veh = this.veh.filter(x => x !== v);
+        if (h) { h.wreck ||= {}; h.wreck[v.kind] = C.REBUILD; }
+        this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two days, billed to the base's gratitude.`);
+        continue;
+      }
+      v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z - 0.5; v.path = h ? this.pathTo(v.x, v.z, ...this.door(h)) : [];
     }
     if (back.length === 0 && dead.length) { back.push(dead.pop()); }   // somebody always makes it back to tell it
     for (const t of dead) {
@@ -775,9 +869,9 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', '_walk', '_walkV'].includes(k)) o[k] = this[k];
+    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', '_walk', '_walkV', '_paths', '_pathV'].includes(k)) o[k] = this[k];
     o.roadsS = Array.from(this.roads).join('');
-    o.rngS = this.rng.s; o.v = 3;
+    o.rngS = this.rng.s; o.v = 4;
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -791,7 +885,7 @@ export class Sim {
     for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
     if (!s.v || s.v < 3) this.roadsFromGate();
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
-    this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0;
+    this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
     this.roadsV = 1;
     this.recalc(); this.tick();
     if (!this.orders.length) this.newOrder();

@@ -2,7 +2,8 @@
 import * as THREE from './vendor/three.js';
 import { B } from './config.js';
 import { dims } from './sim.js';
-import { makeMats, buildModel, makePerson, makeForklift, makeTruck, makeCrate, makePelican, wrap } from './models.js';
+import { makeMats, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
+const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
 import { Noise } from './noise.js';
 
 const TAU = Math.PI * 2;
@@ -46,7 +47,7 @@ export class View {
     if (this.m) for (const t of this.m.tex) t.dispose();
     this.m = makeMats(f);
     for (const g of this.bm.values()) this.world.remove(g); this.bm.clear();
-    for (const g of this.pm.values()) this.world.remove(g); this.pm.clear();
+    this.pm.clear(); if (this.crowd) for (const c of Object.values(this.crowd)) for (const im of c.ims) { this.world.remove(im); im.dispose(); } this.crowd = {};
     for (const g of this.vm.values()) this.world.remove(g); this.vm.clear();
     this.ghostKey = '';
     if (this.gate) this.world.remove(this.gate);
@@ -156,6 +157,44 @@ export class View {
         if (lines.length) { const dm = new THREE.InstancedMesh(dg, dash, lines.length); lines.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x + 0.5), 0.02, this.wx(z + 0.5)), new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, r ? Math.PI / 2 : 0)), one); dm.setMatrixAt(k, mx); }); this.roadG.add(dm); }
       }
     }
+    this.streetLamps();
+  }
+  // street lamps along the roadside every few tiles; their heads and the pools under them light up at night
+  streetLamps() {
+    const s = this.sim, N = this.N, spots = [];
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (!s.roads[z * N + x] || (x * 3 + z * 5) % 4) continue;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, nz = z + dz;
+        if (nx < 0 || nz < 0 || nx >= N || nz >= N || s.roads[nz * N + nx] || s.occ[nz * N + nx]) continue;
+        spots.push([x + 0.5 + dx * 0.45, z + 0.5 + dz * 0.45, x + 0.5, z + 0.5]); break;
+      }
+    }
+    if (!this.lampHead) {
+      this.lampHead = new THREE.MeshStandardMaterial({ color: '#2a2618', emissive: '#ffd890', emissiveIntensity: 0.1 });
+      const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+      this.lampPool = new THREE.MeshBasicMaterial({ color: '#ffcf7a', map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+    }
+    // a warm pool of light at every finished building's door, too
+    const doors = s.b.filter(b => b.done && !B[b.type].pad && b.w * b.d > 1).map(b => { const [x, z] = s.door(b); return [x + 0.5, z + 0.5]; });
+    if (doors.length) {
+      const dp = new THREE.InstancedMesh(new THREE.CircleGeometry(1.0, 16), this.lampPool, doors.length), dm = new THREE.Matrix4(), fq = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+      doors.forEach(([x, z], k) => { dm.compose(new THREE.Vector3(this.wx(x), 0.031, this.wx(z)), fq, new THREE.Vector3(1, 1, 1)); dp.setMatrixAt(k, dm); });
+      dp.renderOrder = 2; dp.frustumCulled = false; this.roadG.add(dp);
+    }
+    if (!spots.length) return;
+    const mx = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), q0 = new THREE.Quaternion(), flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.025, 0.035, 1.2, 6), this.m.steel, spots.length);
+    const head = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 0.05, 0.1), this.lampHead, spots.length);
+    const pool = new THREE.InstancedMesh(new THREE.CircleGeometry(1.3, 18), this.lampPool, spots.length);
+    spots.forEach(([x, z, rx, rz], k) => {
+      mx.compose(new THREE.Vector3(this.wx(x), 0.6, this.wx(z)), q0, one); pole.setMatrixAt(k, mx);
+      mx.compose(new THREE.Vector3(this.wx(x + (rx - x) * 0.4), 1.2, this.wx(z + (rz - z) * 0.4)), q0, one); head.setMatrixAt(k, mx);
+      mx.compose(new THREE.Vector3(this.wx(rx), 0.03, this.wx(rz)), flat, one); pool.setMatrixAt(k, mx);
+    });
+    pole.castShadow = true; pool.renderOrder = 2; pole.frustumCulled = head.frustumCulled = pool.frustumCulled = false;
+    this.roadG.add(pole, head, pool);
   }
   // tiles a road tool is about to lay (green) or clear (red)
   showRoadGhost(tiles, ok = true) {
@@ -187,6 +226,7 @@ export class View {
     this.hemi.intensity = 0.75 + 0.4 * d;
     this.hemi.color.setRGB(0.32 + 0.55 * d, 0.38 + 0.53 * d, 0.6 + 0.4 * d);
     this.scene.background.copy(this.skyNight).lerp(this.skyDay, d); this.scene.fog.color.copy(this.scene.background);
+    if (this.lampHead) { this.lampHead.emissiveIntensity = 0.1 + (1 - d) * 2.4; this.lampPool.opacity = (1 - d) * 0.75; }
     if (this.m) { this.m.window.emissiveIntensity = 0.25 + (1 - d) * 1.6; this.m.glowY.emissiveIntensity = 1.4 + (1 - d) * 1.2; this.m.colaFace.emissiveIntensity = 0.55 + (1 - d) * 0.8; }
   }
 
@@ -288,7 +328,7 @@ export class View {
       let g = this.bm.get(b.id);
       if (!g) {
         g = new THREE.Group(); g.userData.b = b.id;
-        const model = buildModel(b.type, this.m); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
+        const model = buildModel(b.type, this.m, true); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
         g.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2));
         g.traverse(o => { o.userData.bid = b.id; });
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;
@@ -325,6 +365,7 @@ export class View {
       }
       if (ud.beam) ud.beam.rotation.z = Math.sin(t * 2.2 + b.id) * 0.28 * Math.min(1, w * 1.5);
       if (ud.spin) ud.spin.rotation.y += dt * 0.6;
+      if (ud.blink) { const on = (t + b.id * 0.37) % 1.6 < 0.8; for (const l of ud.blink) l.visible = on; }
       if (ud.glow) ud.glow.material.emissiveIntensity = w > 0 ? 1 + Math.sin(t * 9) * 0.3 : 0.1;
       if (ud.smoke && b.running && Math.random() < dt * 5) for (const p of ud.smoke) {
         const v = new THREE.Vector3(...p).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rot * Math.PI / 2).add(g.position); this.puff(v);
@@ -333,13 +374,14 @@ export class View {
       if (ud.dirt) { if (ud.dirt.material === this.m.grime) ud.dirt.material = this.m.grime.clone(); ud.dirt.material.opacity = Math.max(0, 0.75 - (b.clean ?? 100) / 100 * 0.9); }
       if (ud.crates) { const cap = (B[b.type].store?.rations || 0) + (B[b.type].store?.ammo || 0), n = Math.round(Math.min(1, ((b.stock?.rations || 0) + (b.stock?.ammo || 0)) / Math.max(1, cap)) * 12); ud.crates.forEach((c, i) => c.visible = i < n); }
       if (B[b.type].pad) this.padCrates(g, b);
-      model.traverse(o => { const wv = o.userData.wave; if (!wv) return;
+      if (!ud.waves) { ud.waves = []; model.traverse(o => { if (o.userData.wave) ud.waves.push(o); }); }
+      for (const o of ud.waves) { const wv = o.userData.wave;
         const pos = o.geometry.attributes.position, a = pos.array, base = wv.base;
         for (let i = 0; i < a.length; i += 3) {
           const x = base[i], y = base[i + 1], k = wv.soft ? 0 : x / wv.w;
           a[i + 2] = wv.soft ? Math.sin(t * 1.8 + y * 2 + b.id) * 0.04 * (0.55 - y) : Math.sin(x * 5 - t * 6 + b.id) * 0.07 * k + Math.sin(t * 2.3 + b.id) * 0.03 * k;
         }
-        pos.needsUpdate = true; });
+        pos.needsUpdate = true; }
     }
     for (const [id, g] of this.bm) if (!s.byId(id)) { this.world.remove(g); this.bm.delete(id); if (this.selId === id) this.select(null); }
   }
@@ -365,7 +407,8 @@ export class View {
     const L = this.life, t = this.t;
     for (const [id, a] of L.actors) {
       let g = this.pm.get(id);
-      if (!g) { g = makePerson(this.m, a.kind); g.scale.setScalar(1.15); this.world.add(g); this.pm.set(id, g); }
+      // each person is a rig that is never drawn itself: its parts are copied into one instanced mesh per part
+      if (!g) { g = makePerson(this.m, a.kind); g.scale.setScalar(1.15); g.userData.list = []; g.traverse(o => { if (o.isMesh) g.userData.list.push(o); }); this.pm.set(id, g); }
       g.visible = !a.hidden;
       g.position.set(this.wx(a.x), 0, this.wx(a.z)); g.rotation.set(0, a.yaw, 0);
       const p = g.userData.parts, ph = t * 9 + a.seed;
@@ -387,14 +430,42 @@ export class View {
         default: p.armL.rotation.x = Math.sin(t * 1.5 + a.seed) * 0.05;
       }
     }
-    for (const [id, g] of this.pm) if (!L.actors.has(id)) { this.world.remove(g); this.pm.delete(id); }
+    for (const id of this.pm.keys()) if (!L.actors.has(id)) this.pm.delete(id);
+    this.drawCrowd();
+  }
+  // one instanced mesh per body part and kind of person: a few dozen draw calls for any number of people
+  drawCrowd() {
+    const counts = {};
+    for (const [id, g] of this.pm) {
+      if (!g.visible) continue;
+      const kind = this.life.actors.get(id)?.kind || 'troop';
+      let c = this.crowd[kind];
+      const n = counts[kind] || 0;
+      if (!c || n >= c.cap) c = this.growCrowd(kind, Math.max(64, (c?.cap || 32) * 2), g);
+      g.updateMatrixWorld(true);
+      const list = g.userData.list;
+      for (let i = 0; i < list.length && i < c.ims.length; i++) c.ims[i].setMatrixAt(n, list[i].matrixWorld);
+      counts[kind] = n + 1;
+    }
+    for (const [kind, c] of Object.entries(this.crowd)) for (const im of c.ims) { im.count = counts[kind] || 0; im.instanceMatrix.needsUpdate = true; }
+  }
+  growCrowd(kind, cap, rig) {
+    const old = this.crowd[kind];
+    if (old) for (const im of old.ims) { this.world.remove(im); im.dispose(); }
+    const ims = rig.userData.list.map(m => {
+      const im = new THREE.InstancedMesh(m.geometry, m.material, cap);
+      im.castShadow = m.castShadow; im.receiveShadow = false; im.frustumCulled = false; im.count = 0;
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.world.add(im); return im;
+    });
+    return (this.crowd[kind] = { cap, ims });
   }
 
   syncVehicles(dt) {
     const L = this.life, t = this.t;
     for (const v of this.sim.veh) {
       let g = this.vm.get(v.id);
-      if (!g) { g = v.kind === 'truck' ? makeTruck(this.m) : makeForklift(this.m); g.scale.setScalar(1.2); this.world.add(g); this.vm.set(v.id, g); }
+      if (!g) { g = (VMAKE[v.kind] || makeTruck)(this.m); g.scale.setScalar(v.kind === 'tank' ? 1.5 : 1.2); this.world.add(g); this.vm.set(v.id, g); }
+      g.visible = !v.away;
       g.position.set(this.wx(v.x), 0, this.wx(v.z)); g.rotation.y = v.yaw;
       if (g.userData.cargo) g.userData.cargo.visible = v.load > 0;
     }

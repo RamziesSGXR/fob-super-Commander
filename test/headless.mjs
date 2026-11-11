@@ -2,7 +2,7 @@
 //   node test/headless.mjs [weeks] [bot|idle] [seed]
 // "bot" builds and plays like a sensible commander; "idle" builds nothing and shows the soft decline.
 import { Sim } from '../js/sim.js';
-import { B, C, GKEYS } from '../js/config.js';
+import { B, C, GKEYS, TECH } from '../js/config.js';
 
 const weeks = +(process.argv[2] || 12), mode = process.argv[3] || 'bot', seed = +(process.argv[4] || 7);
 const s = new Sim({ seed });
@@ -26,18 +26,20 @@ function build(type, near) {
   const p = spot(type, near); if (!p) return false;
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'parade', 'truth', 'banner', 'hab', 'vend',
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'comms', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess'];
 let step = 0;
 function bot() {
   const want = plan[step];
   if (want) {
-    if (s.locked(want) && s.locked(want).some(t => !s.count(t))) step++;
+    const d = B[want], waitable = (d.needs || []).every(t => s.count(t)) && (!d.tech || s.hasTech(d.tech) || s.tech.cur === d.tech || s.techState(d.tech) === 'open');
+    if (s.locked(want) && !waitable) step++;
     else if (!s.locked(want) && build(want, want === 'barracks' || want === 'hab' ? [m - 10, m] : [m + 2, m + 2])) step++;
   } else if (s.power.ratio < 1) build('solar');
   else if (s.troops.length > s.beds - 3) build('hab', [m - 10, m]);
   if (s.power.ratio < 1 && s.supplies > 300) build('solar');
-  if (s.patrols.length < 3) for (const o of s.offers) if (s.chance(o) >= 0.65) { s.send(o.id); break; }
+  if (!s.tech.cur) for (const k of ['drill', 'radio', 'shelving', 'frv', 'cargo', 'trucks', 'solar', 'asphalt', 'tank']) if (s.supplies > TECH[k].cost + 300 && s.research(k)) break;
+  if (s.patrols.length < 3) for (const o of s.offers) { const kinds = ['frv', 'tank'].filter(k => s.armourFree(k)); if (s.chance({ ...o, veh: kinds }) >= 0.65) { s.send(o.id, kinds); break; } }
   for (const b of s.b) if (b.cond < 55 && s.supplies > 500) s.repair(b.id);
 }
 
@@ -45,12 +47,13 @@ const pad = (v, n = 6) => String(v).padStart(n);
 console.log(`seed ${seed}, ${mode}, ${weeks} weeks`);
 console.log('week rank  supply votes ready morale  def  pro  tru  total | rival | blds shipped trained  hunger short  rat/fuel/ammo  pw');
 let lastWeek = 1;
+let slow = 0, tStep = 0;
 for (let i = 0; i < weeks * C.WEEK * 10; i++) {
-  s.step(0.1);
+  const t0 = performance.now(); s.step(0.1); const ms = performance.now() - t0; tStep += ms; if (ms > slow) slow = ms;
   if (mode === 'bot' && i % 20 === 0) bot();
   s.drain();
   if (s.week !== lastWeek) {
-    lastWeek = s.week;
+    lastWeek = s.week; process.stdout.write(`[step avg ${(tStep / (C.WEEK * 10)).toFixed(2)}ms max ${slow.toFixed(1)}ms] `); tStep = 0; slow = 0;
     const best = s.rivals.reduce((a, r) => s.total(r.stand) > s.total(a.stand) ? r : a);
     console.log(`${pad(s.week - 1, 4)} ${pad(s.rank + 1, 4)} ${pad(Math.round(s.supplies), 7)} ${pad(s.troops.length, 5)} ${pad(s.troops.filter(t => t.train >= 100).length, 5)} ${pad(Math.round(s.morale), 6)}`
       + ` ${pad(Math.round(s.stand.def), 4)} ${pad(Math.round(s.stand.pro), 4)} ${pad(Math.round(s.stand.tru), 4)} ${pad(s.total(s.stand), 6)} | ${pad(s.total(best.stand), 5)} |`
@@ -58,7 +61,9 @@ for (let i = 0; i < weeks * C.WEEK * 10; i++) {
   }
 }
 const j = JSON.stringify(s.save());
+if (process.env.SAVEOUT) (await import('node:fs')).writeFileSync(process.env.SAVEOUT, j);
 const s2 = new Sim({ state: JSON.parse(j) });
 console.log(`save ${(j.length / 1024).toFixed(1)} KB, reload ok: ${s2.b.length === s.b.length && s2.troops.length === s.troops.length && s2.roads.join('') === s.roads.join('')}`);
+console.log('tech', s.tech.done.join(','), '| pads', s.count('pad'), '/', s.padCap());
 console.log('vehicles', s.veh.map(v => v.kind).join(','), '| morale parts', JSON.stringify(s.mor));
 console.log('last log:'); for (const l of s.log.slice(-8)) console.log('  [' + l.ch + '] ' + l.text);

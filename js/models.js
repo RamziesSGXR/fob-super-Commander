@@ -26,7 +26,7 @@ export function makeMats(f) {
     logoLit: std('#ffffff', { map: logo, emissiveMap: logo, emissive: '#ffffff', emissiveIntensity: 0.6, transparent: true, alphaTest: 0.05 }),
     skin: std('#c99a78'), uniform: std(lookOf(f).uniform), helmet: std(lookOf(f).helmet), armband: std(lookOf(f).armband), crestOn: lookOf(f).crest, boots: std('#22251f'),
     coat: std('#141414'), cap: std('#e9e9e9'), paper: std('#f2f2ea'),
-    pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
+    pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), olive: std('#4d5638', { metalness: 0.3, roughness: 0.7 }), oliveDark: std('#33392a', { metalness: 0.3, roughness: 0.7 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
   };
   m.seflag = seFlagMat(); m.hdbanner = hdBannerMat();
   m.signBurger = signMat('BIG LIBERTY BURGER', '#c0392b', '#ffe600'); m.signChicken = signMat('PATRIOT CLUCKS', '#1d3f8a', '#ffffff'); m.signCola = signMat('BUREAU COLA & FRIES', '#5a2a7a', '#ffd21f'); m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
@@ -352,6 +352,34 @@ const MAKE = {
     cyl(g, 0.02, 0.025, 1.5, m.steel, 0.6, 1.6, -0.6); for (const y of [1.9, 2.1, 2.3]) box(g, 0.3, 0.015, 0.015, m.steel, 0.6, y, -0.6); ball(g, 0.04, m.glowR, 0.6, 2.36, -0.6);
     sandbags(g, m, 0, 0.75, 1.4);
   },
+  comms(g, m) {   // a lattice mast with red warning lights, like the ones over every Super Earth city
+    slab(g, m, 2, 2);
+    box(g, 0.8, 0.5, 0.6, m.wall, -0.45, 0.28, 0.45); box(g, 0.84, 0.05, 0.64, m.prim, -0.45, 0.55, 0.45); box(g, 0.5, 0.1, 0.02, m.window, -0.45, 0.35, 0.76);
+    const H = 3.6;
+    for (const [x, z] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) box(g, 0.05, H, 0.05, m.steel, x * (1 - 0) + 0.3, H / 2, z - 0.2, { rx: 0, rz: 0 });
+    for (let y = 0.4; y < H; y += 0.45) { box(g, 0.55, 0.025, 0.025, m.steel, 0.3, y, -0.45); box(g, 0.55, 0.025, 0.025, m.steel, 0.3, y, 0.05); box(g, 0.025, 0.025, 0.55, m.steel, 0.05, y, -0.2); box(g, 0.025, 0.025, 0.55, m.steel, 0.55, y, -0.2); }
+    for (const y of [2.1, 2.9]) for (const s of [-1, 1]) box(g, 0.12, 0.3, 0.06, m.white, 0.3 + s * 0.34, y, -0.2);
+    cyl(g, 0.015, 0.02, 0.8, m.metal, 0.3, H + 0.4, -0.2);
+    const lights = [ball(g, 0.06, m.glowR, 0.3, H + 0.82, -0.2), ball(g, 0.05, m.glowR, 0.05, H * 0.6, -0.45), ball(g, 0.05, m.glowR, 0.55, H * 0.6, 0.05)];
+    g.userData.blink = lights;
+  },
+  lab(g, m) {
+    slab(g, m, 3, 2);
+    box(g, 2.6, 0.9, 1.5, m.white, 0, 0.5, -0.1); box(g, 2.66, 0.06, 1.56, m.prim, 0, 0.98, -0.1); box(g, 2.66, 0.1, 1.56, m.sec, 0, 0.4, -0.1);
+    for (let i = 0; i < 5; i++) box(g, 0.32, 0.22, 0.03, m.window, -1.0 + i * 0.5, 0.7, 0.66);
+    box(g, 0.45, 0.6, 0.04, m.glass, 0.9, 0.32, 0.66);
+    cyl(g, 0.3, 0.3, 0.5, m.metal, -0.7, 1.25, -0.3, { seg: 16 }); add(g, new THREE.SphereGeometry(0.3, 16, 8, 0, 6.3, 0, 1.57), m.white, -0.7, 1.5, -0.3);
+    box(g, 0.04, 0.25, 0.04, m.steel, 0.6, 1.12, -0.4); add(g, new THREE.SphereGeometry(0.22, 14, 6, 0, Math.PI * 2, 0, 1.0), m.white, 0.6, 1.3, -0.4, { rx: -0.8 });
+    box(g, 0.2, 0.08, 0.02, m.glowB, -1.1, 0.95, 0.67);
+  },
+  vbay(g, m) {
+    slab(g, m, 3, 3, m.asphalt);
+    box(g, 2.7, 1.1, 1.3, m.metal, 0, 0.6, -0.75); box(g, 2.76, 0.08, 1.36, m.prim, 0, 1.18, -0.75);
+    for (const x of [-0.65, 0.65]) { box(g, 1.05, 0.85, 0.03, m.dark, x, 0.47, -0.09); for (let i = 0; i < 8; i++) box(g, 1.05, 0.012, 0.035, m.steel, x, 0.1 + i * 0.1, -0.08); }
+    box(g, 2.7, 0.08, 0.04, m.hazard, 0, 0.95, -0.08);
+    for (let i = 0; i < 6; i++) box(g, 0.3, 0.012, 0.08, m.hazard, -1.2 + i * 0.48, 0.09, 1.3, { cast: false });
+    box(g, 0.4, 0.3, 0.3, m.e710, 1.15, 0.25, 0.6); cyl(g, 0.1, 0.1, 0.3, m.red, 1.15, 0.55, 0.2);
+  },
   lecture(g, m) {
     slab(g, m, 3, 2);
     box(g, 2.5, 0.85, 1.3, m.white, 0, 0.5, -0.15); prism(g, 2.7, 1.5, 0.4, m.prim, 0, 0.93, -0.15);
@@ -401,8 +429,35 @@ const MAKE = {
   },
 };
 
-export function buildModel(type, m) {
-  const g = new THREE.Group(); (MAKE[type] || MAKE.hab)(g, m); return g;
+export function buildModel(type, m, merge = false) {
+  const g = new THREE.Group(); (MAKE[type] || MAKE.hab)(g, m); if (merge) mergeStatic(g); return g;
+}
+// Fold every part that never moves into one mesh per material, so a building costs a handful of draw calls instead of
+// dozens. Anything an animation reaches through userData (dishes, crates, flags, lights) is left alone.
+export function mergeStatic(root) {
+  const keep = new Set(), mark = o => o && o.isObject3D && o.traverse(c => keep.add(c));
+  for (const v of Object.values(root.userData)) (Array.isArray(v) ? v : [v]).forEach(mark);
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), groups = new Map(), drop = [];
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || keep.has(o) || Array.isArray(o.material) || o.userData.wave || o.morphTargetInfluences) return;
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    if (!g.attributes.normal || !g.attributes.uv) return;
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    const key = o.material.uuid + (o.castShadow ? 's' : '');
+    if (!groups.has(key)) groups.set(key, { mat: o.material, cast: o.castShadow, list: [] });
+    groups.get(key).list.push(g); drop.push(o);
+  });
+  for (const o of drop) o.parent.remove(o);
+  for (const { mat, cast, list } of groups.values()) {
+    const n = list.reduce((a, g) => a + g.attributes.position.count, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+    let k = 0;
+    for (const g of list) { pos.set(g.attributes.position.array, k * 3); nor.set(g.attributes.normal.array, k * 3); uv.set(g.attributes.uv.array, k * 2); k += g.attributes.position.count; g.dispose(); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = cast; mesh.receiveShadow = true; root.add(mesh);
+  }
 }
 
 // ---------------------------------------------------------------- people and vehicles
@@ -452,6 +507,26 @@ export function makeTruck(m) {
   const cargo = new THREE.Group(); g.add(cargo); for (let i = 0; i < 4; i++) box(cargo, 0.15, 0.13, 0.2, m.crate, -0.08 + (i % 2) * 0.16, 0.28, -0.24 + Math.floor(i / 2) * 0.22);
   g.userData.cargo = cargo;
   for (const [x, z] of [[-0.18, 0.28], [0.18, 0.28], [-0.18, -0.1], [0.18, -0.1], [-0.18, -0.28], [0.18, -0.28]]) cyl(g, 0.07, 0.07, 0.06, m.rubber, x, 0.07, z, { rz: Math.PI / 2, seg: 10 });
+  return g;
+}
+export function makeFRV(m) {   // fast recon vehicle: open frame, roll cage, a mounted gun
+  const g = new THREE.Group();
+  box(g, 0.36, 0.1, 0.7, m.olive, 0, 0.16, 0); box(g, 0.34, 0.08, 0.2, m.oliveDark, 0, 0.24, 0.24);
+  for (const x of [-0.15, 0.15]) { box(g, 0.025, 0.24, 0.025, m.steel, x, 0.33, 0.05); box(g, 0.025, 0.2, 0.025, m.steel, x, 0.31, -0.25); box(g, 0.025, 0.025, 0.32, m.steel, x, 0.45, -0.1); }
+  box(g, 0.34, 0.02, 0.02, m.glass, 0, 0.36, 0.13);
+  cyl(g, 0.04, 0.04, 0.06, m.steel, 0, 0.5, -0.12); box(g, 0.025, 0.025, 0.28, m.dark, 0, 0.52, 0.0);
+  for (const [x, z] of [[-0.2, 0.23], [0.2, 0.23], [-0.2, -0.23], [0.2, -0.23]]) cyl(g, 0.09, 0.09, 0.07, m.rubber, x, 0.09, z, { rz: Math.PI / 2, seg: 12 });
+  box(g, 0.06, 0.03, 0.01, m.glowY, -0.12, 0.2, 0.355); box(g, 0.06, 0.03, 0.01, m.glowY, 0.12, 0.2, 0.355);
+  return g;
+}
+export function makeTank(m) {
+  const g = new THREE.Group();
+  for (const x of [-0.24, 0.24]) { box(g, 0.14, 0.16, 0.95, m.rubber, x, 0.09, 0); box(g, 0.15, 0.04, 0.9, m.oliveDark, x, 0.19, 0); }
+  box(g, 0.38, 0.16, 0.85, m.olive, 0, 0.22, 0); box(g, 0.4, 0.04, 0.3, m.oliveDark, 0, 0.3, 0.32, { rx: -0.3 });
+  const turret = new THREE.Group(); turret.position.set(0, 0.32, -0.05); g.add(turret);
+  box(turret, 0.32, 0.14, 0.38, m.olive, 0, 0.07, 0); cyl(turret, 0.03, 0.035, 0.6, m.oliveDark, 0, 0.08, 0.45, { rx: Math.PI / 2 });
+  cyl(turret, 0.05, 0.05, 0.05, m.steel, 0.08, 0.17, -0.06); box(turret, 0.08, 0.02, 0.01, m.hazard, -0.1, 0.1, 0.19);
+  g.userData.turret = turret;
   return g;
 }
 export function makeCrate(m) {
