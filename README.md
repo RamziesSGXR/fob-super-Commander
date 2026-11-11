@@ -4,7 +4,7 @@
 
 Build and run your faction's base for Super Earth. A browser game for the **Super Earth Special Forces** community, in the same look as [Orbital Fury](https://orbitalfury.com/) and [Super Orbital Simulator](https://ramziessgxr.github.io/super-orbital-simulator/).
 
-> **Prototype 0.2** (the version shows on the title screen and in the menu). One planet, your faction and three rivals, three Ministries, 32 buildings, patrols, requisitions, inspections, a crest maker or your own uploaded logo, and troopers in your colours. Your base saves on your device.
+> **Prototype 0.3** (the version shows on the title screen and in the menu). One planet, your faction and three rivals, three Ministries, 32 buildings, patrols, requisitions, inspections, a crest maker or your own uploaded logo, and troopers in your colours. Your base saves on your device.
 
 You command a loyal sub-faction of Super Earth: your name, your crest, your colours, your base. Every week the Federation hands out supplies, and the better your standing with its Ministries, the bigger your share. Three other loyal factions on the planet want the same supplies.
 
@@ -15,7 +15,11 @@ Turn on GitHub Pages for this repository (Settings → Pages → deploy from `ma
 ## How to play
 
 - **Found your faction.** Name it, name the base and pick a motto. The crest maker has 11 crest shapes, 17 symbols (including the Helldiver fist), 9 patterns, up to four letters and four colours. You also pick your troopers' uniform, helmet and armband colours, and whether they wear the crest on the shoulder. Your crest goes on every flag, banner, billboard, memorial and statue you build. Your primary colour paints the roofs and uniforms, and the accent colour trims banners and the parade ground. Or upload your own logo (up to 2 MB, shrunk to 128 px; it stays on your device and replaces the crest everywhere). You can change all of it later from **MENU**.
-- **The week.** A week is 2½ minutes. At the end of it, Super Earth ranks the four factions by total standing and splits the allocation: 1st gets 1.5×, 4th gets 0.6×. Recruits follow the same order. Then upkeep and rations are paid.
+- **Time.** A day lasts two minutes at normal speed and a week is seven days; the clock and date sit bottom left. `[` and `]` slow down and speed up (½× to 8×), `1` `2` `3` pick 1×, 2× and 4×, `Space` pauses.
+- **The daily routine.** At reveille (05:00 to 08:00) every vote on the base lines up on the plaza round the Super Earth flag and salutes. Then drill on the parade ground, mess at 11:30, duty until 20:00, free time, and lights out at 22:00, when everyone finds a bunk; votes without one sleep outdoors by the HQ. Pump, plant and generator crews work nights. Day turns to night and the windows light up.
+- **The flag plaza.** The open ground round the Super Earth flag holds two votes per tile. Too small and the overflow stands in the flowerbeds, morale drops and the inspector writes it down. Select the flag to see the plaza, and **MOVE FLAG** (100 supplies) to put the base centre somewhere with room.
+- **Sound.** Wind, a bugle for reveille and lights out, pelicans, building and a ping for every message. **SND** in the top bar turns it off.
+- **The week.** At the end of each week, Super Earth ranks the four factions by total standing and splits the allocation: 1st gets 1.5×, 4th gets 0.6×. Recruits follow the same order. Then upkeep and rations are paid.
 - **Three Ministries, three kinds of standing.** They all want different things, and they pull against each other.
 
   | Ministry | Wants | How you get it |
@@ -41,9 +45,10 @@ Turn on GitHub Pages for this repository (Settings → Pages → deploy from `ma
 | Move around | drag, or `W A S D` / arrows | drag |
 | Zoom | scroll | pinch |
 | Rotate | `Q` `E`, or right-drag | two-finger twist |
-| Build | pick at the bottom (`Tab` changes group, `1`-`9` picks), `R` turns it, click to place, `Shift`+click to keep placing | tap the building, then tap the ground |
+| Build | pick at the bottom (`Tab` changes group), `R` turns it, click to place, `Shift`+click to keep placing | tap the building, then tap the ground |
 | Select | click a building | tap it |
-| Other | `Space` pause, `M` Ministries, `H` hide the interface, `Del` demolish, `Esc` cancel | |
+| Time | `[` `]` slower and faster, `1` `2` `3` speed, `Space` pause | the arrows by the clock |
+| Other | `M` Ministries, `H` hide the interface, `Del` demolish, `Esc` cancel | |
 
 ## The buildings
 

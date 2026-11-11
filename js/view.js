@@ -18,7 +18,7 @@ export class View {
     this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
     this.yaw = Math.PI / 4; this.yawT = this.yaw; this.pitch = 0.68; this.zoom = 9; this.zoomT = 9;
     this.target = new THREE.Vector3(0, 0, 2); this.ray = new THREE.Raycaster(); this.t = 0;
-    const hemi = new THREE.HemisphereLight('#dfe9ff', '#6b5638', 1.1); this.scene.add(hemi);
+    const hemi = this.hemi = new THREE.HemisphereLight('#dfe9ff', '#6b5638', 1.1); this.scene.add(hemi);
     const sun = this.sun = new THREE.DirectionalLight('#fff1d6', 2.4);
     sun.position.set(-18, 30, 12); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 90 }); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
@@ -81,7 +81,7 @@ export class View {
     const outer = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ map: ot, roughness: 1 }));
     outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; outer.receiveShadow = true; this.world.add(outer);
     const sky = new THREE.Color(hue[0] / 255 * 0.55 + 0.25, hue[1] / 255 * 0.55 + 0.27, hue[2] / 255 * 0.55 + 0.32);
-    this.scene.background = sky; this.scene.fog = new THREE.Fog(sky, 150, 260);
+    this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 150, 260);
     // rocks and hills
     const rock = new THREE.MeshStandardMaterial({ color: new THREE.Color(hue[0] / 340, hue[1] / 340, hue[2] / 340), roughness: 1, flatShading: true });
     const rg = new THREE.DodecahedronGeometry(1, 0), rocks = new THREE.InstancedMesh(rg, rock, 160), mx = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -129,6 +129,8 @@ export class View {
     this.foot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: 0.25, depthWrite: false }));
     this.foot.rotation.x = -Math.PI / 2; this.foot.position.y = 0.04; this.foot.visible = false; this.world.add(this.foot);
     this.smokeMat = []; this.smokeGeo = new THREE.SphereGeometry(0.12, 8, 6);
+    this.plazaG = new THREE.Group(); this.plazaG.visible = false; this.world.add(this.plazaG);
+    this.plazaMat = new THREE.MeshBasicMaterial({ color: '#ffe600', transparent: true, opacity: 0.22, depthWrite: false });
   }
   buildGate(f) {
     const N = this.N, m = N / 2, g = new THREE.Group();
@@ -143,6 +145,30 @@ export class View {
     return g;
   }
 
+  // the open ground the troops gather on, shown while the flag is selected or being moved
+  showPlaza(tiles, ok = true) {
+    this.plazaG.clear(); this.plazaG.visible = !!tiles;
+    if (!tiles) return;
+    this.plazaMat.color.set(ok ? '#ffe600' : '#ff4a4a');
+    const geo = new THREE.PlaneGeometry(0.92, 0.92);
+    for (const [x, z] of tiles) { const p = new THREE.Mesh(geo, this.plazaMat); p.rotation.x = -Math.PI / 2; p.position.set(this.wx(x + 0.5), 0.035, this.wx(z + 0.5)); this.plazaG.add(p); }
+  }
+
+  // ---------------------------------------------------------------- day and night
+  setTime(h) {
+    const ramp = (a, b, v) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+    const d = ramp(4.5, 7, h) * (1 - ramp(18, 20.5, h)), warm = 1 - Math.min(1, Math.abs(h - 12.5) / 6.5);
+    this.dayLight = d;
+    const ang = (h - 12.5) / 12 * Math.PI;
+    this.sun.position.set(this.target.x - Math.sin(ang) * 26, 8 + 26 * Math.max(0.15, Math.cos(ang * 0.8)), this.target.z + 12);
+    this.sun.intensity = 0.45 + 1.95 * d;   // at night this is moonlight: weaker and blue
+    this.sun.color.setRGB(0.55 + 0.45 * d, 0.62 + 0.33 * warm * d + 0.08 * (1 - d), 0.85 * (1 - d) + (0.42 + 0.42 * warm) * d);
+    this.hemi.intensity = 0.75 + 0.4 * d;
+    this.hemi.color.setRGB(0.32 + 0.55 * d, 0.38 + 0.53 * d, 0.6 + 0.4 * d);
+    this.scene.background.copy(this.skyNight).lerp(this.skyDay, d); this.scene.fog.color.copy(this.scene.background);
+    if (this.m) { this.m.window.emissiveIntensity = 0.25 + (1 - d) * 1.6; this.m.glowY.emissiveIntensity = 1.4 + (1 - d) * 1.2; this.m.colaFace.emissiveIntensity = 0.55 + (1 - d) * 0.8; }
+  }
+
   // ---------------------------------------------------------------- the camera
   camUpdate(dt) {
     this.yaw += (this.yawT - this.yaw) * Math.min(1, dt * 8);
@@ -154,7 +180,7 @@ export class View {
     const d = 160, cp = Math.cos(this.pitch);
     c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
     c.lookAt(this.target);
-    this.sun.target.position.copy(this.target); this.sun.position.set(this.target.x - 18, 30, this.target.z + 12);
+    this.sun.target.position.copy(this.target);
   }
   rotate(steps) { this.yawT += steps * Math.PI / 4; }
   spin(dx) { this.yawT += dx; this.yaw = this.yawT; }
@@ -298,7 +324,7 @@ export class View {
       let g = this.pm.get(id);
       if (!g) { g = makePerson(this.m, a.kind); g.scale.setScalar(1.15); this.world.add(g); this.pm.set(id, g); }
       g.visible = !a.hidden;
-      g.position.set(this.wx(a.x), 0, this.wx(a.z)); g.rotation.y = a.yaw;
+      g.position.set(this.wx(a.x), 0, this.wx(a.z)); g.rotation.set(0, a.yaw, 0);
       const p = g.userData.parts, ph = t * 9 + a.seed;
       p.legL.rotation.set(0, 0, 0); p.legR.rotation.set(0, 0, 0); p.armL.rotation.set(0, 0, 0); p.armR.rotation.set(0, 0, 0); p.head.rotation.set(0, 0, 0);
       const eL = p.armL.userData.elbow, eR = p.armR.userData.elbow; eL.rotation.set(0, 0, 0); eR.rotation.set(0, 0, 0);
@@ -312,6 +338,7 @@ export class View {
         case 'mourn': p.head.rotation.x = 0.5; p.armL.rotation.x = -0.3; p.armR.rotation.x = -0.3; eL.rotation.x = eR.rotation.x = -1.2; break;
         case 'inspect': p.armR.rotation.x = -0.4; eR.rotation.x = -1.2; p.head.rotation.x = 0.3; p.head.rotation.y = Math.sin(t * 1.5 + a.seed) * 0.4; break;
         case 'look': p.head.rotation.x = -0.25; break;
+        case 'lie': g.rotation.set(-Math.PI / 2, a.yaw, 0, 'YXZ'); g.position.y = 0.06; break;
         default: p.armL.rotation.x = Math.sin(t * 1.5 + a.seed) * 0.05;
       }
     }

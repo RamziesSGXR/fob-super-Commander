@@ -1,10 +1,14 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.2';
+export const VERSION = '0.3';
 
 export const C = {
   N: 40,                    // the base is N x N tiles; the outer ring is the perimeter wall
-  WEEK: 150,                // seconds of game time in one allocation week
+  DAY: 120,                 // seconds of game time in one day at normal speed
+  WEEK: 840,                // a week is seven days; the allocation comes every week
+  T: 840 / 150,             // the economy was tuned on a 150 s week; every rate is stretched by this much
+  BUILD: 4, PATROL: 4,      // construction (about half a day) and patrols (two to four days) take this many times longer than on the old short week
+  SPEEDS: [0.5, 1, 2, 4, 8], // game speeds, stepped with [ and ]; keys 1, 2 and 3 pick 1x, 2x and 4x
   INSPECT_AT: 0.55,         // the Ministry of Truth inspects this far into each week
   START: { supplies: 1500, troops: 6, morale: 55 },
   // Super Earth splits its allocation by rank: 1st, 2nd, 3rd, 4th.
@@ -13,6 +17,7 @@ export const C = {
   STORE: { base: 80, depot: 200, shed: 100 },                // how much E-710 and how many shells fit
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
   REFUND: 0.5,
+  FLAGMOVE: 100,           // supplies to move the Super Earth flag
   OVERFLOW: 4,              // recruits beyond the beds Super Earth will still send
 };
 

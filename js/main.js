@@ -5,6 +5,7 @@ import { Life } from './life.js';
 import { View } from './view.js';
 import { drawLogo, drawTrooper, lookOf, ensureLogo, readUpload, SHAPES, SYMBOLS, PATTERNS, UNIFORMS, PALETTE } from './logo.js';
 import { demoSim } from './demo.js';
+import * as audio from './audio.js';
 
 const $ = id => document.getElementById(id);
 const SAVE = 'fob-super-commander.save.v1';
@@ -13,7 +14,9 @@ const fmt = n => Math.round(n).toLocaleString('en-US');
 const CH = { def: ['DEFENCE', 'var(--def)'], pro: ['EXPANSION', 'var(--pro)'], tru: ['TRUTH', 'var(--tru)'], base: ['BASE', '#ffffff'], bur: ['BUREAU', '#d8a6ff'], riv: ['BULLETIN', 'var(--amber)'], log: ['LOGISTICS', 'var(--g)'] };
 
 const view = new View($('view'));
-let sim = null, life = null, playing = false, paused = false, speed = 1, tool = null, rot = 0, hover = null, group = 'expansion', minTab = 'def';
+let sim = null, life = null, playing = false, paused = false, speed = 1, tool = null, rot = 0, hover = null, group = 'expansion', minTab = 'def', speedI = 1;
+const gameSpeed = () => C.SPEEDS[speedI];
+const days = s => { const d = s / C.DAY; return d >= 1.5 ? `${Math.round(d)} days` : d >= 0.9 ? '1 day' : `${Math.max(1, Math.round(d * 24))} hours`; };
 let acc = 0, hudT = 0, saveT = 0, last = performance.now();
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = 'v' + VERSION;
 const params = new URLSearchParams(location.search);
@@ -127,7 +130,7 @@ function buildBar() {
   const items = groupItems(group);
   $('b-items').innerHTML = items.map(([k, d], i) => {
     const lk = sim.locked(k), poor = sim.supplies < d.cost;
-    return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="k">${i < 10 ? (i + 1) % 10 : ''}</span><b>${d.name}</b><span class="cost">${d.cost} SUP</span></button>`;
+    return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost} SUP</span></button>`;
   }).join('');
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (b) { group = b.dataset.g; buildBar(); } };
@@ -152,7 +155,7 @@ function flash(text) { tip(`<span class="warn">${esc(text)}</span>`, innerWidth 
 
 // ---------------------------------------------------------------- selection
 let selId = null;
-function select(id) { selId = id; view.select(id ? sim.byId(id) : null); selPanel(); }
+function select(id) { selId = id; const b = id ? sim.byId(id) : null; view.select(b); view.showPlaza(b && b.type === 'seflag' ? sim.plaza().tiles : null); selPanel(); }
 function selPanel() {
   const b = selId && sim.byId(selId), p = $('selp');
   if (!b) { p.classList.add('hidden'); p._html = ''; return; }
@@ -165,19 +168,21 @@ function selPanel() {
     if (d.pw) bits.push(`<div class="kv"><span>POWER</span><b>${d.pw > 0 ? '+' : ''}${b.type === 'gen' ? Math.round(d.pw * sim.crewFrac(b) * (sim.e710 > 0 ? 1 : 0)) : d.pw}</b></div>`);
     if (d.beds) bits.push(`<div class="kv"><span>VOTES HOUSED</span><b>${d.beds}</b></div>`);
     if (d.potty) bits.push(`<div class="kv"><span>CLEANLINESS</span><b class="${(b.clean ?? 100) < 25 ? 'down' : ''}">${Math.round(b.clean ?? 100)}%</b></div><div class="meter"><i style="width:${b.clean ?? 100}%;background:${(b.clean ?? 100) < 25 ? 'var(--red)' : 'var(--blue)'}"></i></div><div class="kv"><span>VOTES PER POTTY</span><b>${Math.round(sim.potties.perPotty)}</b></div>`);
+    if (b.type === 'seflag') { const pz = sim.plaza(); bits.push(`<div class="kv"><span>PLAZA HOLDS</span><b class="${pz.need > pz.cap ? 'down' : ''}">${pz.cap} votes</b></div><div class="kv"><span>VOTES TO SALUTE</span><b>${pz.need}</b></div>`); }
     if (b.type === 'memorial') bits.push(`<div class="kv"><span>NAMES ON THE WALL</span><b>${sim.fallen.length}</b></div>`);
     if (b.off) bits.push(`<p class="warn">Switched off.</p>`);
   }
   const crew = sim.troops.filter(t => t.job === b.id).map(t => `${rankOf(t.missions)} ${esc(t.name)}`).join(', ');
   const html = `<div class="ph"><span>${d.name.toUpperCase()}</span><button class="x" id="sp-x" type="button">×</button></div><div class="sp-body">${bits.join('')}<p>${d.desc}</p>${crew ? `<p>On duty: ${crew}</p>` : ''}</div>
-    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
+    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
   p.classList.remove('hidden');
   if (p._html === html) return;
   p.innerHTML = p._html = html;
   $('sp-x').onclick = () => select(null);
   if ($('sp-rep')) $('sp-rep').onclick = () => { if (!sim.repair(b.id)) flash('Not enough supplies.'); selPanel(); };
   if ($('sp-off')) $('sp-off').onclick = () => { sim.toggle(b.id); selPanel(); };
-  if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); };
+  if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.play('demolish'); };
+  if ($('sp-move')) $('sp-move').onclick = () => { tool = 'moveflag'; view.showPlaza(sim.plazaAt(b.x, b.z, b.id)); flash('Pick a new spot for the flag. It needs open ground round it for the plaza.'); };
 }
 
 // ---------------------------------------------------------------- the HUD
@@ -212,7 +217,11 @@ function hud() {
   $('r-mrl').parentElement.classList.toggle('bad', s.morale < 40);
   $('r-e7').textContent = `${Math.floor(s.e710)}/${s.cap}`; $('r-shl').textContent = `${Math.floor(s.shells)}`;
   $('w-title').textContent = `WEEK ${s.week}`; $('w-fill').style.width = (s.wt / C.WEEK * 100) + '%'; $('w-insp').style.left = (C.INSPECT_AT * 100) + '%';
-  $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ${Math.ceil(C.WEEK - s.wt)}S TO ALLOCATION`;
+  const left = Math.ceil((C.WEEK - s.wt) / C.DAY);
+  $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${left} DAY${left === 1 ? '' : 'S'}`;
+  const hh = Math.floor(s.time.hour), mm = Math.floor((s.time.hour - hh) * 60 / 10) * 10;
+  $('ck-day').textContent = `DAY ${s.time.day}`; $('ck-time').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  $('ck-phase').textContent = { night: 'LIGHTS OUT', reveille: 'REVEILLE', drill: 'DRILL', mess: 'MESS', work: 'DUTY', evening: 'FREE TIME' }[s.time.phase];
   // standings
   const rows = s.table();
   $('stand').innerHTML = rows.map((r, i) => `<div class="srow ${r.me ? 'me' : ''}"><span class="pos">${i + 1}</span><canvas data-logo="${i}"></canvas><span class="nm">${esc(r.name)}</span><span class="tot">${s.total(r.stand)}</span>
@@ -246,7 +255,7 @@ function renderMins() {
     if (!s.offers.length) h += `<p>No more missions this week. New orders arrive with the allocation.</p>`;
     for (const o of s.offers) {
       const ch = s.chance(o), ok = home.length >= o.size;
-      h += `<div class="card2"><div class="l"><b>${esc(o.op)}</b><span>${o.kind} · difficulty ${'◆'.repeat(o.diff)}${'◇'.repeat(5 - o.diff)} · ${o.size} troopers · ${o.dur}s · reward +${o.def} DEF, +${o.sup} SUP</span></div>
+      h += `<div class="card2"><div class="l"><b>${esc(o.op)}</b><span>${o.kind} · difficulty ${'◆'.repeat(o.diff)}${'◇'.repeat(5 - o.diff)} · ${o.size} troopers · ${days(o.dur * C.PATROL)} · reward +${o.def} DEF, +${o.sup} SUP</span></div>
         <div style="text-align:right"><b class="${ch >= 0.65 ? 'up' : ch < 0.45 ? 'down' : 'warn'}">${ok ? Math.round(ch * 100) + '%' : '—'}</b><br><button class="btn" data-send="${o.id}" ${ok ? '' : 'disabled'} type="button">SEND</button></div></div>`;
     }
     h += `<p class="fine left">Odds rise with veterans, drill on the parade ground, morale and a staffed armory. Squads are taken from idle troops first, then from jobs, so a patrol can leave a pump unmanned.</p>`;
@@ -268,7 +277,7 @@ function renderMins() {
     h += `<p class="fine left">A missed requisition costs 8 Expansion standing.</p>`;
   } else if (minTab === 'tru') {
     const ins = s.inspection, at = C.WEEK * C.INSPECT_AT - s.wt;
-    h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${Math.ceil(at)}s.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
+    h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${days(at)}.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
     h += `<h3>RIGHT NOW</h3><div class="kv"><span>MORALE</span><b>${Math.round(s.morale)}</b></div><div class="kv"><span>PROPAGANDA</span><b>${s.prop}</b></div><div class="kv"><span>CONDITION</span><b>${Math.round(s.avgCond)}</b></div><div class="kv"><span>LIKELY SCORE</span><b>${Math.round(0.35 * s.morale + 0.45 * s.prop + 0.2 * s.avgCond)}</b></div>`;
     h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', noise: 'noise near housing', crowd: 'votes without housing', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
     if (ins) h += `<h3>LAST REPORT, WEEK ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
@@ -295,9 +304,13 @@ $('b-week').onclick = () => toggleMins('st'); $('stand').onclick = () => toggleM
 $('or-x').onclick = () => $('orders').classList.toggle('min');
 
 // ---------------------------------------------------------------- top bar and menu
-function setPause(p) { paused = p; $('b-pause').textContent = p ? '▶' : 'II'; $('b-pause').classList.toggle('on', p); $('paused').classList.toggle('hidden', !p); }
-$('b-pause').onclick = () => setPause(!paused);
-$('b-speed').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $('b-speed').textContent = speed + '×'; };
+function setPause(p) { paused = p; $('ck-pause').textContent = p ? '▶' : 'II'; $('ck-pause').classList.toggle('on', p); $('paused').classList.toggle('hidden', !p); }
+function setSpeed(i) { speedI = Math.max(0, Math.min(C.SPEEDS.length - 1, i)); $('ck-speed').textContent = gameSpeed() + '×'; if (paused) setPause(false); audio.play('click'); }
+$('ck-pause').onclick = () => setPause(!paused);
+$('ck-slow').onclick = () => setSpeed(speedI - 1); $('ck-fast').onclick = () => setSpeed(speedI + 1);
+function sndLabel() { $('b-snd').classList.toggle('on', !audio.isMuted()); $('b-snd').style.textDecoration = audio.isMuted() ? 'line-through' : ''; }
+$('b-snd').onclick = () => { audio.setMuted(!audio.isMuted()); sndLabel(); }; sndLabel();
+addEventListener('pointerdown', () => audio.unlock(), { capture: true }); addEventListener('keydown', () => audio.unlock(), { capture: true });
 $('b-rl').onclick = () => view.rotate(-1); $('b-rr').onclick = () => view.rotate(1);
 $('b-hide').onclick = () => $('hud').classList.toggle('bare');
 $('b-menu').onclick = () => { $('menu').classList.toggle('hidden'); $('me-msg').textContent = ''; $('me-code').classList.add('hidden'); };
@@ -321,7 +334,7 @@ let drag = null, pinch = null;
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
-  const [w, d] = dims(tool, rot); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2) };
+  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2) };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -344,7 +357,8 @@ cv.addEventListener('pointermove', e => {
       if (drag.moved) { if (drag.btn === 2 || drag.btn === 1) view.spin(-dx * 0.008); else view.pan(dx, dy); }
     }
   }
-  if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
     const p = view.pick(e.clientX, e.clientY);
     if (p.bid) { const b = sim.byId(p.bid); tip(`<b>${B[b.type].name}</b>${b.done ? '' : ` · ${Math.round(b.prog * 100)}% built`}`, e.clientX, e.clientY); cv.style.cursor = 'pointer'; }
@@ -358,11 +372,16 @@ function up(e) {
   if (!drag) return;
   const d = drag; drag = null;
   if (d.moved) return;
-  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); buildBar(); } else select(null); return; }
+  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); buildBar(); } else select(null); return; }
+  if (tool === 'moveflag') {
+    const t = tileAt(e), r = sim.moveFlag(t.tx, t.tz);
+    if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+    tool = null; view.setGhost(null); view.showPlaza(null); audio.play('place'); return;
+  }
   if (tool) {
     const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, rot);
-    if (!ok.ok) { flash(ok.why); return; }
-    sim.place(tool, t.tx, t.tz, rot); buildBar();
+    if (!ok.ok) { flash(ok.why); audio.play('deny'); return; }
+    sim.place(tool, t.tx, t.tz, rot); buildBar(); audio.play('place');
     if (!e.shiftKey && !['banner', 'hdbanner', 'flag', 'solar', 'vend', 'speaker', 'potty'].includes(tool)) { tool = null; view.setGhost(null); buildBar(); }
     else view.setGhost(tool, t.tx, t.tz, rot, sim.canPlace(tool, t.tx, t.tz, rot).ok);
     return;
@@ -382,12 +401,14 @@ addEventListener('keydown', e => {
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
   else if (k === ' ') { e.preventDefault(); setPause(!paused); }
-  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
+  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
   else if (k === 'm') toggleMins();
   else if (k === 'h') $('hud').classList.toggle('bare');
   else if (k === 'tab') { e.preventDefault(); const i = GROUPS.findIndex(g => g[0] === group); group = GROUPS[(i + (e.shiftKey ? GROUPS.length - 1 : 1)) % GROUPS.length][0]; buildBar(); }
   else if (k === 'delete' || k === 'backspace') { if (selId && !B[sim.byId(selId)?.type]?.fixed) { sim.demolish(selId); select(null); } }
-  else if (/^[0-9]$/.test(k)) { const items = groupItems(group), i = k === '0' ? 9 : +k - 1; if (items[i]) pickTool(items[i][0]); }
+  else if (k === '[') setSpeed(speedI - 1);
+  else if (k === ']') setSpeed(speedI + 1);
+  else if (k === '1' || k === '2' || k === '3') setSpeed(C.SPEEDS.indexOf([1, 2, 4][+k - 1]));
 });
 addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
 addEventListener('blur', () => held.clear());
@@ -400,10 +421,19 @@ function loop(now) {
     const fz = (held.has('w') || held.has('arrowup') ? 1 : 0) - (held.has('s') || held.has('arrowdown') ? 1 : 0);
     if (fx || fz) view.move(fx, fz, dt);
     if (!paused) {
-      acc += dt * speed;
+      acc += dt * gameSpeed();
       while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; }
-      for (const ev of sim.drain()) { life.event(ev); if (ev.t === 'built' || ev.t === 'week') buildBar(); }
-      life.update(dt * speed);
+      const fl = life.flights.length;
+      for (const ev of sim.drain()) {
+        life.event(ev); if (ev.t === 'built' || ev.t === 'week') buildBar();
+        if (ev.t === 'built') audio.play('built');
+        if (ev.t === 'say') audio.play('ping', ev.ch);
+        if (ev.t === 'patrolBack' && ev.hero) audio.play('medal');
+        if (ev.t === 'phase') { if (ev.phase === 'reveille') audio.play('reveille'); if (ev.phase === 'night') audio.play('taps'); }
+        if (ev.t === 'moved') select(selId);
+      }
+      if (life.flights.length > fl || (life.flights[0] && !life.flights[0].heard)) { if (life.flights[0]) life.flights[0].heard = true; audio.play('pelican'); }
+      life.update(dt * gameSpeed());
     }
     hudT -= dt; if (hudT <= 0) { hudT = 0.25; hud(); renderComms(); }
     saveT += dt; if (saveT > 20) { saveT = 0; store(); }
@@ -412,6 +442,7 @@ function loop(now) {
     view.spin(dt * 0.06);
     if (sim) { sim.step(dt); for (const ev of sim.drain()) life.event(ev); life.update(dt); }
   }
+  if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
   view.frame(dt);
   requestAnimationFrame(loop);
 }

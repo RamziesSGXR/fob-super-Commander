@@ -4,6 +4,9 @@
 import { B } from './config.js';
 
 const WALK = 1.5, DRIVE = 2.4;
+const SHIFT = new Set(['pump', 'plant', 'gen']);   // these run round the clock, so their crews skip the routine
+const HOUSING = ['hq', 'hab', 'barracks'];
+const EAT = ['mess', 'burger', 'chicken', 'cola'];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
@@ -244,9 +247,14 @@ export class Life {
       const t = s.troop(id);
       if (a.leaving || a.returning) { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (t.state === 'patrol') continue;
-      // the job comes first, then a ceremony, then whatever they fancy
+      // the daily routine: a ceremony beats everything, then reveille, lights out and meals, then the job, then drill
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
-      const want = jobB ? 'job' + t.job : this.ceremony ? 'cer' : 'free';
+      const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
+      const want = this.ceremony ? 'cer' : ph === 'reveille' && flag ? 'cer'
+        : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
+        : ph === 'mess' ? (shift ? 'job' + t.job : 'mess')
+        : jobB ? 'job' + t.job
+        : ph === 'drill' && s.has('parade') ? 'drill' : 'free';
       if (a.task !== want) {
         a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.onDone = null;
         if (want.startsWith('job')) {
@@ -254,10 +262,14 @@ export class Life {
           const [x, z] = this.front(b, 0.5, (slot - 1) * 0.5);
           this.go(a, x, z, () => { a.act = 'work'; a.face = this.centre(b); });
         } else if (want === 'cer') {
-          const c = this.ceremony, f = s.byId(c.flag) || s.b.find(o => o.type === 'hq'), hero = id === c.hero;
-          const i = c.slots.size; c.slots.set(id, i);
-          const [x, z] = hero ? this.front(f, 1.1, 0) : this.front(f, 2.2 + Math.floor(i / 6) * 0.7, (i % 6 - 2.5) * 0.6);
-          this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); a.wait = 999; });
+          const c = this.ceremony, f = (c && s.byId(c.flag)) || flag || s.b.find(o => o.type === 'hq'), hero = c && id === c.hero;
+          const [x, z] = hero ? this.front(f, 1.1, 0) : this.slot(f, c ? 'medal' + c.hero : 'rev' + s.time.day, id);
+          this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); });
+        } else if (want === 'sleep') this.toBed(a);
+        else if (want === 'mess') this.toMess(a);
+        else if (want === 'drill') {
+          const p = pick(s.b.filter(b => b.type === 'parade' && b.done)), i = Math.floor(rnd(0, 12));
+          this.go(a, p.x + 0.6 + (i % 4) * (p.w - 1.2) / 3, p.z + 0.6 + Math.floor(i / 4) * (p.d - 1.2) / 2, () => { a.act = 'drill'; a.face = null; a.yaw = Math.PI * 0.5 * p.rot; });
         } else { a.act = 'idle'; a.wait = rnd(0.5, 2); }
       }
       if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
@@ -268,6 +280,35 @@ export class Life {
       if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z);
     }
   }
+  // a place in the formation on the flag plaza: rows of two per open tile, nearest the flag first;
+  // when the plaza is full, the rest stand round the edge, which the inspector notices
+  slot(f, key, id) {
+    if (!this.form || this.form.key !== key) {
+      const pz = this.sim.plaza(), [fx, fz] = this.front(f, 0.6, 0);
+      const tiles = pz ? pz.tiles.slice().sort((a, b) => Math.hypot(a[0] + 0.5 - fx, a[1] + 0.5 - fz) - Math.hypot(b[0] + 0.5 - fx, b[1] + 0.5 - fz)) : [];
+      this.form = { key, tiles, taken: new Map() };
+    }
+    const F = this.form; if (!F.taken.has(id)) F.taken.set(id, F.taken.size);
+    const i = F.taken.get(id), tile = F.tiles[Math.floor(i / 2)];
+    if (tile) return [tile[0] + (i % 2 ? 0.72 : 0.28), tile[1] + 0.5];
+    const [cx, cz] = this.centre(f), ang = i * 2.4, r = 6 + (i % 3) * 0.6;
+    const [x, z] = this.near(cx + Math.cos(ang) * r, cz + Math.sin(ang) * r); return [x + 0.5, z + 0.5];
+  }
+  toBed(a) {   // each night everyone finds a bunk; with none left they sleep outdoors by the HQ
+    const s = this.sim, homes = s.b.filter(b => b.done && HOUSING.includes(b.type));
+    if (!this.beds || this.beds.day !== s.time.day) this.beds = { day: s.time.day, used: new Map() };
+    const U = this.beds.used, home = homes.find(b => (U.get(b.id) || 0) < B[b.type].beds);
+    if (home) { U.set(home.id, (U.get(home.id) || 0) + 1); const [x, z] = this.doorOf(home); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); return; }
+    const hq = s.b.find(b => b.type === 'hq') || s.b[0], [cx, cz] = this.centre(hq), ang = rnd(0, 6.28), [x, z] = this.near(cx + Math.cos(ang) * 4, cz + Math.sin(ang) * 4);
+    this.go(a, x + rnd(0.2, 0.8), z + rnd(0.2, 0.8), () => { a.act = 'lie'; a.yaw = rnd(0, 6.28); });
+  }
+  toMess(a) {   // lunch: the mess first, then a franchise, then the vending machine, then nothing
+    const s = this.sim, places = s.b.filter(b => b.done && EAT.includes(b.type)), vend = s.b.filter(b => b.done && b.type === 'vend');
+    if (places.length) { const p = pick(places), [x, z] = this.doorOf(p); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
+    else if (vend.length) { const v = pick(vend), [x, z] = this.front(v, rnd(0.6, 1.6), rnd(-0.6, 0.6)); this.go(a, x, z, () => { a.act = 'drink'; a.face = this.centre(v); }); }
+    else { a.act = 'idle'; }
+  }
+
   inspector(a, dt) {
     if (a.act === 'walk') { if (this.move(a, dt * WALK * 0.8) && a.then) { const f = a.then; a.then = null; f(); } return; }
     a.wait -= dt;

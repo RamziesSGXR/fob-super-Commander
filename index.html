@@ -84,6 +84,7 @@
         <li><b class="c-tru">TRUTH</b> inspects your base once a week. It wants high morale, lots of propaganda and buildings in good repair.</li>
       </ul>
       <p>They pull against each other. Troops on patrol aren't working the pumps. The munitions plant is loud and keeps people awake. A statue costs what a barracks costs. Fall behind and your allocation shrinks, upkeep goes unpaid and the base wears down, but nothing ends: you can always climb back.</p>
+      <p><b>Time.</b> A day lasts two minutes at normal speed and a week is seven days. The clock is bottom left: <kbd>[</kbd> and <kbd>]</kbd> slow down and speed up, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick normal, fast and very fast, <kbd>Space</kbd> pauses. Troops keep a routine: everyone salutes the Super Earth flag at reveille (05:00), drills in the morning, eats at 11:30, works, and turns in at 22:00.</p>
       <p><b>Controls.</b> Drag to move around, scroll or pinch to zoom, <kbd>Q</kbd> <kbd>E</kbd> or right-drag (two-finger twist) to rotate. Pick a building at the bottom, <kbd>R</kbd> turns it, click to build. Click a building to select it. <kbd>Space</kbd> pauses, <kbd>M</kbd> opens the Ministries, <kbd>H</kbd> hides the interface for screenshots.</p>
       <div class="btns"><button id="ht-x" class="btn primary" type="button">UNDERSTOOD</button></div>
     </div>
@@ -105,8 +106,7 @@
       <div class="menu">
         <button id="b-rl" class="btn icon" type="button" title="Rotate left (Q)">⟲</button>
         <button id="b-rr" class="btn icon" type="button" title="Rotate right (E)">⟳</button>
-        <button id="b-pause" class="btn icon" type="button" title="Pause (Space)">II</button>
-        <button id="b-speed" class="btn icon" type="button" title="Game speed">1×</button>
+        <button id="b-snd" class="btn icon" type="button" title="Sound on or off">SND</button>
         <button id="b-min" class="btn" type="button" title="The Ministries (M)">MINISTRIES</button>
         <button id="b-hide" class="btn icon" type="button" title="Hide the interface (H)">H</button>
         <button id="b-menu" class="btn" type="button" title="Menu">MENU</button>
@@ -116,6 +116,15 @@
     <aside id="stand" class="panel" title="Standings: click for details"></aside>
     <aside id="orders" class="panel"><div class="ph"><span>FIRST ORDERS</span><button class="x" id="or-x" type="button" title="Hide">–</button></div><ol id="or-list"></ol></aside>
 
+    <div id="clock" class="panel">
+      <div class="ck-top"><b id="ck-day">DAY 1</b><span id="ck-time">06:00</span><span id="ck-phase"></span></div>
+      <div class="ck-ctl">
+        <button id="ck-slow" class="btn icon" type="button" title="Slower ( [ )">◀</button>
+        <button id="ck-pause" class="btn icon" type="button" title="Pause (Space)">II</button>
+        <button id="ck-fast" class="btn icon" type="button" title="Faster ( ] )">▶</button>
+        <b id="ck-speed">1×</b>
+      </div>
+    </div>
     <div id="selp" class="panel hidden"></div>
     <div id="comms" class="panel"><div class="ph"><span>COMMS</span></div><div id="c-list"></div></div>
 

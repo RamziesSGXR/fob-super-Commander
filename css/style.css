@@ -164,7 +164,15 @@ label.chk input { width: 18px; height: 18px; accent-color: var(--yellow); }
 .bi.lock { opacity: 0.45; }
 .bi.poor .cost { color: var(--red); }
 
-#selp { position: absolute; left: max(8px, env(safe-area-inset-left)); bottom: 128px; width: min(330px, 46vw); padding: 0 0 8px; }
+#clock { position: absolute; left: max(8px, env(safe-area-inset-left)); bottom: 128px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 210px; }
+.ck-top { display: flex; align-items: baseline; gap: 8px; }
+.ck-top b { color: var(--yellow); letter-spacing: 0.18em; font-size: 12px; }
+#ck-time { color: #fff; font-size: 15px; font-weight: 700; }
+#ck-phase { font-size: 10px; letter-spacing: 0.18em; color: var(--g-dim); margin-left: auto; }
+.ck-ctl { display: flex; align-items: center; gap: 4px; }
+.ck-ctl .btn { min-height: 28px; min-width: 32px; padding: 2px 6px; font-size: 11px; }
+#ck-speed { margin-left: 6px; font-size: 13px; }
+#selp { position: absolute; left: max(8px, env(safe-area-inset-left)); bottom: 208px; width: min(330px, 46vw); padding: 0 0 8px; }
 .sp-body { padding: 6px 10px 0; font-size: 11.5px; line-height: 1.5; }
 .sp-body p { margin: 4px 0; color: var(--g-dim); }
 .kv { display: flex; justify-content: space-between; } .kv span { color: var(--g-dim); }
@@ -218,7 +226,8 @@ table.st canvas { width: 20px; height: 20px; vertical-align: middle; margin-righ
   .menu .btn { min-height: 30px; padding: 2px 7px; font-size: 10.5px; }
   #comms { width: min(300px, 40vw); max-height: 26vh; bottom: 100px; }
   #c-list { font-size: 10.5px; }
-  #selp { bottom: 100px; width: min(300px, 50vw); }
+  #selp { bottom: 168px; width: min(300px, 50vw); }
+  #clock { bottom: 100px; min-width: 0; padding: 4px 8px; } #ck-time { font-size: 13px; }
   #b-groups { margin-bottom: 4px; } #b-groups .btn { min-height: 26px; }
   .bi { min-width: 88px; min-height: 44px; padding: 4px 6px; }
   #mins { max-height: 92vh; }
