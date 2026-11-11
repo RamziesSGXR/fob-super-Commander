@@ -1,6 +1,6 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
 import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES } from './config.js';
-import { Sim, MKEYS, rankOf, dims } from './sim.js';
+import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
 import { Life } from './life.js';
 import { View } from './view.js';
 import { drawLogo, drawTrooper, lookOf, ensureLogo, readUpload, SHAPES, SYMBOLS, PATTERNS, UNIFORMS, PALETTE } from './logo.js';
@@ -162,6 +162,7 @@ function pickTool(k) {
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
   tool = tool === k ? null : k; select(null); buildBar();
   if (!tool) view.setGhost(null);
+  view.showPlots(tool && !LOOSE.has(tool) ? sim.plotTiles() : null);
 }
 function tip(html, x, y, above) { const t = $('tip'); t.innerHTML = html; t.classList.remove('hidden'); const r = t.getBoundingClientRect(); t.style.left = Math.min(innerWidth - r.width - 6, Math.max(6, x - r.width / 2)) + 'px'; t.style.top = (above ? y - r.height : y + 18) + 'px'; }
 function hideTip() { $('tip').classList.add('hidden'); }
@@ -378,7 +379,7 @@ $('or-x').onclick = () => $('orders').classList.toggle('min');
 // ---------------------------------------------------------------- photo mode: a free camera, no interface
 let photo = false, photoFrozen = false;
 function setPhoto(on) {
-  photo = on; view.setPhoto(on); tool = null; view.setGhost(null); view.showRoadGhost(null); select(null); hideTip();
+  photo = on; view.setPhoto(on); tool = null; view.setGhost(null); view.showRoadGhost(null); view.showPlots(null); select(null); hideTip();
   $('hud').classList.toggle('hidden', on); $('photobar').classList.toggle('hidden', !on);
   if (!on && photoFrozen) { photoFrozen = false; setPause(false); $('ph-pause').textContent = 'FREEZE TIME'; }
   if (!on) buildBar();
@@ -444,7 +445,11 @@ function roadPreview(e) {
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
-  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2) };
+  if (tool !== 'moveflag' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
+    const pl = sim.plotFor(tool, p.x, p.z);
+    if (pl) return { ...p, tx: pl.tx, tz: pl.tz, rot: pl.rot };
+  }
+  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -472,7 +477,7 @@ cv.addEventListener('pointermove', e => {
   if (photo) return;
   if (isRoad(tool)) roadPreview(e);
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
-  else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, rot); view.setGhost(tool, t.tx, t.tz, rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, t.rot); view.setGhost(tool, t.tx, t.tz, t.rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
     const p = view.pick(e.clientX, e.clientY);
     if (p.bid) { const b = sim.byId(p.bid); tip(`<b>${B[b.type].name}</b>${b.done ? '' : ` · ${Math.round(b.prog * 100)}% built`}`, e.clientX, e.clientY); cv.style.cursor = 'pointer'; }
@@ -495,18 +500,18 @@ function up(e) {
   const d = drag; drag = null;
   if (photo) return;
   if (d.moved) return;
-  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); buildBar(); } else select(null); return; }
+  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); } else select(null); return; }
   if (tool === 'moveflag') {
     const t = tileAt(e), r = sim.moveFlag(t.tx, t.tz);
     if (!r.ok) { flash(r.why); audio.play('deny'); return; }
     tool = null; view.setGhost(null); view.showPlaza(null); audio.play('place'); return;
   }
   if (tool) {
-    const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, rot);
+    const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, t.rot);
     if (!ok.ok) { flash(ok.why); audio.play('deny'); return; }
-    sim.place(tool, t.tx, t.tz, rot); buildBar(); audio.play('place');
-    if (!e.shiftKey && !['banner', 'hdbanner', 'flag', 'solar', 'vend', 'speaker', 'potty'].includes(tool)) { tool = null; view.setGhost(null); buildBar(); }
-    else view.setGhost(tool, t.tx, t.tz, rot, sim.canPlace(tool, t.tx, t.tz, rot).ok);
+    sim.place(tool, t.tx, t.tz, t.rot); buildBar(); audio.play('place');
+    if (!e.shiftKey && !LOOSE.has(tool)) { tool = null; view.setGhost(null); view.showPlots(null); buildBar(); }
+    else { const n = tileAt(e); view.setGhost(tool, n.tx, n.tz, n.rot, sim.canPlace(tool, n.tx, n.tz, n.rot).ok); if (!LOOSE.has(tool)) view.showPlots(sim.plotTiles()); }
     return;
   }
   const p = view.pick(e.clientX, e.clientY); select(p.bid);
@@ -534,7 +539,7 @@ addEventListener('keydown', e => {
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
   else if (k === ' ') { e.preventDefault(); setPause(!paused); }
-  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
+  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
   else if (k === 'm') toggleMins();
   else if (k === 'h') $('hud').classList.toggle('bare');
   else if (k === 'tab') { e.preventDefault(); const i = GROUPS.findIndex(g => g[0] === group); group = GROUPS[(i + (e.shiftKey ? GROUPS.length - 1 : 1)) % GROUPS.length][0]; buildBar(); }

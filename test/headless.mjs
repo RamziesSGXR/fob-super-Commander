@@ -1,7 +1,7 @@
 // Runs a base without a browser and prints how it does week by week.
 //   node test/headless.mjs [weeks] [bot|idle] [seed]
 // "bot" builds and plays like a sensible commander; "idle" builds nothing and shows the soft decline.
-import { Sim } from '../js/sim.js';
+import { Sim, LOOSE } from '../js/sim.js';
 import { B, C, GKEYS, TECH } from '../js/config.js';
 
 const weeks = +(process.argv[2] || 12), mode = process.argv[3] || 'bot', seed = +(process.argv[4] || 7);
@@ -23,12 +23,23 @@ function spot(type, near = [m, m]) {
 }
 function build(type, near) {
   if (s.supplies < B[type].cost + 150 || s.locked(type)) return false;
-  const p = spot(type, near); if (!p) return false;
+  let p = null;
+  if (LOOSE.has(type)) p = spot(type, near);
+  else {
+    p = s.plotFor(type, near[0], near[1]);
+    if (!p) for (const [x, z] of s.plotTiles().sort((a, b) => Math.hypot(a[0] - near[0], a[1] - near[1]) - Math.hypot(b[0] - near[0], b[1] - near[1])).filter((_, i) => i % 6 === 0).slice(0, 40)) { p = s.plotFor(type, x, z); if (p) break; }
+    if (p) p = { x: p.tx, z: p.tz, rot: p.rot };
+  }
+  if (!p) {   // no plot free near there: run a dirt road out from the nearest road and try again
+    roadN = (roadN || 0) + 1; const base = s.net.nodes[roadN % s.net.nodes.length], a = s.snapLine({ x: base.x, z: base.z }, 'grid', 'dirt'), dir = [[1, 0], [0, 1], [-1, 0], [0, -1]][roadN % 4];
+    const e = s.snapLine({ x: a.x + dir[0] * 8, z: a.z + dir[1] * 8 }, 'grid', 'dirt', a);
+    s.drawLine(a, e, 'dirt'); return false;
+  }
   return !!s.place(type, p.x, p.z, p.rot);
 }
 const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'comms', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess'];
-let step = 0;
+let step = 0, roadN = 0;
 function bot() {
   const want = plan[step];
   if (want) {

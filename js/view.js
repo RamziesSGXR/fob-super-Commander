@@ -115,6 +115,7 @@ export class View {
     this.roadGhost = new THREE.Group(); this.world.add(this.roadGhost);
     this.ghostTile = new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: 0.4, depthWrite: false });
     this.plazaG = new THREE.Group(); this.plazaG.visible = false; this.world.add(this.plazaG);
+    this.plotG = new THREE.Group(); this.world.add(this.plotG);
     this.plazaMat = new THREE.MeshBasicMaterial({ color: '#ffe600', transparent: true, opacity: 0.22, depthWrite: false });
   }
   // the sign over the main gate, in the faction's colours
@@ -235,6 +236,18 @@ export class View {
   }
   // tiles a road tool is about to lay (green) or clear (red)
   showRoadGhost() { this.roadGhost.clear(); }
+  // the roadside plots, like zoning cells: brightest next to the road
+  showPlots(tiles) {
+    this.plotG.clear(); if (!tiles || !tiles.length) return;
+    const mats = [0.3, 0.22, 0.15, 0.09].map(o => new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: o, depthWrite: false }));
+    const geo = new THREE.PlaneGeometry(0.86, 0.86); geo.rotateX(-Math.PI / 2);
+    for (let k = 1; k <= 4; k++) {
+      const t = tiles.filter(q => q[2] === k); if (!t.length) continue;
+      const im = new THREE.InstancedMesh(geo, mats[k - 1], t.length), mx = new THREE.Matrix4();
+      t.forEach(([x, z], i) => { mx.makeTranslation(this.wx(x + 0.5), 0.025, this.wx(z + 0.5)); im.setMatrixAt(i, mx); });
+      im.frustumCulled = false; this.plotG.add(im);
+    }
+  }
   // a line being drawn: a see-through strip, green if it can go there; w: its width
   showLine(a, b, w, ok, wall) {
     this.roadGhost.clear(); if (!a || !b) return;

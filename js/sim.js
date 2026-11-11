@@ -20,6 +20,8 @@ export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of 
 export function dims(type, rot) { const d = B[type]; return rot % 2 ? [d.d, d.w] : [d.w, d.d]; }
 
 const zero = () => ({ rations: 0, fuel: 0, ammo: 0 });
+// small things that go anywhere inside the wall; everything else is built on a roadside plot, door to the street
+export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar']);
 
 export class Sim {
   constructor(opts = {}) {
@@ -198,7 +200,35 @@ export class Sim {
     if (d.chain) { const other = this.b.find(b => B[b.type].chain && b.type !== type); if (other) return { ok: false, why: `Exclusive franchise agreement with ${B[other.type].name}` }; }
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.map(t => B[t].name).join(' and ') };
     if (this.supplies < d.cost) return { ok: false, why: 'Not enough supplies' };
-    return this.fits(type, x, z, rot);
+    const f = this.fits(type, x, z, rot); if (!f.ok) return f;
+    if (!LOOSE.has(type) && !this.frontage(type, x, z, rot)) return { ok: false, why: 'Needs a road out front: build along a road' };
+    return f;
+  }
+  // a building's door has to open onto a road
+  frontage(type, x, z, rot) { const [w, d] = dims(type, rot), [tx, tz] = this.door({ x, z, w, d, rot }); return this.road(tx, tz); }
+  // the roadside plot nearest the pointer that this building fits: it faces the road with its door on the street
+  plotFor(type, px, pz) {
+    let best = null;
+    const cx = Math.floor(px), cz = Math.floor(pz);
+    for (let rot = 0; rot < 4; rot++) {
+      const [w, d] = dims(type, rot);
+      for (let z = cz - 7; z <= cz + 7; z++) for (let x = cx - 7; x <= cx + 7; x++) {
+        const dist = Math.hypot(x + w / 2 - px, z + d / 2 - pz); if (best && dist >= best.dist) continue;
+        if (!this.fits(type, x, z, rot).ok || !this.frontage(type, x, z, rot)) continue;
+        best = { tx: x, tz: z, rot, dist };
+      }
+    }
+    return best;
+  }
+  // the roadside strips buildings can go on: free ground inside the wall within four tiles of a road
+  plotTiles() {
+    const N = this.N, dist = new Int8Array(N * N).fill(-1), q = [];
+    for (let i = 0; i < N * N; i++) if (this.roads[i] && this.inMask[i]) { dist[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h], x = i % N; if (dist[i] >= 4) continue;
+      for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && dist[j] < 0 && this.inMask[j] && !this.roads[j] && !this.occ[j] && !this.walls[j]) { dist[j] = dist[i] + 1; q.push(j); }
+    }
+    const out = []; for (let i = 0; i < N * N; i++) if (dist[i] > 0) out.push([i % N, (i / N) | 0, dist[i]]); return out;
   }
   fits(type, x, z, rot) {
     const [w, dd] = dims(type, rot);
