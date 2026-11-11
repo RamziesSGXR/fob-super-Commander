@@ -18,7 +18,7 @@ await p.screenshot({ path: 'test/shots/9-ghost.png' });
 await p.mouse.click(820, 560); await p.waitForTimeout(300);
 const n1 = await p.evaluate(() => window.__fob.sim.b.length);
 // pump on a deposit: find a deposit tile and click its screen position
-await p.click('[data-g="industry"]'); await p.click('[data-b="pump"]');
+await p.click('[data-g="expansion"]'); await p.click('[data-b="pump"]');
 const spot = await p.evaluate(() => { const { sim } = window.__fob; for (let z = 1; z < sim.N - 1; z++) for (let x = 1; x < sim.N - 1; x++) if (sim.canPlace('pump', x, z, 0).ok) return [x, z]; });
 await p.evaluate(([x, z]) => window.__fob.view.lookAt(x + 1, z + 1), spot); await p.waitForTimeout(800);
 await p.mouse.move(720, 430); await p.waitForTimeout(200); await p.mouse.click(720, 430); await p.waitForTimeout(300);

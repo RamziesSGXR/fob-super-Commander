@@ -1,5 +1,7 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
+export const VERSION = '0.3';
+
 export const C = {
   N: 40,                    // the base is N x N tiles; the outer ring is the perimeter wall
   WEEK: 150,                // seconds of game time in one allocation week
@@ -17,12 +19,14 @@ export const C = {
 // The three Ministries a loyal faction answers to.
 export const MIN = {
   def: { name: 'Ministry of Defence', short: 'DEFENCE', key: 'D', wants: 'Patrols that come back victorious.' },
-  pro: { name: 'Ministry of Prosperity', short: 'PROSPERITY', key: 'P', wants: 'Requisitions filled on time.' },
+  pro: { name: 'Ministry of Expansion', short: 'EXPANSION', key: 'X', wants: 'Requisitions filled on time: extraction, industry and shipping.' },
   tru: { name: 'Ministry of Truth', short: 'TRUTH', key: 'T', wants: 'A base that inspires: morale, propaganda and upkeep.' },
 };
 
+// The build bar is grouped by the Ministry that owns each building. Humanity has no standing yet; it arrives later.
 export const GROUPS = [
-  ['core', 'CORE'], ['power', 'POWER'], ['industry', 'INDUSTRY'], ['military', 'MILITARY'], ['living', 'LIVING'], ['propaganda', 'PROPAGANDA'],
+  ['expansion', 'EXPANSION', ['core', 'power', 'industry']], ['defence', 'DEFENCE', ['military']],
+  ['humanity', 'HUMANITY', ['living']], ['truth', 'TRUTH', ['propaganda']],
 ];
 
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
@@ -56,6 +60,8 @@ export const B = {
               desc: 'Idle troops drill here. Drilled troops win more patrols.' },
   armory:   { name: 'Armory', group: 'military', w: 2, d: 2, cost: 320, up: 20, pw: -2, crew: 1, needs: ['barracks'],
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
+  hdbarracks: { name: 'Helldiver Barracks', group: 'military', w: 3, d: 2, cost: 420, up: 22, pw: -4, crew: 1, needs: ['barracks'], cryo: true,
+              desc: 'Helldivers pass through on their way to the front, kept in cryo until needed. Staffed and powered, it earns +3 Defence standing every week.' },
   shelter:  { name: 'Underground Bunker', group: 'military', w: 2, d: 2, cost: 280, up: 10, pw: -1, mor: 3, needs: ['barracks'],
               desc: 'A blast door and a long stairway down. Knowing it is there helps everyone sleep.' },
 
@@ -67,6 +73,12 @@ export const B = {
               desc: 'Somewhere to go. Gets dirtier the more votes use it; idle troopers clean it. Filthy ones hurt morale, and too few means queues.' },
   mess:     { name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8,
               desc: 'Hot food. The single biggest thing for morale.' },
+  burger:   { name: 'Big Liberty Burger', group: 'living', w: 2, d: 2, cost: 260, up: 34, pw: -2, mor: 10, chain: true, needs: ['mess'],
+              desc: 'A franchise with a cheerful mascot. The biggest morale boost money can buy, and it costs a lot of money. One chain per base.' },
+  chicken:  { name: 'Patriot Clucks', group: 'living', w: 2, d: 2, cost: 220, up: 8, pw: -2, mor: 6, chain: true, sluggish: 0.08, needs: ['mess'],
+              desc: 'Cheap, fried and fiercely patriotic. Votes who eat here work 8% slower. One chain per base.' },
+  cola:     { name: 'Bureau Cola & Fries', group: 'living', w: 2, d: 2, cost: 200, up: 4, pw: -2, mor: 4, chain: true, kickback: 70, needs: ['mess'],
+              desc: 'Run by the Bureau. Modest morale, but it pays the base a 70 supply "consulting fee" every week. One chain per base.' },
   dome:     { name: 'Hydro Dome', group: 'living', w: 2, d: 2, cost: 240, up: 12, pw: -2, crew: 1, mor: 5, prop: 2,
               desc: 'Fresh greens under glass. Good for morale, nice to look at.' },
 
@@ -76,6 +88,8 @@ export const B = {
               desc: 'Your colours and crest, flying beside the Super Earth flag. Troops salute it.' },
   banner:   { name: 'Banner', group: 'propaganda', w: 1, d: 1, cost: 30, up: 1, prop: 3,
               desc: 'Your logo on a hanging banner. Place them anywhere.' },
+  hdbanner: { name: 'Helldivers Banner', group: 'propaganda', w: 1, d: 1, cost: 35, up: 1, prop: 3, mor: 1,
+              desc: 'The banner of the Helldivers, who are everyone\'s and no one\'s. Counts separately from your own banners.' },
   speaker:  { name: 'Loudspeaker', group: 'propaganda', w: 1, d: 1, cost: 70, up: 3, pw: -1, prop: 5, mor: 2, needs: ['truth'],
               desc: 'Plays the anthem on the hour, every hour.' },
   billboard:{ name: 'Logo Billboard', group: 'propaganda', w: 2, d: 1, cost: 140, up: 6, pw: -1, prop: 9, needs: ['truth'],

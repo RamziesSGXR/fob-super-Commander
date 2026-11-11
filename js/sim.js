@@ -42,7 +42,7 @@ export class Sim {
     this.newOffers(); this.newContract(true);
     this.ranking();
     this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base.`);
-    this.say('pro', 'The Ministry of Prosperity welcomes you. Your first requisition is posted. Do not be late.');
+    this.say('pro', 'The Ministry of Expansion welcomes you. Your first requisition is posted. Do not be late.');
     this.recalc();
   }
 
@@ -84,6 +84,7 @@ export class Sim {
     const d = B[type]; if (!d) return { ok: false, why: 'Unknown building' };
     if (d.fixed) return { ok: false, why: 'Cannot be built' };
     if (d.unique && this.count(type)) return { ok: false, why: 'Only one allowed' };
+    if (d.chain) { const other = this.b.find(b => B[b.type].chain && b.type !== type); if (other) return { ok: false, why: `Exclusive franchise agreement with ${B[other.type].name}` }; }
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.map(t => B[t].name).join(' and ') };
     if (this.supplies < d.cost) return { ok: false, why: 'Not enough supplies' };
     return this.fits(type, x, z, rot);
@@ -123,7 +124,8 @@ export class Sim {
     for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = 0;
     this.b = this.b.filter(o => o !== b);
     this.supplies += Math.round(B[b.type].cost * (b.done ? C.REFUND : 1));
-    for (const t of this.troops) if (t.job === id) t.job = null;
+    for (const t of this.troops) if (t.job === id) { t.job = null; if (t.state === 'job') t.state = 'idle'; }
+    if (this.cleaning === id) this.cleaning = null;
     this.events.push({ t: 'removed', id });
     return true;
   }
@@ -220,7 +222,8 @@ export class Sim {
   work(b) {   // how hard a building runs right now, 0..1+
     const d = B[b.type]; if (!b.done || b.off) return 0;
     const pw = d.pw < 0 ? this.power.ratio : 1;
-    return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100);
+    const slow = this.b.some(o => o.done && B[o.type].sluggish) ? 1 - B.chicken.sluggish : 1;
+    return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100) * slow;
   }
 
   // ---------------------------------------------------------------- the clock
@@ -308,6 +311,7 @@ export class Sim {
       this.fallen.push({ name: t.name, rank: rankOf(t.missions), op: p.op, week: this.week });
       this.grief += this.has('memorial') ? 3 : 6;
     }
+    if (dead.length) this.say('bur', `Form C-14 issued for ${dead.map(t => `${rankOf(t.missions)} ${t.name}`).join(', ')}. The Bureau thanks the family for their contribution and reminds them that the uniform remains Federation property.`);
     let hero = null;
     for (const t of back) { t.state = 'idle'; t.missions++; }
     if (win) {
@@ -325,7 +329,7 @@ export class Sim {
     this.events.push({ t: 'patrolBack', members: back.map(t => t.id), dead: dead.map(t => t.name), hero: hero?.id ?? null, win });
   }
 
-  // ---------------------------------------------------------------- Ministry of Prosperity: requisitions
+  // ---------------------------------------------------------------- Ministry of Expansion: requisitions
   newContract(first = false) {
     const good = first ? 'e710' : this.rng.chance(this.has('plant') ? 0.6 : 0.25) ? 'shells' : 'e710';
     const qty = good === 'shells' ? r5(15 + this.week * 5) : r5(20 + this.week * 6);
@@ -338,7 +342,7 @@ export class Sim {
     this.contracts = this.contracts.filter(x => x !== c);
     this.gain('pro', c.pro); this.supplies += c.sup; this.stats.delivered++;
     this.events.push({ t: 'pickup', good: c.good, qty: c.qty });
-    this.say('pro', `Requisition filled: ${c.qty} ${c.good === 'shells' ? 'shells' : 'E-710'}. +${c.pro} Prosperity standing, +${c.sup} supplies.`);
+    this.say('pro', `Requisition filled: ${c.qty} ${c.good === 'shells' ? 'shells' : 'E-710'}. +${c.pro} Expansion standing, +${c.sup} supplies.`);
     return true;
   }
 
@@ -389,7 +393,7 @@ export class Sim {
     for (const c of this.contracts.filter(c => this.week >= c.due)) {
       this.contracts = this.contracts.filter(x => x !== c);
       this.gain('pro', -8);
-      this.say('pro', `Requisition for ${c.qty} ${c.good === 'shells' ? 'shells' : 'E-710'} missed. -8 Prosperity standing. Disappointment has been noted.`);
+      this.say('pro', `Requisition for ${c.qty} ${c.good === 'shells' ? 'shells' : 'E-710'} missed. -8 Expansion standing. Disappointment has been noted.`);
     }
     if (!this.inspected) this.inspect();
     for (const m of MKEYS) this.stand[m] += (C.STAND.rest - this.stand[m]) * C.STAND.drift;
@@ -397,6 +401,10 @@ export class Sim {
     const prev = this.rank, rank = this.ranking();
     const amt = Math.round(C.ALLOC.base * C.ALLOC.mult[rank]);
     this.supplies += amt; this.lastAlloc = amt;
+    const gross = Math.round(amt / 0.82), fee = Math.round(gross * 0.11);
+    this.ledger = { week: this.week, gross, fee, consult: gross - fee - amt, net: amt };
+    for (const b of this.b) if (b.done && B[b.type].cryo && !b.off && b.crew > 0 && this.power.ratio >= 1) { this.gain('def', 3); this.say('def', 'Helldivers thawed, briefed and shipped to the front. +3 Defence standing.'); }
+    for (const b of this.b) if (b.done && B[b.type].kickback) { this.supplies += B[b.type].kickback; this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
     this.events.push({ t: 'alloc', amt, crates: 6 - rank });
     const room = Math.max(0, this.beds + C.OVERFLOW - this.troops.length);
     const n = Math.min(C.ALLOC.recruits[rank], room), fresh = [];
@@ -418,6 +426,7 @@ export class Sim {
     if (unpaid) this.say('base', `Upkeep short: ${unpaid} building${unpaid > 1 ? 's' : ''} went unmaintained and are wearing down.`);
     if (rank < prev) this.say('riv', `Federation bulletin: ${this.faction.name} climbs to ${place}. Glory to the efficient.`);
     else if (rank > prev) this.say('riv', `Federation bulletin: ${this.table()[prev].name} overtakes ${this.faction.name}. Allocation reduced accordingly.`);
+    this.memo();
     this.week++; this.wt -= C.WEEK; this.inspected = false;
     this.newOffers();
     if (this.contracts.length < 3) this.newContract();
@@ -425,6 +434,20 @@ export class Sim {
   }
 
   gain(m, v) { this.stand[m] = clamp(this.stand[m] + (v > 0 ? v * (1 - this.stand[m] / 115) : v), 0, 100); return Math.round(v > 0 ? v * (1 - (this.stand[m]) / 115) : v); }
+
+  memo() {   // the Bureau writes every week, always pleased, never quite clear
+    const lines = [
+      `Memo: the Bureau congratulates ${this.faction.base} on a week of measurable progress. The measurements are classified.`,
+      'Memo: a reminder that all supplies remain the property of the Bureau until consumed, and partly afterwards.',
+      'Memo: the Presidential Office for Base Excellence thanks you for your continued participation in its funding.',
+      `Memo: ${this.troops.length} votes on file. The Bureau is grateful for every one of them, especially on election day.`,
+      'Memo: Form 27-B (Request to Read Previous Memos) is now available from the Bureau, for a small fee.',
+      'Memo: the Bureau has reviewed its own audit and found everything in order.',
+      'Memo: allocations are calculated by a fair and transparent process. Details are available on request, by appointment, in person, on Super Earth.',
+      'Memo: morale is mandatory. Paperwork about morale is also mandatory.',
+    ];
+    this.say('bur', lines[(this.week + this.seed) % lines.length]);
+  }
 
   say(ch, text) { this.log.push({ ch, text, t: this.t, week: this.week }); if (this.log.length > 80) this.log.shift(); this.events.push({ t: 'say', ch, text }); }
   drain() { const e = this.events; this.events = []; return e; }

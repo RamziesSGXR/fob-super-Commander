@@ -59,6 +59,7 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; text-align: center
 }
 .card.wide { width: min(96vw, 820px); }
 .card.title { margin-left: max(16px, 6vw); margin-right: auto; }
+.ver { color: var(--yellow); letter-spacing: 0.1em; margin-left: 6px; text-transform: none; }
 .eyebrow { font-size: 12px; color: var(--g-dim); letter-spacing: 0.3em; text-transform: uppercase; margin-bottom: 6px; }
 h1 { margin: 6px 0 8px; font-size: clamp(30px, 7vw, 52px); line-height: 1.02; color: var(--yellow); letter-spacing: 0.12em; text-shadow: 0 0 18px rgba(255, 230, 0, 0.35); }
 h2 { margin: 4px 0 12px; font-size: clamp(20px, 5vw, 26px); letter-spacing: 0.14em; color: #fff; }
@@ -89,6 +90,11 @@ input, textarea {
 }
 input:focus, textarea:focus { outline: none; border-color: var(--yellow); }
 #fx-text { flex: 1; text-transform: uppercase; text-align: center; padding: 4px 8px; }
+.fx-troop { display: flex; gap: 10px; align-items: center; border-top: 1px solid rgba(157, 255, 184, 0.12); padding-top: 8px; }
+.fx-troop canvas { width: 84px; height: 84px; flex: none; }
+.fx-troop > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+label.chk { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
+label.chk input { width: 18px; height: 18px; accent-color: var(--yellow); }
 .sw { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
 .sw button { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.25); cursor: pointer; padding: 0; }
 .sw button.on { outline: 2px solid var(--yellow); outline-offset: 1px; }

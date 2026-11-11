@@ -2,7 +2,7 @@
 // through the materials, so the same standard-issue buildings look like they belong to whoever built them.
 // A model's origin is the centre of its footprint at ground level, front facing +z, one tile = one unit.
 import * as THREE from './vendor/three.js';
-import { logoCanvas } from './logo.js';
+import { logoCanvas, lookOf } from './logo.js';
 
 const shade = (hex, k) => { const c = new THREE.Color(hex); c.multiplyScalar(k); return c; };
 
@@ -24,13 +24,33 @@ export function makeMats(f) {
     cola: std('#b01f24'), colaFace: std('#ffffff', { emissive: '#ffffff', emissiveIntensity: 0.55 }),
     logo: std('#ffffff', { map: logo, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.9 }),
     logoLit: std('#ffffff', { map: logo, emissiveMap: logo, emissive: '#ffffff', emissiveIntensity: 0.6, transparent: true, alphaTest: 0.05 }),
-    skin: std('#c99a78'), uniform: std(new THREE.Color(f.primary).lerp(new THREE.Color('#9a9d92'), 0.45)), helmet: std(shade(f.primary, 0.75)), boots: std('#22251f'),
+    skin: std('#c99a78'), uniform: std(lookOf(f).uniform), helmet: std(lookOf(f).helmet), armband: std(lookOf(f).armband), crestOn: lookOf(f).crest, boots: std('#22251f'),
     coat: std('#141414'), cap: std('#e9e9e9'), paper: std('#f2f2ea'),
     pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
   };
-  m.seflag = seFlagMat(); m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
+  m.seflag = seFlagMat(); m.hdbanner = hdBannerMat();
+  m.signBurger = signMat('BIG LIBERTY BURGER', '#c0392b', '#ffe600'); m.signChicken = signMat('PATRIOT CLUCKS', '#1d3f8a', '#ffffff'); m.signCola = signMat('BUREAU COLA & FRIES', '#5a2a7a', '#ffd21f'); m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
   m.potty = std('#3d7fb0'); m.pottyRoof = std('#e8ecef'); m.grime = new THREE.MeshBasicMaterial({ color: '#3a2a12', transparent: true, opacity: 0, depthWrite: false });
   return m;
+}
+// The Helldivers banner: an original design for this fan game, a yellow helmet on black over hazard stripes.
+function hdBannerMat() {
+  const c = document.createElement('canvas'); c.width = 192; c.height = 384; const g = c.getContext('2d');
+  g.fillStyle = '#141414'; g.fillRect(0, 0, 192, 384);
+  for (let i = -4; i < 12; i++) { g.fillStyle = i % 2 ? '#141414' : '#ffd21f'; g.beginPath(); g.moveTo(i * 24, 384); g.lineTo(i * 24 + 24, 384); g.lineTo(i * 24 + 64, 330); g.lineTo(i * 24 + 40, 330); g.fill(); }
+  g.fillStyle = '#ffd21f'; g.beginPath(); g.arc(96, 150, 52, Math.PI, 0); g.lineTo(148, 175); g.lineTo(44, 175); g.closePath(); g.fill();
+  g.fillStyle = '#141414'; g.beginPath(); g.roundRect(56, 128, 80, 18, 6); g.fill();
+  g.fillStyle = '#ffd21f'; g.font = 'bold 22px ui-monospace, Menlo, Consolas, monospace'; g.textAlign = 'center'; g.fillText('HELLDIVERS', 96, 240);
+  g.fillRect(30, 256, 132, 4); g.fillRect(30, 30, 132, 4);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.9 });
+}
+function signMat(text, bg, fg) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 96; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, 512, 96); g.fillStyle = fg; g.fillRect(0, 0, 512, 6); g.fillRect(0, 90, 512, 6);
+  g.font = 'bold 40px ui-monospace, Menlo, Consolas, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 256, 50, 490);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#ffffff', emissiveIntensity: 0.45, roughness: 0.6 });
 }
 // The Super Earth flag: an original design for this fan game, a golden globe with wings on deep blue.
 function seFlagMat() {
@@ -276,6 +296,45 @@ const MAKE = {
     box(g, 0.8, 0.03, 0.03, m.steel, 0, 1.55, 0);
     const b = flagCloth(g, m.banner, 0.55, 1.1, -0.275, 0.98, 0.02); b.userData.wave.soft = true;
   },
+  hdbanner(g, m) {
+    for (const x of [-0.35, 0.35]) cyl(g, 0.02, 0.025, 1.6, m.dark, x, 0.8, 0);
+    box(g, 0.8, 0.03, 0.03, m.dark, 0, 1.55, 0);
+    const b = flagCloth(g, m.hdbanner, 0.55, 1.1, -0.275, 0.98, 0.02); b.userData.wave.soft = true;
+  },
+  hdbarracks(g, m) {
+    slab(g, m, 3, 2);
+    box(g, 2.0, 0.8, 1.5, m.steel, -0.4, 0.48, -0.1); box(g, 2.04, 0.08, 1.54, m.hazard, -0.4, 0.9, -0.1);
+    for (let i = 0; i < 6; i++) box(g, 0.14, 0.06, 0.02, i % 2 ? m.dark : m.hazard, -1.1 + i * 0.14, 0.2, 0.66);
+    box(g, 0.45, 0.55, 0.05, m.dark, -0.4, 0.36, 0.66); plane(g, 0.32, 0.6, m.hdbanner, 0.3, 0.5, 0.661);
+    for (let i = 0; i < 3; i++) {   // the cryo tanks, glowing faintly
+      const z = -0.55 + i * 0.5; cyl(g, 0.2, 0.2, 1.1, m.metal, 1.05, 0.6, z); box(g, 0.05, 0.6, 0.18, m.glowB, 1.25, 0.6, z); cyl(g, 0.22, 0.22, 0.06, m.dark, 1.05, 1.17, z);
+    }
+    box(g, 0.25, 0.08, 1.2, m.steel, 0.75, 1.0, -0.05);
+  },
+  burger(g, m) {
+    slab(g, m, 2, 2);
+    box(g, 1.6, 0.7, 1.3, m.white, 0, 0.42, -0.1); box(g, 1.64, 0.1, 1.34, m.red, 0, 0.8, -0.1);
+    box(g, 1.2, 0.35, 0.03, m.window, 0, 0.45, 0.56); box(g, 1.5, 0.28, 0.06, m.dark, 0, 0.98, 0.56); plane(g, 1.46, 0.26, m.signBurger, 0, 0.98, 0.595);
+    // the mascot burger on the roof
+    cyl(g, 0.32, 0.3, 0.1, m.bronze, 0, 0.92, -0.35); cyl(g, 0.34, 0.34, 0.05, m.green2, 0, 0.99, -0.35); cyl(g, 0.31, 0.31, 0.09, m.crate, 0, 1.06, -0.35);
+    cyl(g, 0.33, 0.33, 0.03, m.hazard, 0, 1.12, -0.35); add(g, new THREE.SphereGeometry(0.32, 16, 8, 0, 6.3, 0, 1.4), m.bronze, 0, 1.12, -0.35);
+    for (const x of [-0.5, 0.5]) { box(g, 0.4, 0.04, 0.2, m.red, x, 0.22, 0.85); box(g, 0.04, 0.2, 0.04, m.steel, x, 0.11, 0.85); }
+  },
+  chicken(g, m) {
+    slab(g, m, 2, 2);
+    box(g, 1.6, 0.7, 1.3, m.white, 0, 0.42, -0.1); prism(g, 1.66, 1.4, 0.35, m.prim, 0, 0.77, -0.1);
+    box(g, 1.2, 0.35, 0.03, m.window, 0, 0.45, 0.56); box(g, 1.5, 0.28, 0.06, m.dark, 0, 0.98, 0.56); plane(g, 1.46, 0.26, m.signChicken, 0, 0.98, 0.595);
+    // a giant drumstick, flying a tiny flag
+    add(g, new THREE.ConeGeometry(0.16, 0.5, 10), m.bronze, 0.5, 1.3, -0.4, { rz: 0.5 }); ball(g, 0.2, m.bronze, 0.38, 1.18, -0.4);
+    cyl(g, 0.01, 0.01, 0.4, m.metal, 0.7, 1.55, -0.4); box(g, 0.16, 0.1, 0.005, m.red, 0.79, 1.68, -0.4);
+  },
+  cola(g, m) {
+    slab(g, m, 2, 2);
+    box(g, 1.3, 0.55, 0.9, m.white, -0.1, 0.33, -0.25); box(g, 1.34, 0.08, 0.94, m.cola, -0.1, 0.64, -0.25);
+    box(g, 1.0, 0.3, 0.03, m.colaFace, -0.1, 0.4, 0.21); box(g, 1.5, 0.28, 0.06, m.dark, 0, 0.9, 0.3); plane(g, 1.46, 0.26, m.signCola, 0, 0.9, 0.335);
+    cyl(g, 0.22, 0.22, 0.7, m.cola, 0.55, 1.0, -0.4); cyl(g, 0.2, 0.2, 0.04, m.metal, 0.55, 1.37, -0.4); box(g, 0.45, 0.12, 0.01, m.white, 0.55, 1.0, -0.17);
+    for (const x of [-0.6, 0.2]) { cyl(g, 0.18, 0.18, 0.03, m.white, x, 0.3, 0.65); cyl(g, 0.02, 0.02, 0.3, m.steel, x, 0.15, 0.65); cyl(g, 0.01, 0.01, 0.5, m.steel, x, 0.55, 0.65); add(g, new THREE.ConeGeometry(0.28, 0.12, 12), m.cola, x, 0.82, 0.65); }
+  },
   speaker(g, m) {
     box(g, 0.25, 0.08, 0.25, m.concrete, 0, 0.04, 0); cyl(g, 0.025, 0.03, 1.5, m.steel, 0, 0.78, 0);
     box(g, 0.12, 0.12, 0.12, m.dark, 0, 1.5, 0);
@@ -336,6 +395,10 @@ export function makePerson(m, kind = 'troop') {
     return p;
   };
   const parts = { legL: leg(-0.035), legR: leg(0.035), armL: arm(-0.085), armR: arm(0.085) };
+  if (kind !== 'inspector') {
+    box(parts.armL, 0.05, 0.022, 0.055, m.armband, 0, -0.06, 0, { cast: false });
+    if (m.crestOn) { const c = plane(parts.armL, 0.04, 0.04, m.logo, -0.0235, -0.025, 0); c.rotation.y = -Math.PI / 2; }
+  }
   parts.torso = box(g, 0.13, 0.19, 0.08, body, 0, 0.3, 0);
   parts.head = new THREE.Group(); parts.head.position.set(0, 0.44, 0); g.add(parts.head);
   ball(parts.head, 0.045, m.skin, 0, 0, 0, { seg: 8 });

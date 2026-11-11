@@ -245,15 +245,16 @@ export class Life {
       if (a.leaving || a.returning) { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (t.state === 'patrol') continue;
       // the job comes first, then a ceremony, then whatever they fancy
-      const want = t.state === 'job' ? 'job' + t.job : this.ceremony ? 'cer' : 'free';
+      const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
+      const want = jobB ? 'job' + t.job : this.ceremony ? 'cer' : 'free';
       if (a.task !== want) {
         a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.onDone = null;
         if (want.startsWith('job')) {
-          const b = s.byId(t.job), slot = s.troops.filter(o => o.job === t.job).indexOf(t);
+          const b = jobB, slot = s.troops.filter(o => o.job === t.job).indexOf(t);
           const [x, z] = this.front(b, 0.5, (slot - 1) * 0.5);
           this.go(a, x, z, () => { a.act = 'work'; a.face = this.centre(b); });
         } else if (want === 'cer') {
-          const c = this.ceremony, f = s.byId(c.flag), hero = id === c.hero;
+          const c = this.ceremony, f = s.byId(c.flag) || s.b.find(o => o.type === 'hq'), hero = id === c.hero;
           const i = c.slots.size; c.slots.set(id, i);
           const [x, z] = hero ? this.front(f, 1.1, 0) : this.front(f, 2.2 + Math.floor(i / 6) * 0.7, (i % 6 - 2.5) * 0.6);
           this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); a.wait = 999; });
