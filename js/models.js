@@ -28,8 +28,24 @@ export function makeMats(f) {
     coat: std('#141414'), cap: std('#e9e9e9'), paper: std('#f2f2ea'),
     pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
   };
-  m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
+  m.seflag = seFlagMat(); m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
+  m.potty = std('#3d7fb0'); m.pottyRoof = std('#e8ecef'); m.grime = new THREE.MeshBasicMaterial({ color: '#3a2a12', transparent: true, opacity: 0, depthWrite: false });
   return m;
+}
+// The Super Earth flag: an original design for this fan game, a golden globe with wings on deep blue.
+function seFlagMat() {
+  const c = document.createElement('canvas'); c.width = 384; c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#16244f'; g.fillRect(0, 0, 384, 256);
+  g.fillStyle = '#f4f4f4'; g.fillRect(0, 210, 384, 12); g.fillStyle = '#b8322a'; g.fillRect(0, 222, 384, 34);
+  g.save(); g.translate(192, 108); g.fillStyle = '#ffd21f'; g.strokeStyle = '#ffd21f'; g.lineWidth = 5;
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(s * 40, -6); for (let i = 0; i < 4; i++) { g.lineTo(s * (70 + i * 18), -40 + i * 10); g.lineTo(s * (62 + i * 18), -18 + i * 12); } g.lineTo(s * 40, 22); g.closePath(); g.fill(); }
+  g.beginPath(); g.arc(0, 0, 40, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#16244f'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 30, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.ellipse(0, 0, 13, 30, 0, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(-30, 0); g.lineTo(30, 0); g.stroke();
+  g.restore();
+  g.fillStyle = '#ffd21f'; for (const x of [150, 192, 234]) { g.save(); g.translate(x, 178); g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 4 : 10; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.fill(); g.restore(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.9 });
 }
 function flagMat(f, logo) {
   const c = document.createElement('canvas'); c.width = 384; c.height = 256; const g = c.getContext('2d');
@@ -218,6 +234,37 @@ const MAKE = {
     box(g, 1.1, 0.75, 0.05, m.dark, 0, 0.65, 0.52); plane(g, 0.62, 0.62, m.logoLit, 0, 0.65, 0.55);
     cyl(g, 0.015, 0.02, 1.0, m.metal, -0.6, 1.6, -0.5); ball(g, 0.05, m.glowB, -0.6, 2.12, -0.5);
     box(g, 0.35, 0.35, 0.04, m.dark, 0.6, 0.2, 0.52);
+  },
+  seflag(g, m) {
+    box(g, 1.9, 0.12, 1.9, m.white, 0, 0.06, 0, { cast: false }); box(g, 0.9, 0.22, 0.9, m.concrete, 0, 0.23, 0); box(g, 0.6, 0.1, 0.6, m.stone, 0, 0.39, 0);
+    cyl(g, 0.03, 0.04, 3.2, m.metal, 0, 2.0, 0); ball(g, 0.07, m.gold, 0, 3.63, 0);
+    flagCloth(g, m.seflag, 1.3, 0.86, 0.03, 3.1, 0);
+    for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) { cyl(g, 0.02, 0.025, 0.5, m.steel, x, 0.37, z); ball(g, 0.05, m.glowY, x, 0.64, z); }
+  },
+  shed(g, m) {
+    slab(g, m, 2, 2);
+    box(g, 1.7, 0.75, 1.4, m.metal, 0, 0.45, -0.1);
+    for (let i = 0; i < 9; i++) box(g, 0.03, 0.73, 1.42, m.steel, -0.8 + i * 0.2, 0.45, -0.1);
+    box(g, 1.76, 0.06, 1.5, m.primDark, 0, 0.86, -0.1, { rx: 0.06 });
+    box(g, 0.9, 0.6, 0.03, m.steel, 0, 0.36, 0.62); for (let i = 0; i < 6; i++) box(g, 0.9, 0.012, 0.035, m.dark, 0, 0.1 + i * 0.1, 0.63);
+    box(g, 0.5, 0.12, 0.02, m.hazard, 0.55, 0.72, 0.62);
+  },
+  shelter(g, m) {
+    add(g, new THREE.CylinderGeometry(0.75, 0.95, 0.4, 6), m.sand, 0, 0.2, -0.2);
+    box(g, 0.9, 0.06, 0.9, m.concrete, 0, 0.42, -0.2);
+    box(g, 0.7, 0.4, 0.5, m.concrete, 0, 0.2, 0.45); box(g, 0.5, 0.3, 0.04, m.steel, 0, 0.17, 0.71);
+    for (let i = 0; i < 5; i++) box(g, 0.1, 0.06, 0.02, i % 2 ? m.dark : m.hazard, -0.2 + i * 0.1, 0.36, 0.72);
+    for (const x of [-0.3, 0.3]) { cyl(g, 0.05, 0.05, 0.45, m.steel, x, 0.65, -0.4); add(g, new THREE.ConeGeometry(0.08, 0.08, 8), m.steel, x, 0.9, -0.4, { rx: Math.PI }); }
+    ball(g, 0.04, m.glowR, 0, 0.45, 0.72);
+  },
+  potty(g, m) {
+    box(g, 0.42, 0.04, 0.42, m.concrete, 0, 0.02, 0, { cast: false });
+    box(g, 0.34, 0.66, 0.34, m.potty, 0, 0.37, -0.02);
+    box(g, 0.38, 0.05, 0.38, m.pottyRoof, 0, 0.72, -0.02);
+    box(g, 0.24, 0.52, 0.02, m.pottyRoof, 0, 0.34, 0.155); box(g, 0.04, 0.04, 0.02, m.dark, 0.08, 0.36, 0.17);
+    box(g, 0.08, 0.025, 0.01, m.hazard, 0, 0.56, 0.17);
+    cyl(g, 0.02, 0.02, 0.18, m.steel, 0.1, 0.83, -0.1);
+    g.userData.dirt = box(g, 0.35, 0.3, 0.35, m.grime, 0, 0.2, -0.02, { cast: false }); g.userData.dirt.scale.set(1.01, 1, 1.01);
   },
   flag(g, m) {
     box(g, 0.4, 0.1, 0.4, m.concrete, 0, 0.05, 0);

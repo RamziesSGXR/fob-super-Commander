@@ -1,8 +1,10 @@
 # FOB Super Commander
 
+*Build your base where managed democracy needs to be managed.*
+
 Build and run your faction's base for Super Earth. A browser game for the **Super Earth Special Forces** community, in the same look as [Orbital Fury](https://orbitalfury.com/) and [Super Orbital Simulator](https://ramziessgxr.github.io/super-orbital-simulator/).
 
-> **Prototype 0.1.** One planet, your faction and three rivals, three Ministries, 23 buildings, patrols, requisitions, inspections and a crest maker. Your base saves on your device.
+> **Prototype 0.2.** One planet, your faction and three rivals, three Ministries, 27 buildings, patrols, requisitions, inspections, a crest maker or your own uploaded logo. Your base saves on your device.
 
 You command a loyal sub-faction of Super Earth: your name, your crest, your colours, your base. Every week the Federation hands out supplies, and the better your standing with its Ministries, the bigger your share. Three other loyal factions on the planet want the same supplies.
 
@@ -12,7 +14,7 @@ Turn on GitHub Pages for this repository (Settings → Pages → deploy from `ma
 
 ## How to play
 
-- **Found your faction.** Name it, name the base and pick a motto. The crest maker has six crest shapes, nine symbols, up to four letters and three colours. Your crest goes on every flag, banner, billboard, memorial and statue you build. Your primary colour paints the roofs and uniforms, and the accent colour trims banners and the parade ground. You can change all of it later from **MENU**.
+- **Found your faction.** Name it, name the base and pick a motto. The crest maker has six crest shapes, nine symbols, up to four letters and three colours. Your crest goes on every flag, banner, billboard, memorial and statue you build. Your primary colour paints the roofs and uniforms, and the accent colour trims banners and the parade ground. Or upload your own logo (up to 2 MB, shrunk to 128 px; it stays on your device and replaces the crest everywhere). You can change all of it later from **MENU**.
 - **The week.** A week is 2½ minutes. At the end of it, Super Earth ranks the four factions by total standing and splits the allocation: 1st gets 1.5×, 4th gets 0.6×. Recruits follow the same order. Then upkeep and rations are paid.
 - **Three Ministries, three kinds of standing.** They all want different things, and they pull against each other.
 
@@ -25,6 +27,9 @@ Turn on GitHub Pages for this repository (Settings → Pages → deploy from `ma
 - **The pull.** A patrol takes troopers off the pumps. The munitions plant is loud, so troopers sleeping inside its red ring lose morale. A statue costs what a barracks costs. Every kind of propaganda is worth less the more of it you have, so variety beats ten banners.
 - **Falling behind never ends the game.** A low rank means less supply, so upkeep goes unpaid. Then buildings wear down (grime on the roofs, lower output), morale slips and inspections suffer. You can always climb back with patrols, requisitions and repairs.
 - **The tech tree.** Some buildings need others first. The munitions plant needs a pump and a depot, the generator needs a pump, the parade ground, armory and memorial need barracks, the loudspeaker and billboard need a Truth Office, and the statue needs both a Truth Office and a parade ground.
+- **The Super Earth flag** flies at the centre of every base and can't be removed. Your faction flag and banners go beside it. Troops salute it, and medal ceremonies gather under it.
+- **Votes.** The Bureau doesn't count people, it counts votes: "Two votes have been delivered to your base." The little people on screen stay people.
+- **Porta potties** get dirtier the more votes use them, and an idle trooper is always on latrine duty. Too few means queues, and a filthy one hurts morale.
 - **The ant farm.** You never manage people one by one. Troopers crew the buildings that need them and help build what's going up. Idle ones drill on the parade ground, salute the flag, queue at the vending machine, eat in the mess, admire the statue and stand at the memorial. Pelicans bring the allocation, recruits and the inspector, and forklifts unload the crates. When a patrol earns a medal, everyone lines up at the flag.
 
 ### Controls
@@ -42,12 +47,12 @@ Turn on GitHub Pages for this repository (Settings → Pages → deploy from `ma
 
 | Group | Buildings |
 | --- | --- |
-| Core | Command HQ, Landing Pad, Supply Depot |
+| Core | Command HQ, Super Earth Flag, Landing Pad, Supply Depot, SEAF Bunker (storage) |
 | Power | Solar Array, E-710 Generator |
 | Industry | E-710 Pump, Munitions Plant |
-| Military | Barracks, Parade Ground, Armory |
-| Living | Prefab Hab, Vending Machine, Mess Hall, Hydro Dome |
-| Propaganda | Truth Office, Flagpole, Banner, Loudspeaker, Logo Billboard, Reflecting Pool, Memorial Wall, Liberty Statue |
+| Military | Barracks, Parade Ground, Armory, Underground Bunker |
+| Living | Prefab Hab, Vending Machine, Porta Potty, Mess Hall, Hydro Dome |
+| Propaganda | Truth Office, Faction Flag, Banner, Loudspeaker, Logo Billboard, Reflecting Pool, Memorial Wall, Liberty Statue |
 
 ## How it's built
 

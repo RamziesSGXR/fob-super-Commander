@@ -37,11 +37,11 @@ export class Sim {
     this.place('hq', m - 2, m - 3, 0, true);
     this.place('pad', m + 3, m - 3, 0, true);
     this.place('hab', m - 6, m - 2, 0, true);
-    this.place('flag', m, m + 1, 0, true);
+    this.place('seflag', m - 1, m + 1, 0, true);
     for (let i = 0; i < C.START.troops; i++) this.addTroop();
     this.newOffers(); this.newContract(true);
     this.ranking();
-    this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander.`);
+    this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base.`);
     this.say('pro', 'The Ministry of Prosperity welcomes you. Your first requisition is posted. Do not be late.');
     this.recalc();
   }
@@ -110,6 +110,14 @@ export class Sim {
     if (!free) this.events.push({ t: 'placed', id: b.id });
     return b;
   }
+  raiseFlag() {   // the nearest clear spot to the middle of the base
+    const m = this.N / 2; let best = null;
+    for (let z = 1; z < this.N - 2; z++) for (let x = 1; x < this.N - 2; x++) {
+      if (!this.fits('seflag', x, z, 0).ok) continue;
+      const d = Math.hypot(x + 1 - m, z + 1 - m - 2); if (!best || d < best.d) best = { x, z, d };
+    }
+    if (best) this.place('seflag', best.x, best.z, 0, true);
+  }
   demolish(id) {
     const b = this.byId(id); if (!b || B[b.type].fixed) return false;
     for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = 0;
@@ -141,11 +149,12 @@ export class Sim {
   // ---------------------------------------------------------------- the state of the base, worked out fresh each step
   recalc() {
     const done = this.b.filter(b => b.done);
-    let made = 0, used = 0, beds = 0, depots = 0;
+    let made = 0, used = 0, beds = 0, depots = 0, sheds = 0;
     for (const b of done) {
       const d = B[b.type];
       if (d.beds) beds += d.beds;
       if (b.type === 'depot') depots++;
+      if (b.type === 'shed') sheds++;
       if (b.off) continue;
       if (d.pw < 0) used -= d.pw;
     }
@@ -171,7 +180,7 @@ export class Sim {
       else made += d.pw;
     }
     this.power = { made: Math.round(made), used, ratio: used > 0 ? Math.min(1, made / used) : 1 };
-    this.beds = beds; this.cap = C.STORE.base + C.STORE.depot * depots;
+    this.beds = beds; this.cap = C.STORE.base + C.STORE.depot * depots + C.STORE.shed * sheds;
     this.idle = home.filter(t => t.state === 'idle').length;
     // propaganda and morale, each kind worth less the more of it you already have, so variety pays
     const seen = {}; let prop = 0, comfort = 0;
@@ -179,7 +188,7 @@ export class Sim {
       const d = B[b.type], n = (seen[b.type] = (seen[b.type] || 0) + 1), dim = Math.pow(0.7, n - 1), cf = this.condF(b);
       const run = d.crew ? this.crewFrac(b) * (b.off ? 0 : 1) : 1;
       if (d.prop) prop += d.prop * dim * cf * (d.crew ? 0.4 + 0.6 * run : 1) * (d.pw < 0 ? 0.5 + 0.5 * this.power.ratio : 1);
-      if (d.mor) comfort += d.mor * dim * cf * run;
+      if (d.mor) comfort += d.mor * dim * cf * run * (d.potty ? (b.clean ?? 100) / 100 : 1);
     }
     this.prop = Math.round(100 * (1 - Math.exp(-prop / 55)));
     const noisy = done.filter(b => B[b.type].noise && !b.off && b.crew > 0);
@@ -188,6 +197,9 @@ export class Sim {
       if (Math.hypot(h.x + h.w / 2 - p.x - p.w / 2, h.z + h.d / 2 - p.z - p.d / 2) < B[p.type].noise) { noise++; break; }
     const worn = done.length ? done.filter(b => b.cond < 40).length / done.length : 0;
     const over = Math.max(0, this.troops.length - beds);
+    const pots = done.filter(b => B[b.type].potty), users = home.length;
+    const filthy = pots.filter(b => (b.clean ?? 100) < 25).length, queue = pots.length ? Math.max(0, users / pots.length - 10) : (users > 8 ? users - 8 : 0);
+    this.potties = { n: pots.length, filthy, perPotty: pots.length ? users / pots.length : users };
     this.mor = {
       base: 40,
       comfort: Math.round(30 * (1 - Math.exp(-comfort / 22))),
@@ -198,6 +210,7 @@ export class Sim {
       power: -Math.round(15 * (1 - this.power.ratio)),
       grief: -Math.round(this.grief),
       worn: -Math.round(12 * worn),
+      latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
     };
     this.moraleTarget = clamp(Object.values(this.mor).reduce((a, b) => a + b, 0), 0, 100);
     this.avgCond = done.length ? done.reduce((a, b) => a + b.cond, 0) / done.length : 100;
@@ -230,6 +243,15 @@ export class Sim {
         b.running = can > 0;
       }
     }
+    const pots = this.b.filter(b => b.done && B[b.type].potty);
+    if (pots.length) {
+      const users = this.troops.length - this.troops.filter(t => t.state === 'patrol').length;
+      for (const p of pots) p.clean = Math.max(0, (p.clean ?? 100) - dt * 0.012 * users / pots.length);
+      // one idle trooper is always on latrine duty if anyone is free; they scrub the dirtiest one
+      const worst = pots.reduce((a, b) => (a.clean ?? 100) < (b.clean ?? 100) ? a : b);
+      this.cleaning = this.idle > 0 && worst.clean < 70 ? worst.id : null;
+      if (this.cleaning) worst.clean = Math.min(100, worst.clean + dt * 0.9);
+    } else this.cleaning = null;
     this.morale += (this.moraleTarget - this.morale) * Math.min(1, dt * 0.03);
     this.grief *= Math.exp(-dt / 220); this.pride *= Math.exp(-dt / 260);
     if (this.has('parade')) for (const t of this.troops) if (t.state === 'idle') t.drill = Math.min(1, t.drill + dt * 0.004);
@@ -295,7 +317,7 @@ export class Sim {
         this.honours.push({ name: hero.name, rank: rankOf(hero.missions), op: p.op, week: this.week });
       }
       this.say('def', `${p.op}: success. +${p.def} Defence standing, +${p.sup} supplies.` + (dead.length ? ` We lost ${dead.map(t => t.name).join(', ')}.` : ''));
-      if (hero) this.say('def', `${rankOf(hero.missions)} ${hero.name} is awarded the Medal of Valour. Assemble at the flag.`);
+      if (hero) this.say('def', `${rankOf(hero.missions)} ${hero.name} is awarded the Medal of Valour. All votes will assemble at the Super Earth flag.`);
     } else {
       this.gain('def', -(2 + p.diff)); this.stats.patrolsLost++;
       this.say('def', `${p.op}: failed. -${2 + p.diff} Defence standing.` + (dead.length ? ` Fallen: ${dead.map(t => t.name).join(', ')}.` : ''));
@@ -329,10 +351,12 @@ export class Sim {
     const notes = [];
     if (this.prop < 30) notes.push('The inspector could not find a single slogan at eye level.');
     else if (this.prop > 70) notes.push('Propaganda density is commendable. The inspector saluted twice.');
-    if (this.morale < 45) notes.push('Troops were seen frowning in an unauthorised manner.');
-    else if (this.morale > 75) notes.push('Morale is radiant. Several troopers sang unprompted.');
+    if (this.morale < 45) notes.push('Several votes were seen frowning in an unauthorised manner.');
+    else if (this.morale > 75) notes.push('Morale is radiant. Several votes sang unprompted.');
     if (this.avgCond < 60) notes.push('Several structures appear to be held together by optimism.');
-    if (this.troops.length > this.beds) notes.push('Troopers are sleeping outdoors. The Ministry finds this photogenic but concerning.');
+    if (this.troops.length > this.beds) notes.push('Votes are sleeping outdoors. The Ministry finds this photogenic but concerning.');
+    if (this.potties.filthy) notes.push('The latrines were described in the report as "a matter for the Ministry of Science".');
+    else if (!this.potties.n && this.troops.length > 8) notes.push('The inspector asked where the latrines were. Nobody would say.');
     if (!notes.length) notes.push('Adequate. The Ministry expects more than adequate.');
     this.inspection = { week: this.week, score, morale: Math.round(this.morale), prop: this.prop, cond: Math.round(this.avgCond), notes, delta: Math.round(this.stand.tru - before) };
     this.stats.inspections++;
@@ -390,7 +414,7 @@ export class Sim {
       }
     }
     const place = ['1st', '2nd', '3rd', '4th'][rank];
-    this.say('base', `Week ${this.week} closes. ${this.faction.name} ranks ${place} of 4: allocation ${amt} supplies` + (fresh.length ? `, ${fresh.length} recruits` : '') + `. Upkeep and rations ${bill}.`);
+    this.say('base', `Week ${this.week} closes. ${this.faction.name} ranks ${place} of 4: allocation ${amt} supplies` + (fresh.length ? `. ${fresh.length} vote${fresh.length > 1 ? 's have' : ' has'} been delivered to your base` : '') + `. Upkeep and rations ${bill}.`);
     if (unpaid) this.say('base', `Upkeep short: ${unpaid} building${unpaid > 1 ? 's' : ''} went unmaintained and are wearing down.`);
     if (rank < prev) this.say('riv', `Federation bulletin: ${this.faction.name} climbs to ${place}. Glory to the efficient.`);
     else if (rank > prev) this.say('riv', `Federation bulletin: ${this.table()[prev].name} overtakes ${this.faction.name}. Allocation reduced accordingly.`);
@@ -417,6 +441,7 @@ export class Sim {
     this.rng = new RNG(1); this.rng.s = s.rngS; this.events = [];
     this.genMap();
     for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
+    if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.recalc();
   }
 }

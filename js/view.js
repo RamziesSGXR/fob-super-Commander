@@ -267,6 +267,7 @@ export class View {
         const v = new THREE.Vector3(...p).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rot * Math.PI / 2).add(g.position); this.puff(v);
       }
       if (ud.plaques) ud.plaques.count = Math.min(64, s.fallen.length);
+      if (ud.dirt) { if (ud.dirt.material === this.m.grime) ud.dirt.material = this.m.grime.clone(); ud.dirt.material.opacity = Math.max(0, 0.75 - (b.clean ?? 100) / 100 * 0.9); }
       if (ud.crates) { const n = Math.round(Math.min(1, (s.e710 + s.shells) / Math.max(1, s.cap)) * 12); ud.crates.forEach((c, i) => c.visible = i < n); }
       model.traverse(o => { const wv = o.userData.wave; if (!wv) return;
         const pos = o.geometry.attributes.position, a = pos.array, base = wv.base;

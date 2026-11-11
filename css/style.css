@@ -63,6 +63,8 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; text-align: center
 h1 { margin: 6px 0 8px; font-size: clamp(30px, 7vw, 52px); line-height: 1.02; color: var(--yellow); letter-spacing: 0.12em; text-shadow: 0 0 18px rgba(255, 230, 0, 0.35); }
 h2 { margin: 4px 0 12px; font-size: clamp(20px, 5vw, 26px); letter-spacing: 0.14em; color: #fff; }
 .tag { margin: 0 0 14px; color: var(--g-dim); line-height: 1.5; }
+.tag.tagline { color: #fff; font-size: 15px; margin-bottom: 6px; letter-spacing: 0.06em; }
+.fx-row.up { justify-content: center; gap: 6px; } .fx-row.up .btn { min-height: 32px; font-size: 11px; }
 .fine { font-size: 11px; color: var(--g-dim); margin: 12px 0 0; line-height: 1.5; }
 .fine.left { text-align: left; }
 .btns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }

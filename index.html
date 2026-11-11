@@ -18,13 +18,14 @@
     <div class="card title">
       <div class="eyebrow">Super Earth faction command</div>
       <h1>FOB SUPER<br>COMMANDER</h1>
-      <p class="tag">Build your faction's base. Answer to three Ministries. Outshine the other loyal factions for the Federation's supplies.</p>
+      <p class="tag tagline">Build your base where managed democracy needs to be managed.</p>
+      <p class="tag">Answer to the Ministries. Outshine the other loyal factions for the Federation's supplies.</p>
       <div class="btns col">
         <button id="b-continue" class="btn big primary hidden" type="button">CONTINUE</button>
         <button id="b-new" class="btn big" type="button">NEW FACTION</button>
         <button id="b-howto" class="btn" type="button">HOW TO PLAY</button>
       </div>
-      <p class="fine">Prototype 0.1. Your base saves on this device. Unofficial fan project, not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.</p>
+      <p class="fine">Prototype 0.2. Your base saves on this device. Unofficial fan project, not affiliated with Arrowhead Game Studios or Sony Interactive Entertainment.</p>
     </div>
   </section>
 
@@ -42,6 +43,8 @@
           <div class="fx-sw"><span>FIELD</span><div class="sw" data-k="logo.bg"></div></div>
           <div class="fx-sw"><span>SYMBOL</span><div class="sw" data-k="logo.fg"></div></div>
           <div class="fx-sw"><span>RIM</span><div class="sw" data-k="logo.rim"></div></div>
+          <div class="fx-row up"><button id="fx-up" class="btn" type="button">UPLOAD A LOGO</button><button id="fx-unup" class="btn hidden" type="button">USE THE CREST</button><input id="fx-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden"></div>
+          <p class="fine" id="fx-upmsg">Your own picture, up to 2 MB. It is shrunk to 128 px and stays on this device.</p>
         </div>
         <div class="fx-form">
           <label>FACTION NAME<input id="fx-name" maxlength="40" autocomplete="off" spellcheck="false"></label>
@@ -85,7 +88,7 @@
       <div class="res">
         <span class="ri cr" title="Supplies: what you build and pay upkeep with"><i>SUP</i><b id="r-sup">0</b></span>
         <span class="ri" title="Power made / used"><i>PWR</i><b id="r-pw"></b></span>
-        <span class="ri" title="Troops at the base / all troops / beds"><i>TRP</i><b id="r-trp"></b></span>
+        <span class="ri" title="Votes on the base / all votes / votes housed"><i>VOTES</i><b id="r-trp"></b></span>
         <span class="ri" title="Morale"><i>MRL</i><b id="r-mrl"></b></span>
         <span class="ri" title="E-710 in store"><i>E-710</i><b id="r-e7"></b></span>
         <span class="ri" title="Shells in store"><i>SHL</i><b id="r-shl"></b></span>

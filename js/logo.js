@@ -59,8 +59,32 @@ function symbol(g, sym) {
   g.fill();
 }
 
+// An uploaded logo: kept on the device as a small PNG inside the save, and decoded once before drawing.
+const IMGS = new Map();
+export async function ensureLogo(logo) {
+  if (!logo?.img || IMGS.has(logo.img)) return;
+  const im = new Image(); im.src = logo.img;
+  try { await im.decode(); IMGS.set(logo.img, im); } catch { /* a broken image falls back to the crest */ }
+}
+// Reads a picture file and shrinks it to at most 128 px, so the save stays small. Rejects anything over 2 MB.
+export async function readUpload(file) {
+  if (!file || !/^image\//.test(file.type)) throw new Error('That file is not a picture.');
+  if (file.size > 2 * 1024 * 1024) throw new Error('That picture is over 2 MB.');
+  const url = URL.createObjectURL(file), im = new Image(); im.src = url;
+  try { await im.decode(); } finally { URL.revokeObjectURL(url); }
+  const k = Math.min(1, 128 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  const data = c.toDataURL('image/png'); await ensureLogo({ img: data }); return data;
+}
+
 // Draws a logo into a 2D context at (x, y), size s.
 export function drawLogo(g, logo, x = 0, y = 0, s = 100) {
+  const up = logo.img && IMGS.get(logo.img);
+  if (up) {   // an uploaded logo replaces the crest, fitted inside the square
+    const k = Math.min(s / up.width, s / up.height), w = up.width * k, h = up.height * k;
+    g.drawImage(up, x + (s - w) / 2, y + (s - h) / 2, w, h); return;
+  }
   g.save(); g.translate(x, y); g.scale(s / 100, s / 100);
   crest(g, logo.shape); g.fillStyle = logo.bg; g.fill();
   g.lineWidth = 5; g.strokeStyle = logo.rim; g.stroke();

@@ -92,7 +92,7 @@ export class Life {
     if (e.t === 'pickup') this.queue.push({ kind: 'pickup', crates: Math.max(2, Math.min(8, Math.round(e.qty / 15))) });
   }
   startCeremony(hero) {
-    const flag = this.sim.b.find(b => b.type === 'flag' && b.done) || this.sim.b.find(b => b.type === 'hq');
+    const flag = this.sim.b.find(b => b.type === 'seflag') || this.sim.b.find(b => b.type === 'flag' && b.done) || this.sim.b.find(b => b.type === 'hq');
     if (flag) this.ceremony = { t: 26, flag: flag.id, hero, slots: new Map() };
   }
 
@@ -202,12 +202,16 @@ export class Life {
     const of = type => done.filter(b => b.type === type);
     const opts = [];
     const site = s.b.find(b => !b.done);
+    const dirty = s.cleaning && s.byId(s.cleaning);
+    if (dirty && !this.cleaner) opts.push([50, () => { this.cleaner = a.id; const [x, z] = this.front(dirty, 0.55, 0.3); this.go(a, x, z, () => { a.act = 'work'; a.face = this.centre(dirty); a.wait = rnd(8, 12); a.onDone = () => { this.cleaner = null; }; }); }]);
     if (site) opts.push([5, () => { const [cx, cz] = this.centre(site), ang = rnd(0, 6.28), r = Math.max(site.w, site.d) / 2 + 0.6; this.go(a, cx + Math.cos(ang) * r, cz + Math.sin(ang) * r, () => { a.act = 'build'; a.face = [cx, cz]; a.wait = rnd(6, 12); }); }]);
     if (of('parade').length) opts.push([4 + 3 * (1 - t.drill), () => {
       const p = pick(of('parade')), i = Math.floor(rnd(0, 12));
       this.go(a, p.x + 0.6 + (i % 4) * (p.w - 1.2) / 3, p.z + 0.6 + Math.floor(i / 4) * (p.d - 1.2) / 2, () => { a.act = 'drill'; a.face = null; a.yaw = Math.PI * 0.5 * p.rot; a.wait = rnd(10, 18); });
     }]);
-    if (of('flag').length) opts.push([2, () => { const f = pick(of('flag')), [x, z] = this.front(f, rnd(1.2, 2.2), rnd(-1, 1)); this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); a.wait = rnd(3, 5); }); }]);
+    if (of('seflag').length) opts.push([2.5, () => { const f = pick(of('seflag')), [x, z] = this.front(f, rnd(1.2, 2.4), rnd(-1.2, 1.2)); this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); a.wait = rnd(3, 5); }); }]);
+    if (of('potty').length) opts.push([1.5, () => { const p = pick(of('potty')), [x, z] = this.front(p, 0.5, 0); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; a.wait = rnd(3, 6); }); }]);
+    if (of('flag').length) opts.push([1, () => { const f = pick(of('flag')), [x, z] = this.front(f, rnd(1.2, 2.2), rnd(-1, 1)); this.go(a, x, z, () => { a.act = 'salute'; a.face = this.centre(f); a.wait = rnd(3, 5); }); }]);
     if (of('vend').length) opts.push([3, () => { const v = pick(of('vend')), [x, z] = this.front(v, 0.6, rnd(-0.3, 0.3)); this.go(a, x, z, () => { a.act = 'drink'; a.face = this.centre(v); a.wait = rnd(3, 6); }); }]);
     for (const type of ['mess', 'hab', 'barracks', 'hq', 'dome']) if (of(type).length) opts.push([type === 'mess' ? 3 : 1.5, () => {
       const b = pick(of(type)), [x, z] = this.doorOf(b); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; a.wait = rnd(6, 14); });
@@ -225,6 +229,7 @@ export class Life {
     this.t += dt;
     const s = this.sim;
     this.flightsUpdate(dt); this.liftsUpdate(dt);
+    if (this.cleaner) { const c = this.actors.get(this.cleaner); if (!c || c.task !== 'free') this.cleaner = null; }
     if (this.ceremony) { this.ceremony.t -= dt; if (this.ceremony.t <= 0 || !s.byId(this.ceremony.flag)) this.ceremony = null; }
     // troops: make sure everyone at home has a body, and nobody who left still does
     const hq = s.b.find(b => b.type === 'hq');
@@ -242,7 +247,7 @@ export class Life {
       // the job comes first, then a ceremony, then whatever they fancy
       const want = t.state === 'job' ? 'job' + t.job : this.ceremony ? 'cer' : 'free';
       if (a.task !== want) {
-        a.task = want; a.hidden = false; a.wait = 0; a.face = null;
+        a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.onDone = null;
         if (want.startsWith('job')) {
           const b = s.byId(t.job), slot = s.troops.filter(o => o.job === t.job).indexOf(t);
           const [x, z] = this.front(b, 0.5, (slot - 1) * 0.5);
@@ -257,7 +262,7 @@ export class Life {
       if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (want === 'free') {
         a.wait -= dt;
-        if (a.wait <= 0) { a.hidden = false; a.act = 'idle'; this.idleTask(a, t); }
+        if (a.wait <= 0) { if (a.onDone) { a.onDone(); a.onDone = null; } a.hidden = false; a.act = 'idle'; this.idleTask(a, t); }
       }
       if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z);
     }

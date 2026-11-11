@@ -3,7 +3,7 @@ import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS } from './config.js';
 import { Sim, MKEYS, rankOf, dims } from './sim.js';
 import { Life } from './life.js';
 import { View } from './view.js';
-import { drawLogo, SHAPES, SYMBOLS, PALETTE } from './logo.js';
+import { drawLogo, ensureLogo, readUpload, SHAPES, SYMBOLS, PALETTE } from './logo.js';
 import { demoSim } from './demo.js';
 
 const $ = id => document.getElementById(id);
@@ -41,7 +41,8 @@ addEventListener('pagehide', store);
 document.addEventListener('visibilitychange', () => { if (document.hidden) store(); });
 
 // ---------------------------------------------------------------- starting
-function start(s, play = true) {
+async function start(s, play = true) {
+  await ensureLogo(s.faction.logo);
   sim = s; life = new Life(sim); view.attach(sim, life);
   view.lookAt(sim.N / 2, sim.N / 2 + 2);
   playing = play; view.shift = play ? 0 : (innerWidth > 900 ? -0.38 : 0);
@@ -69,11 +70,19 @@ function openFaction(edit) {
   }
   fxDraw(); show('s-faction');
 }
+function fxUpState() { $('fx-unup').classList.toggle('hidden', !draft.logo.img); for (const id of ['fx-shape', 'fx-symbol']) $(id).closest('.fx-row').style.opacity = draft.logo.img ? 0.4 : 1; }
+$('fx-up').onclick = () => $('fx-file').click();
+$('fx-unup').onclick = () => { delete draft.logo.img; fxDraw(); };
+$('fx-file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  try { draft.logo.img = await readUpload(f); $('fx-upmsg').textContent = 'Logo uploaded. It replaces the crest everywhere in your base.'; fxDraw(); }
+  catch (err) { $('fx-upmsg').textContent = err.message || 'That picture could not be read.'; }
+};
 function getK(k) { return k.split('.').reduce((o, p) => o[p], draft); }
 function setK(k, v) { const p = k.split('.'); const o = p.slice(0, -1).reduce((o, q) => o[q], draft); o[p.at(-1)] = v; }
 function fxDraw() {
   const g = $('fx-prev').getContext('2d'); g.clearRect(0, 0, 200, 200); drawLogo(g, draft.logo, 6, 6, 188);
-  $('fx-shape').textContent = draft.logo.shape; $('fx-symbol').textContent = draft.logo.symbol;
+  $('fx-shape').textContent = draft.logo.shape; $('fx-symbol').textContent = draft.logo.symbol; fxUpState();
   for (const sw of document.querySelectorAll('.sw')) { const v = getK(sw.dataset.k); for (const b of sw.children) b.classList.toggle('on', b.dataset.c === v); }
 }
 document.querySelector('.fx').addEventListener('click', e => {
@@ -97,7 +106,7 @@ $('fx-go').onclick = () => {
   draft.name = $('fx-name').value.trim() || 'Unnamed Loyal Faction'; draft.base = $('fx-base').value.trim() || 'FOB Nameless'; draft.motto = $('fx-motto').value.trim() || 'For Super Earth.';
   if (editing) { sim.faction = draft; view.setFaction(draft); drawWho(); show(null); paused = wasPaused; store(); return; }
   draft.planet = PLANETS[Math.floor(Math.random() * PLANETS.length)];
-  start(new Sim({ faction: draft, seed: (Math.random() * 1e9) | 0 })); store();
+  start(new Sim({ faction: draft, seed: (Math.random() * 1e9) | 0 })).then(store);
 };
 
 $('b-new').onclick = () => openFaction(false);
@@ -119,7 +128,7 @@ $('b-items').onclick = e => { const b = e.target.closest('[data-b]'); if (b) pic
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
   const k = b.dataset.b, d = B[k], lk = sim.locked(k);
-  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `${d.beds} beds` : '', d.mor ? `+morale` : '', d.prop ? `+propaganda` : '', `upkeep ${d.up}/wk`].filter(Boolean);
+  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${d.beds} votes` : '', d.mor ? `+morale` : '', d.prop ? `+propaganda` : '', `upkeep ${d.up}/wk`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.map(t => B[t].name).join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
 });
 $('b-items').addEventListener('pointerleave', hideTip);
@@ -147,7 +156,8 @@ function selPanel() {
     if (d.crew) bits.push(`<div class="kv"><span>CREW</span><b class="${b.crew < d.crew ? 'warn' : ''}">${b.crew} / ${d.crew}</b></div>`);
     if (d.crew || d.make || d.out) bits.push(`<div class="kv"><span>RUNNING AT</span><b>${Math.round(sim.work(b) * 100)}%</b></div>`);
     if (d.pw) bits.push(`<div class="kv"><span>POWER</span><b>${d.pw > 0 ? '+' : ''}${b.type === 'gen' ? Math.round(d.pw * sim.crewFrac(b) * (sim.e710 > 0 ? 1 : 0)) : d.pw}</b></div>`);
-    if (d.beds) bits.push(`<div class="kv"><span>BEDS</span><b>${d.beds}</b></div>`);
+    if (d.beds) bits.push(`<div class="kv"><span>VOTES HOUSED</span><b>${d.beds}</b></div>`);
+    if (d.potty) bits.push(`<div class="kv"><span>CLEANLINESS</span><b class="${(b.clean ?? 100) < 25 ? 'down' : ''}">${Math.round(b.clean ?? 100)}%</b></div><div class="meter"><i style="width:${b.clean ?? 100}%;background:${(b.clean ?? 100) < 25 ? 'var(--red)' : 'var(--blue)'}"></i></div><div class="kv"><span>VOTES PER POTTY</span><b>${Math.round(sim.potties.perPotty)}</b></div>`);
     if (b.type === 'memorial') bits.push(`<div class="kv"><span>NAMES ON THE WALL</span><b>${sim.fallen.length}</b></div>`);
     if (b.off) bits.push(`<p class="warn">Switched off.</p>`);
   }
@@ -251,7 +261,7 @@ function renderMins() {
     const ins = s.inspection, at = C.WEEK * C.INSPECT_AT - s.wt;
     h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${Math.ceil(at)}s.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
     h += `<h3>RIGHT NOW</h3><div class="kv"><span>MORALE</span><b>${Math.round(s.morale)}</b></div><div class="kv"><span>PROPAGANDA</span><b>${s.prop}</b></div><div class="kv"><span>CONDITION</span><b>${Math.round(s.avgCond)}</b></div><div class="kv"><span>LIKELY SCORE</span><b>${Math.round(0.35 * s.morale + 0.45 * s.prop + 0.2 * s.avgCond)}</b></div>`;
-    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', noise: 'noise near beds', crowd: 'not enough beds', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
+    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', noise: 'noise near housing', crowd: 'votes without housing', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
     if (ins) h += `<h3>LAST REPORT, WEEK ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
     h += `<p class="fine left">Every kind of propaganda counts for less the more of it you have, so a flag, banners, a loudspeaker, a statue and a pool beat ten banners.</p>`;
   } else {
@@ -292,7 +302,7 @@ $('me-export').onclick = async () => {
 $('me-import').onclick = async () => {
   const t = $('me-code');
   if (t.classList.contains('hidden') || !t.value.trim()) { t.value = ''; t.classList.remove('hidden'); t.focus(); $('me-msg').textContent = 'Paste a save code, then press LOAD SAVE CODE again.'; return; }
-  try { const st = await importCode(t.value); start(new Sim({ state: st })); store(); $('menu').classList.add('hidden'); } catch { $('me-msg').textContent = 'That is not a save code this game can read.'; }
+  try { const st = await importCode(t.value); await start(new Sim({ state: st })); store(); $('menu').classList.add('hidden'); } catch { $('me-msg').textContent = 'That is not a save code this game can read.'; }
 };
 
 // ---------------------------------------------------------------- pointer and touch
@@ -343,7 +353,7 @@ function up(e) {
     const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, rot);
     if (!ok.ok) { flash(ok.why); return; }
     sim.place(tool, t.tx, t.tz, rot); buildBar();
-    if (!e.shiftKey && !['banner', 'flag', 'solar', 'vend', 'speaker'].includes(tool)) { tool = null; view.setGhost(null); buildBar(); }
+    if (!e.shiftKey && !['banner', 'flag', 'solar', 'vend', 'speaker', 'potty'].includes(tool)) { tool = null; view.setGhost(null); buildBar(); }
     else view.setGhost(tool, t.tx, t.tz, rot, sim.canPlace(tool, t.tx, t.tz, rot).ok);
     return;
   }

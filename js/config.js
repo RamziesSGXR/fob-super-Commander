@@ -8,7 +8,7 @@ export const C = {
   // Super Earth splits its allocation by rank: 1st, 2nd, 3rd, 4th.
   ALLOC: { base: 650, mult: [1.5, 1.15, 0.85, 0.6], recruits: [5, 4, 3, 2] },
   STAND: { start: 40, rest: 30, drift: 0.12 },    // standings drift back toward "rest" every week
-  STORE: { base: 80, depot: 200 },                // how much E-710 and how many shells fit
+  STORE: { base: 80, depot: 200, shed: 100 },                // how much E-710 and how many shells fit
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
   REFUND: 0.5,
   OVERFLOW: 4,              // recruits beyond the beds Super Earth will still send
@@ -29,11 +29,15 @@ export const GROUPS = [
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).
 export const B = {
   hq:       { name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true,
-              desc: 'The heart of the faction. Houses six and keeps a little power on.' },
+              desc: 'The heart of the faction. Houses six votes and keeps a little power on.' },
+  seflag:   { name: 'Super Earth Flag', group: 'core', w: 2, d: 2, cost: 0, up: 0, prop: 6, mor: 2, unique: true, fixed: true,
+              desc: 'Every base flies one, at its centre. It cannot be removed. Troops salute it, and medals are pinned beneath it.' },
   pad:      { name: 'Landing Pad', group: 'core', w: 3, d: 3, cost: 300, up: 20, pw: -1,
               desc: 'Pelicans land here with allocations, recruits and inspectors, and take your requisitions away.' },
   depot:    { name: 'Supply Depot', group: 'core', w: 2, d: 2, cost: 180, up: 12,
               desc: 'Stores 200 more E-710 and shells. Comes with a forklift.' },
+  shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6,
+              desc: 'A standard-issue storage bunker. Holds 100 more E-710 and shells, and looks exactly like a shed.' },
 
   solar:    { name: 'Solar Array', group: 'power', w: 2, d: 1, cost: 90, up: 5, pw: 4,
               desc: 'Clean, quiet, patriotic power. Not much of it.' },
@@ -47,16 +51,20 @@ export const B = {
               desc: 'Turns E-710 into shells. Loud: troops sleeping nearby lose morale.' },
 
   barracks: { name: 'Barracks', group: 'military', w: 3, d: 2, cost: 260, up: 15, pw: -2, beds: 12,
-              desc: 'Bunks for twelve. Every faction is judged by its soldiers.' },
+              desc: 'Houses twelve votes. Every faction is judged by its soldiers.' },
   parade:   { name: 'Parade Ground', group: 'military', w: 4, d: 3, cost: 150, up: 5, needs: ['barracks'], drill: true,
               desc: 'Idle troops drill here. Drilled troops win more patrols.' },
   armory:   { name: 'Armory', group: 'military', w: 2, d: 2, cost: 320, up: 20, pw: -2, crew: 1, needs: ['barracks'],
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
+  shelter:  { name: 'Underground Bunker', group: 'military', w: 2, d: 2, cost: 280, up: 10, pw: -1, mor: 3, needs: ['barracks'],
+              desc: 'A blast door and a long stairway down. Knowing it is there helps everyone sleep.' },
 
   hab:      { name: 'Prefab Hab', group: 'living', w: 2, d: 2, cost: 120, up: 8, pw: 1, beds: 6, mor: 1,
-              desc: 'The standard-issue hab with solar on the roof. Sleeps six.' },
+              desc: 'The standard-issue hab with solar on the roof. Houses six votes.' },
   vend:     { name: 'Vending Machine', group: 'living', w: 1, d: 1, cost: 45, up: 4, pw: -1, mor: 2,
               desc: 'Liberty Cola. Tastes like freedom, mostly.' },
+  potty:    { name: 'Porta Potty', group: 'living', w: 1, d: 1, cost: 35, up: 2, mor: 2, potty: true,
+              desc: 'Somewhere to go. Gets dirtier the more votes use it; idle troopers clean it. Filthy ones hurt morale, and too few means queues.' },
   mess:     { name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8,
               desc: 'Hot food. The single biggest thing for morale.' },
   dome:     { name: 'Hydro Dome', group: 'living', w: 2, d: 2, cost: 240, up: 12, pw: -2, crew: 1, mor: 5, prop: 2,
@@ -64,8 +72,8 @@ export const B = {
 
   truth:    { name: 'Truth Office', group: 'propaganda', w: 2, d: 2, cost: 220, up: 15, pw: -2, crew: 1, prop: 6, mor: 1,
               desc: 'A Ministry of Truth branch office. Unlocks loudspeakers, billboards and statues.' },
-  flag:     { name: 'Flagpole', group: 'propaganda', w: 1, d: 1, cost: 40, up: 1, prop: 4, mor: 1,
-              desc: 'Your colours, flying. Troops salute it.' },
+  flag:     { name: 'Faction Flag', group: 'propaganda', w: 1, d: 1, cost: 40, up: 1, prop: 4, mor: 1,
+              desc: 'Your colours and crest, flying beside the Super Earth flag. Troops salute it.' },
   banner:   { name: 'Banner', group: 'propaganda', w: 1, d: 1, cost: 30, up: 1, prop: 3,
               desc: 'Your logo on a hanging banner. Place them anywhere.' },
   speaker:  { name: 'Loudspeaker', group: 'propaganda', w: 1, d: 1, cost: 70, up: 3, pw: -1, prop: 5, mor: 2, needs: ['truth'],

@@ -28,7 +28,7 @@ function build(type, near, deposit) {
   return !!s.place(type, p.x, p.z, p.rot);
 }
 const plan = ['pump', 'depot', 'barracks', 'mess', 'pump', 'plant', 'solar', 'parade', 'truth', 'banner', 'hab', 'vend', 'armory', 'speaker',
-  'memorial', 'banner', 'gen', 'statue', 'pool', 'billboard', 'hab', 'dome', 'solar', 'flag', 'banner', 'depot', 'speaker'];
+  'memorial', 'potty', 'potty', 'shed', 'banner', 'gen', 'statue', 'pool', 'billboard', 'hab', 'dome', 'solar', 'flag', 'banner', 'depot', 'speaker'];
 let step = 0;
 function bot() {
   const want = plan[step];
