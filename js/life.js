@@ -233,6 +233,7 @@ export class Life {
       const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
       // Reveille and Retreat: everyone outdoors stops where they stand, faces the nearest flag and salutes; indoors carries on
       const want = this.ceremony ? 'cer' : (ph === 'reveille' || ph === 'retreat') && flag ? 'honors'
+        : t.state === 'guard' ? 'guard' + t.gate
         : ph === 'firstcall' ? (shift ? 'job' + t.job : 'form')
         : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
         : ph === 'mess' || ph === 'chow' ? (shift ? 'job' + t.job : 'mess')
@@ -250,6 +251,10 @@ export class Life {
           const b = jobB, slot = s.troops.filter(o => o.job === t.job).indexOf(t);
           const [x, z] = this.front(b, 0.5, (slot - 1) * 0.5);
           this.go(a, x, z, () => { a.act = 'work'; a.face = this.centre(b); });
+        } else if (want.startsWith('guard')) {   // on the gate, beside the barrier, watching the road in
+          const g = s.gates[t.gate], m = s.gate(), c = g ? [g.x + (g.x - m.gx ? 0 : 0), g.z] : [m.x, m.z];
+          const inx = g ? Math.sign(Math.round((s.N / 2 - g.x) / 4)) : 0, inz = g ? Math.sign(Math.round((s.N / 2 - g.z) / 4)) : -1;
+          this.go(a, c[0] + inx * 1.2 + (inz ? 1.6 : 0), c[1] + inz * 1.2 + (inx ? 1.6 : 0), () => { a.act = 'idle'; a.face = [c[0] - inx * 6, c[1] - inz * 6]; });
         } else if (want === 'cer') {
           const c = this.ceremony, f = (c && s.byId(c.flag)) || flag || s.b.find(o => o.type === 'hq'), hero = c && id === c.hero;
           const [x, z] = hero ? this.front(f, 1.1, 0) : this.slot(f, c ? 'medal' + c.hero : 'rev' + s.time.day, id);

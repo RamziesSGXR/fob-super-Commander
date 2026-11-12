@@ -37,7 +37,7 @@ function build(type, near) {
   }
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'comms', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess'];
 let step = 0, roadN = 0;
 function bot() {
@@ -45,7 +45,7 @@ function bot() {
   if (want) {
     const d = B[want], waitable = (d.needs || []).every(t => s.count(t)) && (!d.tech || s.hasTech(d.tech) || s.tech.cur === d.tech || s.techState(d.tech) === 'open');
     if (s.locked(want) && !waitable) step++;
-    else if (!s.locked(want) && build(want, want === 'barracks' || want === 'hab' ? [m - 10, m] : [m + 2, m + 2])) step++;
+    else if (!s.locked(want) && build(want, want === 'lookout' ? [s.count('lookout') ? 14 : 50, 50] : want === 'barracks' || want === 'hab' ? [m - 10, m] : [m + 2, m + 2])) step++;
   } else if (s.power.ratio < 1) build('solar');
   else if (s.troops.length > s.beds - 3) build('hab', [m - 10, m]);
   if (s.power.ratio < 1 && s.supplies > 300) build('solar');
@@ -75,6 +75,7 @@ const j = JSON.stringify(s.save());
 if (process.env.SAVEOUT) (await import('node:fs')).writeFileSync(process.env.SAVEOUT, j);
 const s2 = new Sim({ state: JSON.parse(j) });
 console.log(`save ${(j.length / 1024).toFixed(1)} KB, reload ok: ${s2.b.length === s.b.length && s2.troops.length === s.troops.length && s2.roads.join('') === s.roads.join('')}`);
+console.log('fort', JSON.stringify(s.fortify()), 'guards', s.guards, 'lookouts', s.count('lookout'));
 console.log('tech', s.tech.done.join(','), '| pads', s.count('pad'), '/', s.padCap());
 console.log('vehicles', s.veh.map(v => v.kind).join(','), '| morale parts', JSON.stringify(s.mor));
 console.log('last log:'); for (const l of s.log.slice(-8)) console.log('  [' + l.ch + '] ' + l.text);

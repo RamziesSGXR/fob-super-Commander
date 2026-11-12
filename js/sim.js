@@ -13,6 +13,8 @@ import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTil
 export const MKEYS = ['def', 'pro', 'tru'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const FAST = [1, ROADS[1].speed, ROADS[2].speed];
+// wheels belong on roads: off them a vehicle crawls, so routes follow the road network wherever there is one
+const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed];
 
 export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of RANKS) if (missions >= n) r = name; return r; }
 
@@ -21,7 +23,7 @@ export function dims(type, rot) { const d = B[type]; return rot % 2 ? [d.d, d.w]
 
 const zero = () => ({ rations: 0, fuel: 0, ammo: 0 });
 // small things that go anywhere inside the wall; everything else is built on a roadside plot, door to the street
-export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar']);
+export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar', 'lookout']);
 
 export class Sim {
   constructor(opts = {}) {
@@ -120,6 +122,18 @@ export class Sim {
     this._paths.set(key, p.map(q => [q[0], q[1]]));
     return p;
   }
+  drivePath(sx, sz, ex, ez) {
+    const N = this.N, w = this.walkGrid(), cl = v => Math.max(0, Math.min(N - 1, Math.floor(v)));
+    let [ax, az] = [cl(sx), cl(sz)], [bx, bz] = this.nearWalk(cl(ex), cl(ez));
+    if (!w[az * N + ax]) [ax, az] = this.nearWalk(ax, az);
+    if (this._dpathV !== this._walkV) { this._dpaths = new Map(); this._dpathV = this._walkV; }
+    const key = ((az * N + ax) * N + bz) * N + bx, hit = this._dpaths.get(key);
+    if (hit) return hit.map(p => [p[0], p[1]]);
+    const p = findPath(N, w, this.roads, VFAST, ax, az, bx, bz) || [[bx + 0.5, bz + 0.5]];
+    if (this._dpaths.size > 2000) this._dpaths.clear();
+    this._dpaths.set(key, p.map(q => [q[0], q[1]]));
+    return p;
+  }
   nearWalk(x, z) {
     const w = this.walkGrid(), N = this.N;
     if (w[z * N + x]) return [x, z];
@@ -201,6 +215,7 @@ export class Sim {
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.map(t => B[t].name).join(' and ') };
     if (this.supplies < d.cost) return { ok: false, why: 'Not enough supplies' };
     const f = this.fits(type, x, z, rot); if (!f.ok) return f;
+    if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
     if (!LOOSE.has(type) && !this.frontage(type, x, z, rot)) return { ok: false, why: 'Needs a road out front: build along a road' };
     return f;
   }
@@ -337,6 +352,12 @@ export class Sim {
       while (need.get(b.id) > 0 && free.length) { const t = free.shift(); t.job = b.id; b.crew++; need.set(b.id, need.get(b.id) - 1); }
     }
     for (const t of home) { t.state = t.job ? 'job' : 'idle'; if (t.job) t.at = null; }
+    // every gate wants a trained trooper on it
+    const gN = (this.gates || []).length, taken = new Set();
+    for (const t of home) { if (t.job || t.gate == null || t.gate >= gN || taken.has(t.gate)) t.gate = null; else taken.add(t.gate); }
+    for (let g = 0; g < gN; g++) if (!taken.has(g)) { const t = home.find(t => !t.job && t.gate == null && t.train >= 100); if (t) { t.gate = g; taken.add(g); } }
+    for (const t of home) if (t.gate != null) { t.state = 'guard'; t.at = null; }
+    this.guards = taken.size;
     // power after crew, since a generator needs its crew and its fuel
     for (const b of done) {
       const d = B[b.type]; if (b.off || !(d.pw > 0)) continue;
@@ -423,6 +444,7 @@ export class Sim {
     if (h === C.PATROL_AT) this.standingPatrols();
     if (h === C.DEPLOY_AT) this.deployRun();
     if (h === 0) this.checkOrders();
+    this.fort = this.fortify();
   }
 
   // ---------------------------------------------------------------- the clock: a week of seven days, starting at 06:00
@@ -533,10 +555,15 @@ export class Sim {
   }
   roll(v, dt) {   // move along the path, faster on roads
     const N = this.N;
-    let step = VEHICLES[v.kind].speed * dt;
+    if (!v.path.length) return;
+    // traffic: a one-lane dirt road jams when vehicles share it; a two-lane paved road barely notices
+    const tx0 = Math.floor(v.x), tz0 = Math.floor(v.z), r0 = tx0 >= 0 && tz0 >= 0 && tx0 < N && tz0 < N ? this.roads[tz0 * N + tx0] : 0;
+    let near = 0; for (const o of this.veh) if (o !== v && !o.away && o.path.length && Math.abs(o.x - v.x) < 1.1 && Math.abs(o.z - v.z) < 1.1) near++;
+    v.jam = near > 0 && r0 < 2;
+    let step = VEHICLES[v.kind].speed * dt / (1 + near * (r0 === 2 ? 0.15 : 0.8));
     while (v.path.length && step > 0) {
       const tx = Math.floor(v.x), tz = Math.floor(v.z), r = tx >= 0 && tz >= 0 && tx < N && tz < N ? this.roads[tz * N + tx] : 0;
-      const sp = FAST[r] || 1, [px, pz] = v.path[0], dx = px - v.x, dz = pz - v.z, d = Math.hypot(dx, dz);
+      const sp = VFAST[r] || 0.3, [px, pz] = v.path[0], dx = px - v.x, dz = pz - v.z, d = Math.hypot(dx, dz);
       if (d > 1e-4) v.yaw = Math.atan2(dx, dz);
       const can = step * sp;
       if (d <= can) { v.x = px; v.z = pz; v.path.shift(); step -= d / sp; } else { v.x += dx / d * can; v.z += dz / d * can; step = 0; }
@@ -551,7 +578,7 @@ export class Sim {
       if ((this.time?.phase === 'reveille' || this.time?.phase === 'retreat') && !v.go) continue;   // vehicles halt for the colours, drivers included
       if (VEHICLES[v.kind].armour) {
         if (v.away) continue;
-        if (!v.mission && !v.path.length && !v.parked) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.pathTo(v.x, v.z, x, z); else v.parked = true; }
+        if (!v.mission && !v.path.length && !v.parked) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.drivePath(v.x, v.z, x, z); else v.parked = true; }
         this.roll(v, dt);
         if (v.go && !v.path.length) v.away = true;
         continue;
@@ -561,8 +588,8 @@ export class Sim {
         v.wait -= dt;
         if (v.wait <= 0) {
           v.job = this.findJob(v); v.wait = 1.5;
-          if (v.job) { const s = this.byId(v.job.src), [x, z] = this.door(s); v.path = this.pathTo(v.x, v.z, x, z); }
-          else if (!v.path.length) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.pathTo(v.x, v.z, x, z); }
+          if (v.job) { const s = this.byId(v.job.src), [x, z] = this.door(s); v.path = this.drivePath(v.x, v.z, x, z); }
+          else if (!v.path.length) { const [x, z] = this.door(home); if (Math.hypot(v.x - x - 0.5, v.z - z - 0.5) > 1) v.path = this.drivePath(v.x, v.z, x, z); }
         }
       }
       this.roll(v, dt);
@@ -574,7 +601,7 @@ export class Sim {
         const got = Math.min(j.qty, s.stock[j.g]); s.stock[j.g] -= got; s.out[j.g] = Math.max(0, s.out[j.g] - j.qty); v.load = got;
         if (got < j.qty) d.in[j.g] = Math.max(0, d.in[j.g] - (j.qty - got)), j.qty = got;
         if (!got) { this.dropJob(v); continue; }
-        j.leg = 'dst'; const [x, z] = this.door(d); v.path = this.pathTo(v.x, v.z, x, z);
+        j.leg = 'dst'; const [x, z] = this.door(d); v.path = this.drivePath(v.x, v.z, x, z);
       } else {
         d.stock[j.g] += v.load; d.in[j.g] = Math.max(0, d.in[j.g] - j.qty); this.stats.delivered += v.load; v.load = 0; v.job = null; v.wait = 0.5;
       }
@@ -719,7 +746,7 @@ export class Sim {
   }
   squadFor(size) {   // trained troopers first, idle before busy
     const home = this.troops.filter(t => t.state !== 'patrol');
-    const order = t => (this.trained(t) ? 200 : 0) + (t.job ? 10 - CREW_ORDER.indexOf(this.byId(t.job)?.type) : 100);
+    const order = t => (this.trained(t) ? 200 : 0) + (t.job ? 10 - CREW_ORDER.indexOf(this.byId(t.job)?.type) : t.gate != null ? 50 : 100);
     return home.sort((a, b) => order(b) - order(a) || b.missions - a.missions).slice(0, size);
   }
   chance(o, squad = this.squadFor(o.size), kinds = o.veh || []) {
@@ -753,14 +780,14 @@ export class Sim {
   // the squad gathers round its leader for the plan, then marches out together
   startPatrol(p, squad, at) {
     p.brief = C.BRIEF; p.at = at; p.leader = squad[0].id;
-    for (const t of squad) { t.state = 'patrol'; t.job = null; t.at = null; }
+    for (const t of squad) { t.state = 'patrol'; t.job = null; t.at = null; t.gate = null; }
     this.patrols.push(p);
     this.events.push({ t: 'patrolOut', id: p.id, members: p.members, at, leader: p.leader });
   }
   patrolGo(p) {
     p.brief = 0;
     const g = this.gate();
-    for (const id of p.vids || []) { const v = this.veh.find(v => v.id === id); if (v) { v.go = true; v.path = this.pathTo(v.x, v.z, g.x, g.z); } }
+    for (const id of p.vids || []) { const v = this.veh.find(v => v.id === id); if (v) { v.go = true; v.path = this.drivePath(v.x, v.z, g.x, g.z); } }
     this.events.push({ t: 'patrolGo', id: p.id, members: p.members, leader: p.leader });
   }
   resolve(p) {
@@ -781,7 +808,7 @@ export class Sim {
         this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two days, billed to the base's gratitude.`);
         continue;
       }
-      v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z; v.path = h ? this.pathTo(v.x, v.z, ...this.door(h)) : [];
+      v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z; v.path = h ? this.drivePath(v.x, v.z, ...this.door(h)) : [];
     }
     if (back.length === 0 && dead.length) { back.push(dead.pop()); }   // somebody always makes it back to tell it
     for (const t of dead) {
@@ -883,6 +910,8 @@ export class Sim {
     const gross = Math.round(amt / 0.82), fee = Math.round(gross * 0.11);
     this.ledger = { week: this.week, gross, fee, consult: gross - fee - amt, net: amt };
     for (const b of this.b) if (b.done && B[b.type].cryo && !b.off && b.crew > 0 && this.power.ratio >= 1) { this.gain('def', 3); this.say('def', 'Helldivers thawed, briefed and shipped to the front. +3 Defence standing.'); }
+    { const f = this.fort = this.fortify(), g = Math.round((f.score - 45) / 9);
+      if (g) { this.gain('def', g); this.say('def', g > 0 ? `Perimeter review: the base scores ${f.score} for defensibility. +${g} Defence standing.` : `Perimeter review: the base scores ${f.score} for defensibility${f.closed ? '' : ' (the wall is open)'}. ${g} Defence standing. Watch the wall and man the gates.`); } }
     for (const b of this.b) if (b.done && B[b.type].kickback) { this.supplies += B[b.type].kickback; this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
     this.events.push({ t: 'alloc', amt });
     // upkeep: what you can't pay for wears out
@@ -906,6 +935,21 @@ export class Sim {
     this.events.push({ t: 'week', rank, amt });
   }
 
+  // how defensible the base is, 0 to 100: watched wall, manned gates, few entrances, and the HQ and fuel kept away from the wall
+  fortify() {
+    const N = this.N, gs = this.gates || [], posts = [];
+    for (const b of this.b) if (b.done && B[b.type].watch && !b.off && b.crew > 0) posts.push([b.x + 0.5, b.z + 0.5, B[b.type].watch]);
+    let manned = 0;
+    gs.forEach((g, i) => { if (this.troops.some(t => t.gate === i && t.state === 'guard')) { manned++; posts.push([g.x, g.z, 5]); } });
+    let wall = 0, seen = 0; const wt = [];
+    for (let i = 0; i < N * N; i++) if (this.walls[i] === 1) { wall++; const x = i % N + 0.5, z = ((i / N) | 0) + 0.5; wt.push(x, z); if (posts.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) seen++; }
+    const key = this.b.filter(b => b.done && (b.type === 'hq' || b.type === 'fueldepot'));
+    let depth = 0;
+    for (const b of key) { let m = 99; for (let k = 0; k < wt.length; k += 2) m = Math.min(m, Math.hypot(wt[k] - b.x - b.w / 2, wt[k + 1] - b.z - b.d / 2)); depth += Math.min(1, m / 7); }
+    const f = { closed: this.area > 0, cover: wall ? seen / wall : 0, gates: gs.length, manned, entr: gs.length <= 2 ? 1 : Math.max(0, 1 - (gs.length - 2) * 0.35), depth: key.length ? depth / key.length : 1 };
+    f.score = f.closed ? Math.round(45 * f.cover + 25 * (gs.length ? manned / gs.length : 1) + 15 * f.entr + 15 * f.depth) : 0;
+    return f;
+  }
   gain(m, v) { this.stand[m] = clamp(this.stand[m] + (v > 0 ? v * (1 - this.stand[m] / 115) : v), 0, 100); return Math.round(v > 0 ? v * (1 - (this.stand[m]) / 115) : v); }
 
   memo() {   // the Bureau writes every week, always pleased, never quite clear
@@ -928,7 +972,7 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', '_walk', '_walkV', '_paths', '_pathV'].includes(k)) o[k] = this[k];
+    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
     o.rngS = this.rng.s; o.v = 5;
     return JSON.parse(JSON.stringify(o));
   }

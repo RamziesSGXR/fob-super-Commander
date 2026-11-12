@@ -306,6 +306,10 @@ function renderMins(force) {
     h += places.length ? places.map(b => `<div class="kv"><span>${B[b.type].name}</span><b>${s.troops.filter(t => t.at === b.id).length}/${B[b.type].slots} · ${TRAIN[B[b.type].train]} per hour</b></div>`).join('') : `<p class="warn">Nowhere to train. Build a Firing Range, an Obstacle Course or a Parade Ground.</p>`;
     h += `<p class="fine left">Recruits train from 08:00 to 20:00, except at lunch. 100 points makes a trooper. Recruits arrive with the morning supply pelican and fill empty bunks: more housing, more recruits.</p>`;
     const offices = s.b.filter(b => b.type === 'patrol' && b.done);
+    { const f = s.fort || s.fortify(), pc = v => Math.round(v * 100) + '%';
+      h += `<h3>BASE DEFENCE</h3><div class="kv"><span>DEFENSIBILITY</span><b class="${f.score >= 60 ? 'up' : f.score < 40 ? 'down' : 'warn'}">${f.score} / 100</b></div>`
+        + `<div class="kv"><span>WALL WATCHED</span><b>${pc(f.cover)}</b></div><div class="kv"><span>GATES MANNED</span><b>${f.manned} of ${f.gates}</b></div><div class="kv"><span>HQ AND FUEL FROM THE WALL</span><b>${pc(f.depth)}</b></div>`
+        + `<p class="fine left">${f.closed ? '' : '<span class="down">The wall is open. </span>'}Reviewed every week: above 45 earns Defence standing, below loses it. Lookout Towers watch the wall, every gate takes one trained trooper, and more than two gates is asking for trouble.</p>`; }
     h += `<h3>STANDING PATROLS</h3>` + (offices.length ? offices.map(b => `<div class="kv"><span>Patrol Office</span><b>${s.patrols.filter(p => p.office === b.id).length} of ${b.squads} squads out · ammo ${Math.floor(b.stock.ammo)}</b></div>`).join('') : `<p>Build a Patrol Office and it sends squads of three trained troopers out every morning at ${C.PATROL_AT}:00, on its own.</p>`);
     h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3>`;
     for (const o of s.offers) {

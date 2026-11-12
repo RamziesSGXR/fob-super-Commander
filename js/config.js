@@ -113,6 +113,8 @@ export const B = {
               desc: 'Walls, nets and mud. Good training, no ammo needed.' },
   patrol:   { name: 'Patrol Office', group: 'military', w: 2, d: 2, cost: 240, up: 12, crew: 1, needs: ['barracks'], need: { ammo: 24 }, squads: 1,
               desc: 'Sends out standing patrols of three trained troopers every morning and brings them home. Set how many squads it keeps out.' },
+  lookout:  { name: 'Lookout Tower', group: 'military', w: 1, d: 1, cost: 90, up: 4, crew: 1, watch: 9, atWall: true,
+              desc: 'A trooper with binoculars and a thermos. Stands at the wall and watches nine tiles of it either way. Unwatched wall costs Defence standing.' },
   armory:   { name: 'Armory', group: 'military', w: 2, d: 2, cost: 320, up: 20, pw: -2, crew: 1, needs: ['barracks'],
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
   hdbarracks: { name: 'Helldiver Barracks', group: 'military', w: 3, d: 2, cost: 420, up: 22, pw: -4, crew: 1, needs: ['barracks'], cryo: true,
@@ -162,7 +164,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'lookout', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [
