@@ -128,7 +128,7 @@ $('ht-x').onclick = () => show(playing ? null : 's-title');
 // 45 degrees or nowhere (SNAP, or G), and always onto existing roads and walls so they join up
 const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', desc: 'Drag to draw. One tile wide and cheap. Vehicles go 1.6 times as fast as off-road, people a little faster.' },
   road2: { name: 'Paved Road', k: 'paved', desc: 'Drag to draw. Two tiles wide, with a centre line. Vehicles go 2.4 times as fast, so supplies reach their buildings sooner.' },
-  wall: { name: 'Wall', k: 'wall', desc: 'Drag to draw HESCO wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
+  wall: { name: 'Wall', k: 'wall', desc: 'Drag to draw perimeter wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
   unroad: { name: 'Bulldoze', k: null, desc: 'Click a road or a wall to take it out. Half the cost back.' } };
 const SNAPS = ['grid', '45', 'free'], SNAPNAME = { grid: 'GRID', 45: '45°', free: 'FREE' };
 let snapMode = 'grid';
@@ -188,6 +188,10 @@ function selPanel() {
     if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${d.eat} votes a day</b></div>`);
     if (d.slots) { const n = sim.troops.filter(t => t.at === b.id).length; bits.push(`<div class="kv"><span>TRAINING NOW</span><b>${n} / ${d.slots}</b></div>`); }
     if (d.trucks || d.lifts) { const vs = sim.veh.filter(v => v.home === b.id); bits.push(`<div class="kv"><span>${d.trucks ? 'TRUCKS' : 'FORKLIFT'}</span><b>${vs.filter(v => v.job).length} of ${vs.length} on a run</b></div>`); }
+    if (d.ward) { const w = sim.troops.filter(t => t.hurt > 0); bits.push(`<div class="kv"><span>PATIENTS</span><b>${Math.min(w.length, d.ward)} of ${d.ward} beds</b></div>` + w.slice(0, 6).map(t => `<div class="kv"><span>${esc(t.name)}</span><b>${days(t.hurt)}</b></div>`).join('')); }
+    if (d.cryo) bits.push(`<div class="kv"><span>HELLDIVERS</span><b>four thawed, on a Marine's day: PT 05:30, Colors 08:00</b></div>`);
+    if (d.staff) bits.push(`<div class="kv"><span>CITIZEN STAFF</span><b>${d.staff}</b></div>`);
+    if (d.watch) bits.push(`<div class="kv"><span>WATCHES</span><b>${b.crew > 0 ? d.watch + ' tiles of wall' : 'nothing: no crew'}</b></div>`);
     if (d.lab) bits.push(`<div class="kv"><span>RESEARCH</span><b>${sim.tech.cur ? `${TECH[sim.tech.cur].name}, ${Math.floor(sim.tech.pts / TECH[sim.tech.cur].hrs * 100)}%` : 'idle: pick a project in Science'}</b></div>`);
     if (d.armour) for (const k of ['frv', 'tank']) {
       const v = sim.veh.find(v => v.home === b.id && v.kind === k), w = b.wreck?.[k];
@@ -301,6 +305,7 @@ function renderMins(force) {
     if (!s.orders.length) h += `<p>No orders open. The next comes with the week.</p>`;
     for (const o of s.orders) h += `<div class="card2"><div class="l"><b>${o.n} TRAINED TROOPERS TO THE FRONT</b><span>${o.sent} shipped · due day ${o.due} (${Math.max(0, o.due - s.time.day)} days left) · +${C.DEPLOY_PAY} SUP each, +${o.def} DEF when complete</span><div class="prog"><i style="width:${o.sent / o.n * 100}%"></i></div></div></div>`;
     h += `<p>Transports leave from the landing pad at ${C.DEPLOY_AT}:00 every day, ${s.padSeats() * s.b.filter(b => b.done && B[b.type].pad).length} seats a day across your pads. They take trained troopers who aren't crewing a building; the Patrol Office keeps its own squads back.</p>`;
+    { const w = s.troops.filter(t => t.hurt > 0).length; if (w || s.has('medbay')) h += `<div class="kv"><span>WOUNDED</span><b class="${w > s.wardBeds ? 'warn' : ''}">${w}${s.wardBeds ? ` · ${s.wardBeds} ward beds` : ' · no Medical Bay'}</b></div>`; }
     h += `<h3>TRAINING</h3><div class="kv"><span>READY TO SHIP</span><b>${ready}</b></div><div class="kv"><span>RECRUITS</span><b>${rec.length}</b></div><div class="kv"><span>IN TRAINING RIGHT NOW</span><b>${training}</b></div>`;
     const places = s.b.filter(b => b.done && B[b.type].slots);
     h += places.length ? places.map(b => `<div class="kv"><span>${B[b.type].name}</span><b>${s.troops.filter(t => t.at === b.id).length}/${B[b.type].slots} · ${TRAIN[B[b.type].train]} per hour</b></div>`).join('') : `<p class="warn">Nowhere to train. Build a Firing Range, an Obstacle Course or a Parade Ground.</p>`;

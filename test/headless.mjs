@@ -37,7 +37,7 @@ function build(type, near) {
   }
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess'];
 let step = 0, roadN = 0;
 function bot() {
@@ -49,7 +49,7 @@ function bot() {
   } else if (s.power.ratio < 1) build('solar');
   else if (s.troops.length > s.beds - 3) build('hab', [m - 10, m]);
   if (s.power.ratio < 1 && s.supplies > 300) build('solar');
-  if (!s.tech.cur) for (const k of ['drill', 'radio', 'shelving', 'frv', 'cargo', 'trucks', 'solar', 'asphalt', 'tank']) if (s.supplies > TECH[k].cost + 300 && s.research(k)) break;
+  if (!s.tech.cur) for (const k of ['drill', 'radio', 'shelving', 'frv', 'cargo', 'highrise', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.supplies > TECH[k].cost + 300 && s.research(k)) break;
   if (s.patrols.length < 3) for (const o of s.offers) { const kinds = ['frv', 'tank'].filter(k => s.armourFree(k)); if (s.chance({ ...o, veh: kinds }) >= 0.65) { s.send(o.id, kinds); break; } }
   for (const b of s.b) if (b.cond < 55 && s.supplies > 500) s.repair(b.id);
 }

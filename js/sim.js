@@ -180,7 +180,7 @@ export class Sim {
     if (d.pad && this.count('pad') >= this.padCap()) n.push(this.has('comms') || this.count('comms') ? 'another Comms Tower' : 'a Comms Tower');
     return n.length ? n : null;
   }
-  padCap() { return 1 + this.count('comms') * (this.hasTech('radio') ? 3 : 2); }
+  padCap() { return 1 + this.count('comms') * (this.hasTech('radio') ? 3 : 2) + this.count('mast') * B.mast.pads; }
   padLoad() { return C.PADLOAD + (this.hasTech('cargo') ? 60 : 0); }
   padSeats() { return C.PADSEATS + (this.hasTech('cargo') ? 4 : 0); }
   hasTech(k) { return !!this.tech?.done.includes(k); }
@@ -212,7 +212,7 @@ export class Sim {
     if (d.fixed) return { ok: false, why: 'Cannot be built' };
     if (d.unique && this.count(type)) return { ok: false, why: 'Only one allowed' };
     if (d.chain) { const other = this.b.find(b => B[b.type].chain && b.type !== type); if (other) return { ok: false, why: `Exclusive franchise agreement with ${B[other.type].name}` }; }
-    const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.map(t => B[t].name).join(' and ') };
+    const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.join(' and ') };
     if (this.supplies < d.cost) return { ok: false, why: 'Not enough supplies' };
     const f = this.fits(type, x, z, rot); if (!f.ok) return f;
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
@@ -341,7 +341,8 @@ export class Sim {
     const need = new Map();
     for (const b of done) if (B[b.type].crew && !b.off) need.set(b.id, B[b.type].crew);
     for (const b of done) b.crew = 0;
-    const home = this.troops.filter(t => t.state !== 'patrol');
+    for (const t of this.troops) if (t.hurt > 0 && t.state !== 'patrol') { t.state = 'hurt'; t.job = null; t.at = null; t.gate = null; }
+    const home = this.troops.filter(t => t.state !== 'patrol' && !(t.hurt > 0));
     for (const t of home) {
       if (t.job && need.get(t.job) > 0) { need.set(t.job, need.get(t.job) - 1); this.byId(t.job).crew++; }
       else t.job = null;
@@ -367,6 +368,8 @@ export class Sim {
     this.power = { made: Math.round(made), used, ratio: used > 0 ? Math.min(1, made / used) : 1 };
     this.slowF = done.some(o => B[o.type].sluggish) ? 1 - B.chicken.sluggish : 1;
     this.beds = beds;
+    this.citizens = done.reduce((a, b) => a + (B[b.type].staff || 0), 0);
+    this.wardBeds = done.filter(b => B[b.type].ward && !b.off && b.crew > 0).reduce((a, b) => a + B[b.type].ward, 0);
     this.idle = home.filter(t => t.state === 'idle' && !t.at).length;
     // propaganda and morale, each kind worth less the more of it you already have, so variety pays
     const seen = {}; let prop = 0, comfort = 0;
@@ -419,6 +422,12 @@ export class Sim {
     }
     this.consume(day);
     this.train(dt); this.study(dt);
+    // the wounded mend: properly in a staffed Medical Bay, slowly in their bunks
+    { let bed = this.wardBeds;
+      for (const t of this.troops) if (t.hurt > 0 && t.state !== 'patrol') {
+        t.hurt -= dt * (bed-- > 0 ? 1 : 0.3);
+        if (t.hurt <= 0) { t.hurt = 0; t.state = 'idle'; this.say('def', `${rankOf(t.missions)} ${t.name} is discharged and fit for duty.`); }
+      } }
     this.drive(dt);
     const pots = this.b.filter(b => b.done && B[b.type].potty);
     if (pots.length) {
@@ -745,7 +754,7 @@ export class Sim {
     }
   }
   squadFor(size) {   // trained troopers first, idle before busy
-    const home = this.troops.filter(t => t.state !== 'patrol');
+    const home = this.troops.filter(t => t.state !== 'patrol' && !(t.hurt > 0));
     const order = t => (this.trained(t) ? 200 : 0) + (t.job ? 10 - CREW_ORDER.indexOf(this.byId(t.job)?.type) : t.gate != null ? 50 : 100);
     return home.sort((a, b) => order(b) - order(a) || b.missions - a.missions).slice(0, size);
   }
@@ -792,13 +801,20 @@ export class Sim {
   }
   resolve(p) {
     this.patrols = this.patrols.filter(x => x !== p);
-    const win = this.rng.chance(p.chance), dead = [], back = [];
+    const win = this.rng.chance(p.chance), dead = [], back = [], hurt = [], evac = [];
     const vs = (p.vids || []).map(id => this.veh.find(v => v.id === id)).filter(Boolean);
     const guard = vs.reduce((a, v) => Math.min(a, VEHICLES[v.kind].guard), 1);
     for (const id of p.members) {
       const t = this.troop(id); if (!t) continue;
-      if (this.rng.chance((win ? 0.04 * p.diff : 0.11 * p.diff) * guard)) dead.push(t); else back.push(t);
+      if (!this.rng.chance((win ? 0.05 * p.diff : 0.13 * p.diff) * guard)) { back.push(t); continue; }
+      // hit: a free bed in a Medical Bay (or an FRV to carry them) saves most; otherwise some are flown off planet
+      const beds = this.wardBeds - this.troops.filter(o => o.hurt > 0).length, frv = vs.some(v => v.kind === 'frv');
+      if (this.rng.chance(beds > 0 ? (frv ? 0.9 : 0.75) : 0.25)) { t.hurt = C.HEAL; hurt.push(t); back.push(t); }
+      else if (this.rng.chance(0.4)) evac.push(t); else dead.push(t);
     }
+    for (const t of evac) this.troops = this.troops.filter(x => x !== t);
+    if (evac.length) this.say('def', `${evac.map(t => t.name).join(', ')}: badly hurt on ${p.op} and flown off planet for treatment. The Bureau has sent a card.`);
+    if (hurt.length) this.say('def', `${hurt.map(t => t.name).join(', ')}: wounded on ${p.op}${this.wardBeds ? ' and admitted to the Medical Bay' : ', resting in quarters: there is no Medical Bay'}.`);
     const g = this.gate();
     for (const v of vs) {
       const h = this.byId(v.home);
@@ -818,12 +834,12 @@ export class Sim {
     }
     if (dead.length) this.say('bur', `Form C-14 issued for ${dead.map(t => `${rankOf(t.missions)} ${t.name}`).join(', ')}. The Bureau thanks the family for their contribution and reminds them that the uniform remains Federation property.`);
     let hero = null;
-    for (const t of back) { t.state = 'idle'; t.missions++; }
+    for (const t of back) { t.state = t.hurt > 0 ? 'hurt' : 'idle'; t.missions++; }
     const quiet = !!p.office;   // standing patrols only report when something happens
     if (win) {
       this.gain('def', p.def); this.supplies += p.sup; this.stats.patrolsWon++;
       if (this.rng.chance((quiet ? 0.08 : 0.35) + 0.08 * p.diff)) {
-        hero = this.rng.pick(back); hero.medals++; this.pride += 5;
+        hero = this.rng.pick(back.filter(t => !(t.hurt > 0)).length ? back.filter(t => !(t.hurt > 0)) : back); hero.medals++; this.pride += 5;
         this.honours.push({ name: hero.name, rank: rankOf(hero.missions), op: p.op, week: this.week });
       }
       if (!quiet || dead.length || hero) this.say('def', `${p.op}: success. +${p.def} Defence standing, +${p.sup} supplies.` + (dead.length ? ` We lost ${dead.map(t => t.name).join(', ')}.` : ''));
@@ -929,6 +945,11 @@ export class Sim {
     if (unpaid) this.say('base', `Upkeep short: ${unpaid} building${unpaid > 1 ? 's' : ''} went unmaintained and are wearing down.`);
     if (rank < prev) this.say('riv', `Federation bulletin: ${this.faction.name} climbs to ${place}. Glory to the efficient.`);
     else if (rank > prev) this.say('riv', `Federation bulletin: ${this.table()[prev].name} overtakes ${this.faction.name}. Allocation reduced accordingly.`);
+    if (this.citizens && this.week % 3 === 0) this.say('bur', this.rng.pick([
+      `${this.citizens} citizens are employed on your base. Service guarantees citizenship. Would they like to know more? They would.`,
+      'Federal Network reminder: the evening broadcast is voluntary. Attendance is recorded for your convenience.',
+      'A citizen accepts personal responsibility for the safety of the body politic. Your canteen staff have been reminded.',
+    ]));
     this.memo();
     this.week++; this.wt -= C.WEEK; this.inspected = false;
     this.newOffers(); this.newOrder();

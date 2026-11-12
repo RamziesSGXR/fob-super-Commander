@@ -25,6 +25,8 @@ export function makeMats(f) {
     logo: std('#ffffff', { map: logo, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.9 }),
     logoLit: std('#ffffff', { map: logo, emissiveMap: logo, emissive: '#ffffff', emissiveIntensity: 0.6, transparent: true, alphaTest: 0.05 }),
     skin: std('#c99a78'), uniform: std(lookOf(f).uniform), helmet: std(lookOf(f).helmet), armband: std(lookOf(f).armband), crestOn: lookOf(f).crest, boots: std('#22251f'),
+    hdArmour: std('#17181a', { metalness: 0.4, roughness: 0.5 }), hdGold: std('#e0b21c', { metalness: 0.5, roughness: 0.4 }), hair: std('#3b2f25'),
+    civ0: std('#c9c2ad'), civ1: std('#7d8b99'), civ2: std('#a3b18a'), trim: std('#2a3038', { roughness: 0.7 }),
     coat: std('#141414'), cap: std('#e9e9e9'), paper: std('#f2f2ea'),
     pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), olive: std('#4d5638', { metalness: 0.3, roughness: 0.7 }), oliveDark: std('#33392a', { metalness: 0.3, roughness: 0.7 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
   };
@@ -127,6 +129,19 @@ function flagCloth(g, mat, w, h, x, y, z) {
   const geo = new THREE.PlaneGeometry(w, h, 10, 3); geo.translate(w / 2, 0, 0);
   const m = add(g, geo, mat, x, y, z); m.userData.wave = { w, base: geo.attributes.position.array.slice() };
   return m;
+}
+// A storey in the Super Earth city style: pale concrete panels on a dark plinth, a recessed band of windows, a trim band in
+// colour round the top and a dark roof lip. y0: the height of its floor. bays: window panes across the front
+function block(g, m, w, h, d, x, y0, z, trim = m.prim, bays = 4) {
+  box(g, w + 0.06, 0.1, d + 0.06, m.trim, x, y0 + 0.05, z);
+  box(g, w, h - 0.1, d, m.wall, x, y0 + 0.1 + (h - 0.1) / 2, z);
+  box(g, w + 0.05, 0.09, d + 0.05, trim, x, y0 + h - 0.1, z);
+  box(g, w + 0.02, 0.04, d + 0.02, m.dark, x, y0 + h - 0.02, z, { cast: false });
+  const wy = y0 + h * 0.5, wh = Math.min(0.22, h * 0.3);
+  box(g, w - 0.3, wh + 0.06, 0.02, m.trim, x, wy, z + d / 2 + 0.005, { cast: false });
+  for (let i = 0; i < bays; i++) box(g, (w - 0.4) / bays - 0.05, wh, 0.03, m.window, x - (w - 0.4) / 2 + (i + 0.5) * (w - 0.4) / bays, wy, z + d / 2 + 0.008, { cast: false });
+  for (const s of [-1, 1]) { box(g, 0.02, wh + 0.06, d - 0.4, m.trim, x + s * (w / 2 + 0.005), wy, z, { cast: false }); box(g, 0.03, wh, d - 0.6, m.window, x + s * (w / 2 + 0.008), wy, z, { cast: false }); }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.1, h - 0.1, 0.1, m.concrete, x + sx * (w / 2 - 0.02), y0 + 0.1 + (h - 0.1) / 2, z + sz * (d / 2 - 0.02));
 }
 function slab(g, m, w, d, mat = m.concrete) { box(g, w - 0.08, 0.08, d - 0.08, mat, 0, 0.04, 0, { cast: false }); }
 
@@ -380,6 +395,47 @@ const MAKE = {
     for (let i = 0; i < 6; i++) box(g, 0.3, 0.012, 0.08, m.hazard, -1.2 + i * 0.48, 0.09, 1.3, { cast: false });
     box(g, 0.4, 0.3, 0.3, m.e710, 1.15, 0.25, 0.6); cyl(g, 0.1, 0.1, 0.3, m.red, 1.15, 0.55, 0.2);
   },
+  medbay(g, m) {
+    slab(g, m, 3, 2);
+    block(g, m, 2.6, 0.85, 1.45, 0, 0.08, -0.12, m.white);
+    box(g, 0.7, 0.6, 0.05, m.glass, 0, 0.4, 0.62); box(g, 1.0, 0.05, 0.45, m.white, 0, 0.78, 0.8); for (const x of [-0.45, 0.45]) box(g, 0.04, 0.7, 0.04, m.steel, x, 0.43, 1.0);
+    for (const [w, h] of [[0.34, 0.1], [0.1, 0.34]]) { box(g, w, h, 0.02, m.red, -0.95, 0.62, 0.62); box(g, w, 0.02, h, m.red, 0.7, 0.955, -0.12); }
+    box(g, 0.5, 0.2, 0.3, m.metal, -0.8, 1.05, -0.4); box(g, 0.55, 0.12, 0.22, m.white, 1.0, 0.2, 0.85); box(g, 0.5, 0.03, 0.2, m.red, 1.0, 0.275, 0.85);
+  },
+  block(g, m) {   // three storeys of bunks
+    slab(g, m, 3, 3);
+    for (let f = 0; f < 3; f++) block(g, m, 2.6 - f * 0.06, 0.78, 2.3 - f * 0.06, 0, 0.08 + f * 0.8, -0.15, m.prim, 5);
+    box(g, 0.5, 0.6, 0.05, m.dark, 0, 0.4, 1.02); box(g, 0.9, 0.06, 0.4, m.prim, 0, 0.76, 1.15);
+    for (let f = 1; f < 3; f++) { box(g, 1.2, 0.04, 0.3, m.concrete, 0.6, 0.1 + f * 0.8, 1.1); box(g, 1.2, 0.16, 0.02, m.steel, 0.6, 0.2 + f * 0.8, 1.24); }
+    box(g, 0.5, 0.22, 0.4, m.metal, -0.7, 2.6, -0.6); box(g, 0.35, 0.18, 0.35, m.metal, 0.6, 2.58, -0.2);
+    cyl(g, 0.015, 0.02, 0.9, m.metal, 0.95, 2.95, -0.95); g.userData.blink = [ball(g, 0.05, m.glowR, 0.95, 3.42, -0.95)];
+    plane(g, 0.5, 0.5, m.logo, -0.75, 1.95, 1.0);
+  },
+  command(g, m) {   // a concrete tower with a glass crown
+    slab(g, m, 3, 3);
+    block(g, m, 2.6, 0.95, 2.6, 0, 0.08, 0, m.prim, 5);
+    for (let f = 0; f < 3; f++) block(g, m, 1.55, 0.78, 1.55, 0, 1.05 + f * 0.8, -0.2, m.trim, 3);
+    box(g, 1.95, 0.08, 1.95, m.dark, 0, 3.5, -0.2); box(g, 1.85, 0.42, 1.85, m.window, 0, 3.75, -0.2); box(g, 1.9, 0.42, 1.9, m.glass, 0, 3.75, -0.2);
+    box(g, 2.05, 0.1, 2.05, m.prim, 0, 4.0, -0.2); box(g, 1.2, 0.12, 1.2, m.concrete, 0, 4.1, -0.2);
+    box(g, 0.6, 0.7, 0.05, m.dark, 0, 0.45, 1.31); box(g, 1.0, 0.06, 0.4, m.prim, 0, 0.85, 1.45);
+    plane(g, 0.8, 0.8, m.logoLit, 0, 2.3, 0.58);
+    const dish = new THREE.Group(); dish.position.set(-0.3, 4.3, -0.4); g.add(dish);
+    cyl(dish, 0.02, 0.02, 0.3, m.metal, 0, -0.1, 0); add(dish, new THREE.SphereGeometry(0.3, 14, 6, 0, Math.PI * 2, 0, 1.0), m.white, 0, 0.08, 0, { rx: -0.9 });
+    g.userData.spin = dish;
+    cyl(g, 0.02, 0.03, 1.4, m.metal, 0.4, 4.85, 0.1); cyl(g, 0.015, 0.02, 0.9, m.metal, 0.1, 4.6, 0.25);
+    g.userData.blink = [ball(g, 0.06, m.glowR, 0.4, 5.57, 0.1), ball(g, 0.05, m.glowR, 0.1, 5.07, 0.25), ball(g, 0.05, m.glowR, -1.25, 1.1, -1.25), ball(g, 0.05, m.glowR, 1.25, 1.1, 1.25)];
+  },
+  mast(g, m) {   // the big one: twice a Comms Tower, hung with dishes and loudspeakers
+    slab(g, m, 2, 2);
+    block(g, m, 0.9, 0.6, 0.7, -0.45, 0.08, 0.5, m.prim, 2);
+    const H = 6.4, cx = 0.25, cz = -0.2;
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const leg = box(g, 0.07, H, 0.07, m.steel, cx + x * 0.26, H / 2, cz + z * 0.26); leg.rotation.set(z * 0.035, 0, -x * 0.035); }
+    for (let y = 0.5; y < H; y += 0.55) { const w = 0.66 - y * 0.045; for (const s of [-1, 1]) { box(g, w, 0.03, 0.03, m.steel, cx, y, cz + s * w / 2); box(g, 0.03, 0.03, w, m.steel, cx + s * w / 2, y, cz); } }
+    for (const [y, s] of [[3.2, 1], [4.1, -1], [5.0, 1]]) { box(g, 0.14, 0.4, 0.07, m.white, cx + s * 0.36, y, cz); add(g, new THREE.SphereGeometry(0.2, 12, 6, 0, Math.PI * 2, 0, 1.0), m.white, cx - s * 0.36, y, cz, { rz: s * 1.57 }); }
+    for (const s of [-1, 1]) box(g, 0.3, 0.18, 0.2, m.dark, cx, 2.3, cz + s * 0.4);
+    cyl(g, 0.02, 0.03, 1.2, m.metal, cx, H + 0.6, cz);
+    g.userData.blink = [ball(g, 0.08, m.glowR, cx, H + 1.22, cz), ball(g, 0.06, m.glowR, cx - 0.3, H * 0.66, cz - 0.3), ball(g, 0.06, m.glowR, cx + 0.3, H * 0.66, cz + 0.3), ball(g, 0.06, m.glowR, cx + 0.3, H * 0.33, cz - 0.3)];
+  },
   lookout(g, m) {
     for (const [x, z] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) box(g, 0.07, 1.7, 0.07, m.steel, x, 0.85, z);
     box(g, 0.85, 0.07, 0.85, m.dark, 0, 1.7, 0); for (const [x, z, w, d] of [[0, -0.4, 0.85, 0.05], [0, 0.4, 0.85, 0.05], [-0.4, 0, 0.05, 0.85], [0.4, 0, 0.05, 0.85]]) box(g, w, 0.3, d, m.wall, x, 1.9, z);
@@ -470,7 +526,9 @@ export function mergeStatic(root) {
 
 // ---------------------------------------------------------------- people and vehicles
 export function makePerson(m, kind = 'troop') {
-  const g = new THREE.Group(), body = kind === 'inspector' ? m.coat : m.uniform;
+  const hd = kind === 'hd', civ = kind.startsWith('civ');   // Helldivers: black and gold with a cape. Citizens: pressed, approved work clothes
+  const g = new THREE.Group(), body = kind === 'inspector' ? m.coat : hd ? m.hdArmour : civ ? m[kind] : m.uniform;
+  const helmet = hd ? m.hdArmour : m.helmet;
   const leg = (x) => { const p = new THREE.Group(); p.position.set(x, 0.2, 0); g.add(p); box(p, 0.05, 0.2, 0.06, m.boots, 0, -0.1, 0); return p; };
   // an arm is a shoulder joint with the upper arm, and an elbow joint with the forearm and a clenched fist,
   // so poses like the Helldiver salute (fist at the chin, forearm upright) are possible
@@ -483,14 +541,22 @@ export function makePerson(m, kind = 'troop') {
   };
   const parts = { legL: leg(-0.035), legR: leg(0.035), armL: arm(-0.085), armR: arm(0.085) };
   if (kind !== 'inspector') {
-    box(parts.armL, 0.05, 0.022, 0.055, m.armband, 0, -0.06, 0, { cast: false });
-    if (m.crestOn) { const c = plane(parts.armL, 0.04, 0.04, m.logo, -0.0235, -0.025, 0); c.rotation.y = -Math.PI / 2; }
+    box(parts.armL, 0.05, 0.022, 0.055, hd ? m.hdGold : m.armband, 0, -0.06, 0, { cast: false });
+    if (hd) box(parts.armR, 0.05, 0.022, 0.055, m.hdGold, 0, -0.06, 0, { cast: false });
+    if (m.crestOn && !hd && !civ) { const c = plane(parts.armL, 0.04, 0.04, m.logo, -0.0235, -0.025, 0); c.rotation.y = -Math.PI / 2; }
   }
   parts.torso = box(g, 0.13, 0.19, 0.08, body, 0, 0.3, 0);
   parts.head = new THREE.Group(); parts.head.position.set(0, 0.44, 0); g.add(parts.head);
   ball(parts.head, 0.045, m.skin, 0, 0, 0, { seg: 8 });
   if (kind === 'inspector') { cyl(parts.head, 0.055, 0.05, 0.03, m.cap, 0, 0.035, 0, { seg: 10 }); box(parts.head, 0.07, 0.01, 0.04, m.coat, 0, 0.025, 0.05); box(parts.armR.userData.elbow, 0.07, 0.09, 0.005, m.paper, 0, -0.05, 0.035); }
-  else { add(parts.head, new THREE.SphereGeometry(0.055, 10, 5, 0, 6.3, 0, 1.5), m.helmet, 0, 0.005, 0); box(g, 0.1, 0.12, 0.05, m.helmet, 0, 0.32, -0.06); }
+  else if (civ) { add(parts.head, new THREE.SphereGeometry(0.05, 8, 4, 0, 6.3, 0, 1.2), m.hair, 0, 0.008, -0.004); box(g, 0.132, 0.03, 0.082, m.boots, 0, 0.215, 0); }
+  else {
+    add(parts.head, new THREE.SphereGeometry(0.055, 10, 5, 0, 6.3, 0, 1.5), helmet, 0, 0.005, 0); box(g, 0.1, 0.12, 0.05, helmet, 0, 0.32, -0.06);
+    if (hd) {   // gold trim, a visor stripe and the cape
+      box(parts.head, 0.02, 0.012, 0.11, m.hdGold, 0, 0.058, 0); box(g, 0.132, 0.022, 0.082, m.hdGold, 0, 0.385, 0); box(g, 0.132, 0.022, 0.082, m.hdGold, 0, 0.215, 0);
+      box(g, 0.12, 0.24, 0.012, m.hdGold, 0, 0.27, -0.094, { rx: 0.12 }); box(g, 0.1, 0.2, 0.013, m.hdArmour, 0, 0.27, -0.0935, { rx: 0.12 });
+    }
+  }
   g.userData.parts = parts;
   return g;
 }

@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.4';
+export const VERSION = '0.5';
 
 export const C = {
   N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose
@@ -20,6 +20,7 @@ export const C = {
   PADLOAD: 140,            // most a supply pelican can bring to one landing pad
   PADSEATS: 8,             // recruits in, or troopers out, per pad per flight
   BRIEF: 7.5,              // a squad's briefing before it marches out (1.5 game hours)
+  HEAL: 300,               // a wounded trooper is back on duty after two and a half days in a Medical Bay
   REBUILD: 240,            // a wrecked FRV or tank is replaced in two days
   DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 9,   // hours: transports leave, supplies land, standing patrols go out
   DEPLOY_PAY: 40,          // supplies for every trained trooper shipped to the front
@@ -57,6 +58,9 @@ export const TECH = {
   trucks:   { name: 'Third Truck', tier: 2, cost: 240, hrs: 30, needs: ['shelving'], desc: 'Every Motor Pool gets a third supply truck.' },
   asphalt:  { name: 'Bureau Asphalt', tier: 2, cost: 180, hrs: 24, needs: ['shelving'], desc: 'Paved road costs half. The Bureau supplies the asphalt, at a price it would rather not discuss.' },
   frv:      { name: 'Fast Recon Vehicles', tier: 2, cost: 300, hrs: 36, needs: ['drill'], desc: 'Unlocks the Vehicle Bay and its FRV, which special operations can take along.' },
+  highrise: { name: 'Vertical Housing', tier: 2, cost: 280, hrs: 36, needs: ['shelving'], desc: 'Unlocks the Hab Block: three storeys, thirty bunks, one plot.' },
+  broadcast:{ name: 'Planetary Broadcast', tier: 2, cost: 300, hrs: 36, needs: ['radio'], desc: 'Unlocks the Broadcast Mast: a very tall mast that runs four landing pads and carries the Ministry of Truth to every ear.' },
+  command:  { name: 'Unified Command', tier: 3, cost: 480, hrs: 60, needs: ['broadcast', 'highrise'], desc: 'Unlocks the Command Tower, which watches a long stretch of wall and makes the whole base stand straighter.' },
   tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
 };
 // Training: points a recruit earns per game hour at each place; 100 makes a trooper.
@@ -77,7 +81,7 @@ export const GROUPS = [
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).
 export const B = {
-  hq:       { name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true, eat: 6, lifts: 1,
+  hq:       { staff: 2, name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true, eat: 6, lifts: 1,
               store: { rations: 40, fuel: 20, ammo: 20 },
               desc: 'The heart of the faction. Houses and feeds six votes, keeps a little of everything and a forklift.' },
   seflag:   { name: 'Super Earth Flag', group: 'core', w: 2, d: 2, cost: 0, up: 0, prop: 6, mor: 2, unique: true, fixed: true,
@@ -92,12 +96,14 @@ export const B = {
               desc: 'Two supply trucks: faster and bigger than forklifts, and faster still on paved roads. Burns fuel.' },
   comms:    { name: 'Comms Tower', group: 'core', w: 2, d: 2, cost: 260, up: 12, pw: -2, prop: 2,
               desc: 'A tall mast and a lot of static. Your first landing pad needs none; every tower lets you run two more.' },
+  mast:     { name: 'Broadcast Mast', group: 'core', w: 2, d: 2, cost: 520, up: 22, pw: -5, prop: 9, tech: 'broadcast', needs: ['comms'], pads: 4, staff: 1,
+              desc: 'Twice the height of a Comms Tower. Runs four more landing pads, and the evening broadcast reaches the whole base.' },
   shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6, store: { rations: 50, fuel: 50, ammo: 50 },
               desc: 'A standard-issue storage bunker. Holds a little of everything, and looks exactly like a shed.' },
 
   solar:    { name: 'Solar Array', group: 'power', w: 2, d: 1, cost: 90, up: 5, pw: 4,
               desc: 'Clean, quiet, patriotic power. Not much of it.' },
-  lab:      { name: 'Science Lab', group: 'industry', w: 3, d: 2, cost: 320, up: 18, pw: -3, crew: 1, needs: ['comms'], lab: true,
+  lab:      { staff: 2, name: 'Science Lab', group: 'industry', w: 3, d: 2, cost: 320, up: 18, pw: -3, crew: 1, needs: ['comms'], lab: true,
               desc: 'Researches upgrades, one at a time, while it is staffed and powered. Pick what to study in the Science tab. More labs, faster research.' },
   gen:      { name: 'E-710 Generator', group: 'power', w: 2, d: 2, cost: 220, up: 15, pw: 14, crew: 1, need: { fuel: 30 }, burn: { fuel: 8 },
               desc: 'Lots of power, but it burns E-710 fuel, which has to be trucked in.' },
@@ -115,6 +121,10 @@ export const B = {
               desc: 'Sends out standing patrols of three trained troopers every morning and brings them home. Set how many squads it keeps out.' },
   lookout:  { name: 'Lookout Tower', group: 'military', w: 1, d: 1, cost: 90, up: 4, crew: 1, watch: 9, atWall: true,
               desc: 'A trooper with binoculars and a thermos. Stands at the wall and watches nine tiles of it either way. Unwatched wall costs Defence standing.' },
+  medbay:   { name: 'Medical Bay', group: 'military', w: 3, d: 2, cost: 300, up: 16, pw: -2, crew: 1, needs: ['barracks'], ward: 4, mor: 2, staff: 1,
+              desc: 'A medic and four beds. Troopers hurt on patrol are treated here and return to duty in a few days; without one they are flown off planet, or worse.' },
+  command:  { name: 'Command Tower', group: 'military', w: 3, d: 3, cost: 700, up: 30, pw: -5, crew: 2, unique: true, tech: 'command', watch: 16, prop: 10, mor: 4, staff: 2,
+              desc: 'Five storeys of concrete with a glass crown. Its watch officers see sixteen tiles of wall, and everyone can see it.' },
   armory:   { name: 'Armory', group: 'military', w: 2, d: 2, cost: 320, up: 20, pw: -2, crew: 1, needs: ['barracks'],
               desc: 'Staffed, it makes every patrol more likely to succeed.' },
   hdbarracks: { name: 'Helldiver Barracks', group: 'military', w: 3, d: 2, cost: 420, up: 22, pw: -4, crew: 1, needs: ['barracks'], cryo: true,
@@ -124,26 +134,28 @@ export const B = {
   shelter:  { name: 'Underground Bunker', group: 'military', w: 2, d: 2, cost: 280, up: 10, pw: -1, mor: 3, needs: ['barracks'],
               desc: 'A blast door and a long stairway down. Knowing it is there helps everyone sleep.' },
 
+  block:    { name: 'Hab Block', group: 'living', w: 3, d: 3, cost: 520, up: 26, pw: -3, beds: 30, mor: 3, tech: 'highrise',
+              desc: 'Three storeys of bunks with a trim band in your colours. Houses thirty votes on one plot.' },
   hab:      { name: 'Prefab Hab', group: 'living', w: 2, d: 2, cost: 120, up: 8, pw: 1, beds: 6, mor: 1,
               desc: 'The standard-issue hab with solar on the roof. Houses six votes.' },
   vend:     { name: 'Vending Machine', group: 'living', w: 1, d: 1, cost: 45, up: 4, pw: -1, mor: 2,
               desc: 'Liberty Cola. Tastes like freedom, mostly.' },
   potty:    { name: 'Porta Potty', group: 'living', w: 1, d: 1, cost: 35, up: 2, mor: 2, potty: true,
               desc: 'Somewhere to go. Gets dirtier the more votes use it; idle troopers clean it. Filthy ones hurt morale, and too few means queues.' },
-  mess:     { name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8, eat: 24, need: { rations: 40 },
+  mess:     { staff: 2, name: 'Mess Hall', group: 'living', w: 3, d: 2, cost: 200, up: 15, pw: -3, crew: 1, mor: 8, eat: 24, need: { rations: 40 },
               desc: 'Feeds 24 votes a day, if the rations keep coming. The single biggest thing for morale.' },
-  burger:   { name: 'Big Liberty Burger', group: 'living', w: 2, d: 2, cost: 260, up: 34, pw: -2, mor: 10, chain: true, needs: ['mess'], eat: 16, need: { rations: 30 },
+  burger:   { staff: 2, name: 'Big Liberty Burger', group: 'living', w: 2, d: 2, cost: 260, up: 34, pw: -2, mor: 10, chain: true, needs: ['mess'], eat: 16, need: { rations: 30 },
               desc: 'A franchise with a cheerful mascot. Feeds 16. The biggest morale boost money can buy, and it costs a lot of money. One chain per base.' },
-  chicken:  { name: 'Patriot Clucks', group: 'living', w: 2, d: 2, cost: 220, up: 8, pw: -2, mor: 6, chain: true, sluggish: 0.08, needs: ['mess'], eat: 16, need: { rations: 30 },
+  chicken:  { staff: 2, name: 'Patriot Clucks', group: 'living', w: 2, d: 2, cost: 220, up: 8, pw: -2, mor: 6, chain: true, sluggish: 0.08, needs: ['mess'], eat: 16, need: { rations: 30 },
               desc: 'Cheap, fried and fiercely patriotic. Feeds 16. Votes who eat here work 8% slower. One chain per base.' },
-  cola:     { name: 'Bureau Cola & Fries', group: 'living', w: 2, d: 2, cost: 200, up: 4, pw: -2, mor: 4, chain: true, kickback: 70, needs: ['mess'], eat: 16, need: { rations: 30 },
+  cola:     { staff: 2, name: 'Bureau Cola & Fries', group: 'living', w: 2, d: 2, cost: 200, up: 4, pw: -2, mor: 4, chain: true, kickback: 70, needs: ['mess'], eat: 16, need: { rations: 30 },
               desc: 'Run by the Bureau. Feeds 16. Modest morale, but it pays the base a 70 supply "consulting fee" every week. One chain per base.' },
-  dome:     { name: 'Hydro Dome', group: 'living', w: 2, d: 2, cost: 240, up: 12, pw: -2, crew: 1, mor: 5, prop: 2,
+  dome:     { staff: 1, name: 'Hydro Dome', group: 'living', w: 2, d: 2, cost: 240, up: 12, pw: -2, crew: 1, mor: 5, prop: 2,
               desc: 'Fresh greens under glass. Good for morale, nice to look at.' },
 
-  lecture:  { name: 'Citizenship Hall', group: 'propaganda', w: 3, d: 2, cost: 240, up: 12, pw: -1, crew: 1, needs: ['truth'], train: 'lecture', slots: 10, prop: 4,
+  lecture:  { staff: 1, name: 'Citizenship Hall', group: 'propaganda', w: 3, d: 2, cost: 240, up: 12, pw: -1, crew: 1, needs: ['truth'], train: 'lecture', slots: 10, prop: 4,
               desc: 'Lectures on Managed Democracy. Trains recruits a little, and the Ministry of Truth likes the sound of it.' },
-  truth:    { name: 'Truth Office', group: 'propaganda', w: 2, d: 2, cost: 220, up: 15, pw: -2, crew: 1, prop: 6, mor: 1,
+  truth:    { staff: 1, name: 'Truth Office', group: 'propaganda', w: 2, d: 2, cost: 220, up: 15, pw: -2, crew: 1, prop: 6, mor: 1,
               desc: 'A Ministry of Truth branch office. Unlocks loudspeakers, billboards and statues.' },
   flag:     { name: 'Faction Flag', group: 'propaganda', w: 1, d: 1, cost: 40, up: 1, prop: 4, mor: 1,
               desc: 'Your colours and crest, flying beside the Super Earth flag. Troops salute it.' },
@@ -164,7 +176,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'lookout', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'medbay', 'lookout', 'command', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [

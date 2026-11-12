@@ -73,8 +73,8 @@ export class View {
     og.putImageData(oi, 0, 0); const ot = new THREE.CanvasTexture(oc); ot.wrapS = ot.wrapT = THREE.RepeatWrapping; ot.repeat.set(10, 10); ot.colorSpace = THREE.SRGBColorSpace;
     const outer = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ map: ot, roughness: 1 }));
     outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; outer.receiveShadow = true; this.world.add(outer);
-    const sky = new THREE.Color(hue[0] / 255 * 0.55 + 0.25, hue[1] / 255 * 0.55 + 0.27, hue[2] / 255 * 0.55 + 0.32);
-    this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 150, 260);
+    const sky = new THREE.Color(hue[0] / 255 * 0.35 + 0.36, hue[1] / 255 * 0.35 + 0.43, hue[2] / 255 * 0.35 + 0.56);   // a pale blue haze, warmed by the planet's dust
+    this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 140, 300);
     // rocks and hills
     const rock = new THREE.MeshStandardMaterial({ color: new THREE.Color(hue[0] / 340, hue[1] / 340, hue[2] / 340), roughness: 1, flatShading: true });
     const rg = new THREE.DodecahedronGeometry(1, 0), rocks = new THREE.InstancedMesh(rg, rock, 160), mx = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -86,11 +86,18 @@ export class View {
       q.setFromEuler(new THREE.Euler(a, a * 2, 0)); mx.compose(new THREE.Vector3(x, sc * 0.3, z), q, new THREE.Vector3(sc, sc * 0.7, sc)); rocks.setMatrixAt(n++, mx);
     }
     rocks.castShadow = rocks.receiveShadow = true; this.world.add(rocks);
+    // rock spires on the skyline, fading into the haze
+    const sg = new THREE.ConeGeometry(1, 1, 5), spires = new THREE.InstancedMesh(sg, rock, 70);
+    for (let i = 0; i < 70; i++) {
+      const a = nz.v(i * 2.3, 11) * TAU * 2, r = N / 2 + 14 + nz.v(11, i * 1.9) * 70, h = 4 + nz.v(i, i * 0.7) * 14, w = 1.2 + nz.v(i * 0.3, 4) * 2.6;
+      q.setFromEuler(new THREE.Euler((nz.v(i, 1) - 0.5) * 0.25, a, (nz.v(1, i) - 0.5) * 0.25)); mx.compose(new THREE.Vector3(Math.cos(a) * r, h / 2 - 0.3, Math.sin(a) * r), q, new THREE.Vector3(w, h, w)); spires.setMatrixAt(i, mx);
+    }
+    spires.castShadow = true; this.world.add(spires);
     for (let i = 0; i < 26; i++) {
       const a = i / 26 * TAU + nz.v(i, 9), r = 95 + nz.v(9, i) * 50, h = 10 + nz.v(i * 3, 2) * 22;
       const hill = new THREE.Mesh(new THREE.ConeGeometry(h * 1.6, h, 6), rock); hill.position.set(Math.cos(a) * r, h / 2 - 1, Math.sin(a) * r); hill.rotation.y = a; this.world.add(hill);
     }
-    this.hes = new THREE.MeshStandardMaterial({ color: '#b39a6c', roughness: 1 }); this.hesTop = new THREE.MeshStandardMaterial({ color: '#8b7652', roughness: 1 });
+    this.hes = new THREE.MeshStandardMaterial({ color: '#8c8f88', roughness: 0.9 }); this.hesTop = new THREE.MeshStandardMaterial({ color: '#41464a', roughness: 0.8 });   // concrete perimeter wall, dark cap and buttresses
     const hes = this.hes, mx2 = mx; void mx2;
     const wood = new THREE.MeshStandardMaterial({ color: '#5a5650', roughness: 0.9 }), roof = new THREE.MeshStandardMaterial({ color: '#3f4440', roughness: 0.8 });
     this.tower = (x, z) => {
@@ -190,10 +197,11 @@ export class View {
   }
   wallPiece(g, a, b) {
     const L = Math.hypot(b.x - a.x, b.z - a.z) + 0.9, ang = -Math.atan2(b.z - a.z, b.x - a.x), mx = this.wx((a.x + b.x) / 2), mz = this.wx((a.z + b.z) / 2);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(L, 0.85, 0.9), this.hes); body.position.set(mx, 0.425, mz); body.rotation.y = ang; body.castShadow = body.receiveShadow = true; g.add(body);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(L, 0.05, 0.84), this.hesTop); top.position.set(mx, 0.87, mz); top.rotation.y = ang; g.add(top);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(L, 1.05, 0.5), this.hes); body.position.set(mx, 0.525, mz); body.rotation.y = ang; body.castShadow = body.receiveShadow = true; g.add(body);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(L, 0.22, 0.8), this.hesTop); foot.position.set(mx, 0.11, mz); foot.rotation.y = ang; foot.receiveShadow = true; g.add(foot);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(L, 0.1, 0.62), this.hesTop); top.position.set(mx, 1.1, mz); top.rotation.y = ang; g.add(top);
     // the seams between the baskets
-    for (let t = 0.5; t < L - 0.4; t += 1) { const f = (t - L / 2) / L, x = (a.x + b.x) / 2 + (b.x - a.x) * f, z = (a.z + b.z) / 2 + (b.z - a.z) * f; const sm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.86, 0.92), this.hesTop); sm.position.set(this.wx(x), 0.43, this.wx(z)); sm.rotation.y = ang; g.add(sm); }
+    for (let t = 0.5; t < L - 0.4; t += 1) { const f = (t - L / 2) / L, x = (a.x + b.x) / 2 + (b.x - a.x) * f, z = (a.z + b.z) / 2 + (b.z - a.z) * f; if (Math.round(t) % 2) continue; const sm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.12, 0.74), this.hesTop); sm.castShadow = true; sm.position.set(this.wx(x), 0.56, this.wx(z)); sm.rotation.y = ang; g.add(sm); }
   }
   // street lamps along the roadside every few tiles; their heads and the pools under them light up at night
   streetLamps() {
@@ -294,14 +302,14 @@ export class View {
       c.aspect = this.aspect; c.updateProjectionMatrix();
       const look = this.target.clone(); look.y = Math.min(1.2, d * 0.04);
       c.position.set(look.x + Math.sin(this.yaw) * cp * d, look.y + Math.sin(this.tilt) * d, look.z + Math.cos(this.yaw) * cp * d);
-      c.lookAt(look); this.sun.target.position.copy(this.target); return;
+      c.lookAt(look); this.sun.target.position.copy(this.target); this.scene.fog.near = d * 0.5 + 12; this.scene.fog.far = d + 170; return;
     }
     const c = this.cam, z = this.zoom;
     const off = (this.shift || 0) * z * this.aspect;   // the title screen pushes the base to the right of the card
     c.left = -z * this.aspect + off; c.right = z * this.aspect + off; c.top = z; c.bottom = -z; c.updateProjectionMatrix();
     const d = 160, cp = Math.cos(this.pitch);
     c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
-    c.lookAt(this.target);
+    c.lookAt(this.target); this.scene.fog.near = d - 34; this.scene.fog.far = d + 150;
     this.sun.target.position.copy(this.target);
   }
   rotate(steps) { this.yawT += steps * Math.PI / 4; }
@@ -470,6 +478,7 @@ export class View {
       g.position.y = 0;
       switch (a.act) {
         case 'walk': p.legL.rotation.x = Math.sin(ph) * 0.6; p.legR.rotation.x = -Math.sin(ph) * 0.6; p.armL.rotation.x = -Math.sin(ph) * 0.5; p.armR.rotation.x = Math.sin(ph) * 0.5; eL.rotation.x = eR.rotation.x = -0.35; g.position.y = Math.abs(Math.sin(ph)) * 0.015; break;
+        case 'heart': p.armR.rotation.set(-0.55, 0, 0.5); eR.rotation.x = -2.0; break;
         case 'salute': p.armR.rotation.set(-1.05, 0, -0.35); eR.rotation.x = -2.1; break;
         case 'work': case 'build': p.armR.rotation.x = -1.4 + Math.sin(t * 7 + a.seed) * 0.5; eR.rotation.x = -0.9 + Math.sin(t * 7 + a.seed) * 0.4; p.armL.rotation.x = -0.6; eL.rotation.x = -0.8; break;
         case 'drill': { const k = Math.sin(t * 6 + Math.floor(a.x)); p.legL.rotation.x = Math.max(0, k) * -1.1; p.legR.rotation.x = Math.max(0, -k) * -1.1; p.armL.rotation.x = k * 0.7; p.armR.rotation.x = -k * 0.7; eL.rotation.x = eR.rotation.x = -0.4; g.position.y = Math.abs(k) * 0.02; break; }

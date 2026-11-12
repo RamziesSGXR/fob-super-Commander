@@ -6,7 +6,8 @@ import { B, ROADS } from './config.js';
 
 const WALK = 1.5, DRIVE = 2.4;
 const SHIFT = new Set(['gen', 'motorpool']);   // these run round the clock, so their crews skip the routine
-const HOUSING = ['hq', 'hab', 'barracks'];
+const HOUSING = ['hq', 'hab', 'barracks', 'block'];
+const HD_PER = 4;   // Helldivers thawed and walking about per Helldiver Barracks
 const EAT = ['mess', 'burger', 'chicken', 'cola'];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -220,10 +221,12 @@ export class Life {
       const [x, z] = hq ? this.doorOf(hq) : [this.N / 2, this.N / 2];
       this.person(t.id, 'troop', x + rnd(-0.5, 0.5), z + rnd(0, 0.5));
     }
+    this.extras();
     for (const [id, a] of this.actors) {
       if (a.boarding) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (a.kind === 'troop' && !s.troop(id)) { this.actors.delete(id); continue; }
       if (a.kind === 'inspector') { this.inspector(a, dt); continue; }
+      if (a.extra) { this.extra(a, dt); continue; }
       const t = s.troop(id);
       if (a.delay > 0) { a.delay -= dt; continue; }
       if (a.leaving || a.returning) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
@@ -232,7 +235,7 @@ export class Life {
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
       const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
       // Reveille and Retreat: everyone outdoors stops where they stand, faces the nearest flag and salutes; indoors carries on
-      const want = this.ceremony ? 'cer' : (ph === 'reveille' || ph === 'retreat') && flag ? 'honors'
+      const want = t.hurt > 0 ? 'ward' : this.ceremony ? 'cer' : (ph === 'reveille' || ph === 'retreat') && flag ? 'honors'
         : t.state === 'guard' ? 'guard' + t.gate
         : ph === 'firstcall' ? (shift ? 'job' + t.job : 'form')
         : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
@@ -271,6 +274,9 @@ export class Life {
           const homes = s.b.filter(b => b.done && HOUSING.includes(b.type)), h = homes.length ? homes.reduce((p, q) => Math.hypot(p.x - a.x, p.z - a.z) < Math.hypot(q.x - a.x, q.z - a.z) ? p : q) : null;
           if (h) { const n = (this.formN = (this.formN || 0) + 1) % 12, [x, z] = this.front(h, 0.9 + Math.floor(n / 6) * 0.45, (n % 6 - 2.5) * 0.42); this.go(a, x, z, () => { a.act = 'idle'; a.face = this.nearestFlag(a); }); }
           else { a.act = 'idle'; }
+        } else if (want === 'ward') {   // the wounded go to the Medical Bay, or to their bunk if there isn't one
+          const mb = s.b.find(b => b.done && b.type === 'medbay');
+          if (mb) { const [x, z] = this.doorOf(mb); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); } else this.toBed(a);
         } else if (want === 'sleep') this.toBed(a);
         else if (want === 'mess') this.toMess(a);
         else if (want === 'drill') {
@@ -324,6 +330,83 @@ export class Life {
     if (places.length) { const p = pick(places), [x, z] = this.doorOf(p); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
     else if (vend.length) { const v = pick(vend), [x, z] = this.front(v, rnd(0.6, 1.6), rnd(-0.6, 0.6)); this.go(a, x, z, () => { a.act = 'drink'; a.face = this.centre(v); }); }
     else { a.act = 'idle'; }
+  }
+
+  // ---------------------------------------------------------------- Helldivers and citizens: people the Bureau doesn't bill you for
+  // Helldivers live at their barracks and keep a Marine's day; citizens staff the counters and desks and keep office hours.
+  extras() {
+    const s = this.sim, want = new Set();
+    for (const b of s.b) {
+      if (!b.done) continue;
+      const d = B[b.type];
+      if (d.cryo && !b.off && s.power.ratio >= 0.5) for (let i = 0; i < HD_PER; i++) want.add(`hd${b.id}_${i}`);
+      for (let i = 0; i < (d.staff || 0); i++) want.add(`cv${b.id}_${i}`);
+    }
+    for (const key of want) if (!this.actors.has(key)) {
+      const hd = key[0] === 'h', home = +key.slice(2).split('_')[0], i = +key.split('_')[1], b = s.byId(home), [x, z] = this.doorOf(b);
+      const a = this.person(key, hd ? 'hd' : 'civ' + ((home + i) % 3), x, z);
+      a.extra = hd ? 'hd' : 'civ'; a.home = home; a.n = i; a.hidden = true; a.act = 'inside';
+    }
+    for (const [id, a] of this.actors) if (a.extra && !want.has(id)) this.actors.delete(id);
+  }
+  extra(a, dt) {
+    const s = this.sim, h = s.time.hour, ph = s.time.phase, b = s.byId(a.home); if (!b) return;
+    const hd = a.extra === 'hd', flag = s.b.find(o => o.type === 'seflag');
+    // Marines: reveille 05:30, PT, chow, Morning Colors at 08:00, training, Evening Colors, liberty, taps at 22:00
+    // Citizens: in at 07:30, lunch, out at 17:30, the evening broadcast, home
+    const colours = (ph === 'reveille' || ph === 'retreat' || (hd && h >= 8 && h < 8.25)) && flag;
+    const want = this.ceremony && !a.hidden ? 'honors' : colours ? 'honors'
+      : hd ? (h < 5.5 || h >= 22 ? 'home' : h < 7 ? 'pt' : h < 7.9 ? 'mess' : h < 11.5 ? 'train' : h < 12.5 ? 'mess' : h < 16.5 ? 'train' : h < 18 ? 'pt' : 'free')
+      : (h < 7.5 || h >= 21 ? 'home' : h < 11.5 ? 'work' : h < 12.5 ? 'mess' : h < 17.5 ? 'work' : 'free');
+    if (a.task !== want && want === 'honors') {
+      a.task = want; a.goal = null; a.path = []; a.then = null; a.lap = null; a.wait = 0;
+      if (a.act === 'plan') a.act = 'idle';
+      if (!a.hidden) { a.act = hd ? 'salute' : 'heart'; a.face = this.ceremony ? this.centre(s.byId(this.ceremony.flag) || flag) : this.nearestFlag(a); }
+    }
+    if (a.task !== want) {
+      a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.lap = null;
+      if (want === 'home') { const [x, z] = this.doorOf(b); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
+      else if (want === 'mess') this.toMess(a);
+      else if (want === 'pt') {   // a squad run: laps of the obstacle course if there is one, otherwise round their own block
+        const c = s.b.find(o => o.done && o.type === 'course') || b; a.lap = c.id; a.lapOut = c === b ? 1.3 : -0.3; a.act = 'run'; a.path = [];
+      } else if (want === 'train') {
+        const r = s.b.find(o => o.done && o.type === 'range'), p = s.b.find(o => o.done && o.type === 'parade');
+        if (r && a.n % 2 === 0) { const [x, z] = this.front(r, -0.55, (a.n - 1.5) * 0.5 + 1.2); this.go(a, x, z, () => { a.act = 'aim'; a.face = this.centre(r); }); }
+        else if (p) this.go(a, p.x + 0.8 + (a.n % 4) * 0.5, p.z + p.d - 0.7, () => { a.act = 'drill'; a.yaw = Math.PI * 0.5 * p.rot; });
+        else { const [x, z] = this.front(b, 1.2, (a.n - 1.5) * 0.5); this.go(a, x, z, () => { a.act = 'drill'; a.yaw = 0; }); }
+      } else if (want === 'work') {   // behind the counter most of the day, out front now and then
+        const [x, z] = this.doorOf(b); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; a.wait = rnd(20, 60); });
+      } else { a.act = 'idle'; a.wait = rnd(0.5, 2); }
+    }
+    if (a.act === 'plan') return;
+    if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } return; }
+    if (a.act === 'run' && a.lap) {
+      const p = s.byId(a.lap); if (!p) { a.lap = null; a.act = 'idle'; return; }
+      const o = a.lapOut ?? -0.3;
+      if (!a.path.length) { const c = [[p.x - o, p.z - o], [p.x + p.w + o, p.z - o], [p.x + p.w + o, p.z + p.d + o], [p.x - o, p.z + p.d + o]]; a.path = c.slice(a.n % 4).concat(c.slice(0, a.n % 4)); }
+      this.move(a, dt * WALK * 1.5); return;
+    }
+    if (want === 'work') {   // step outside for a moment: a smoke, a clipboard, a look at the sky
+      a.wait -= dt;
+      if (a.wait <= 0) {
+        if (a.hidden) { a.hidden = false; const [x, z] = this.front(b, rnd(0.6, 1.4), rnd(-1, 1)); this.go(a, x, z, () => { a.act = Math.random() < 0.5 ? 'inspect' : 'look'; a.face = this.centre(b); a.wait = rnd(5, 10); }); }
+        else { const [x, z] = this.doorOf(b); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; a.wait = rnd(25, 70); }); }
+      }
+    }
+    if (want === 'free') {
+      a.wait -= dt;
+      if (a.wait <= 0) {
+        a.hidden = false;
+        const done = s.b.filter(o => o.done), of = (...ts) => done.filter(o => ts.includes(o.type));
+        // the evening broadcast draws a crowd; otherwise a drink, the flag, or a walk
+        const tv = of('billboard', 'speaker', 'mast'), vend = of('vend'), r = Math.random();
+        if (tv.length && r < (hd ? 0.25 : 0.55)) { const v = pick(tv), [x, z] = this.front(v, rnd(1, 2.4), rnd(-1.4, 1.4)); this.go(a, x, z, () => { a.act = 'look'; a.face = this.centre(v); a.wait = rnd(8, 16); }); }
+        else if (vend.length && r < 0.75) { const v = pick(vend), [x, z] = this.front(v, 0.6, rnd(-0.3, 0.3)); this.go(a, x, z, () => { a.act = 'drink'; a.face = this.centre(v); a.wait = rnd(4, 7); }); }
+        else if (flag && r < 0.88) { const [x, z] = this.front(flag, rnd(1.2, 2.4), rnd(-1.2, 1.2)); this.go(a, x, z, () => { a.act = hd ? 'salute' : 'heart'; a.face = this.centre(flag); a.wait = rnd(3, 5); }); }
+        else { const [x, z] = this.near(a.x + rnd(-6, 6), a.z + rnd(-6, 6)); this.go(a, x + 0.5, z + 0.5, () => { a.act = 'idle'; a.wait = rnd(2, 5); }); }
+      }
+    }
+    if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z);
   }
 
   inspector(a, dt) {
