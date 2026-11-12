@@ -472,11 +472,13 @@ const MAKE = {
   memorial(g, m) {
     box(g, 2.8, 0.08, 0.9, m.white, 0, 0.04, 0.05, { cast: false });
     box(g, 2.7, 0.8, 0.22, m.stone, 0, 0.48, -0.25); box(g, 2.78, 0.06, 0.28, m.dark, 0, 0.9, -0.25);
-    plane(g, 0.28, 0.28, m.logo, 0, 0.72, -0.135);
+    plane(g, 0.3, 0.3, m.logo, 0, 0.62, -0.135);
+    for (const s of [-1, 1]) { box(g, 0.16, 0.95, 0.3, m.dark, s * 1.38, 0.5, -0.25); box(g, 0.5, 0.5, 0.2, m.stone, s * 1.1, 0.33, 0.28, { ry: -s * 0.5 }); }
+    cyl(g, 0.16, 0.1, 0.12, m.dark, 0, 0.14, 0.3, { seg: 10 }); ball(g, 0.07, m.glowY, 0, 0.24, 0.3, { seg: 8 });   // the eternal flame
     const pl = new THREE.InstancedMesh(new THREE.BoxGeometry(0.11, 0.05, 0.01), m.gold, 64); pl.count = 0;
-    for (let i = 0; i < 64; i++) { const r = Math.floor(i / 16), c = i % 16, mx = new THREE.Matrix4(); mx.setPosition(-1.2 + c * 0.16 + (c >= 8 ? 0.34 : 0) - (c >= 8 ? 0 : 0), 0.58 - r * 0.09, -0.135); pl.setMatrixAt(i, mx); }
+    for (let i = 0; i < 64; i++) { const r = Math.floor(i / 16), c = i % 16, mx = new THREE.Matrix4(); mx.setPosition(c < 8 ? -1.2 + c * 0.135 : 0.255 + (c - 8) * 0.135, 0.74 - r * 0.1, -0.132); pl.setMatrixAt(i, mx); }
     g.add(pl); g.userData.plaques = pl;
-    add(g, new THREE.TorusGeometry(0.12, 0.035, 6, 14), m.green, 0, 0.3, -0.12);
+    add(g, new THREE.TorusGeometry(0.1, 0.03, 6, 14), m.green, 0, 0.3, -0.12);
   },
   statue(g, m) {
     box(g, 1.7, 0.2, 1.7, m.concrete, 0, 0.1, 0); box(g, 1.1, 0.7, 1.1, m.white, 0, 0.55, 0);
@@ -568,7 +570,7 @@ export function makeForklift(m) {
   for (const x of [-0.07, 0.07]) box(g, 0.03, 0.02, 0.3, m.steel, x, 0.06, 0.34);
   for (const [x, z] of [[-0.13, -0.02], [0.13, -0.02], [-0.13, -0.22], [0.13, -0.22]]) box(g, 0.02, 0.32, 0.02, m.dark, x, 0.37, z);
   box(g, 0.3, 0.02, 0.24, m.lift, 0, 0.53, -0.12);
-  box(g, 0.1, 0.12, 0.07, m.uniform, 0, 0.3, -0.12); ball(g, 0.04, m.helmet, 0, 0.4, -0.12, { seg: 8 });
+  box(g, 0.1, 0.12, 0.07, m.civ1, 0, 0.3, -0.12); ball(g, 0.04, m.skin || m.civ0, 0, 0.4, -0.12, { seg: 8 }); box(g, 0.085, 0.025, 0.085, m.lift, 0, 0.44, -0.12);   // a citizen driver in a hard hat
   box(g, 0.05, 0.05, 0.05, m.glowY, 0, 0.56, -0.12);
   const cargo = new THREE.Group(); g.add(cargo); box(cargo, 0.22, 0.18, 0.2, m.crate, 0, 0.17, 0.36); g.userData.cargo = cargo;
   return g;
@@ -576,7 +578,9 @@ export function makeForklift(m) {
 export function makeTruck(m) {
   const g = new THREE.Group();
   box(g, 0.34, 0.06, 0.82, m.dark, 0, 0.12, 0);
-  box(g, 0.34, 0.26, 0.24, m.prim, 0, 0.26, 0.28); box(g, 0.3, 0.1, 0.02, m.glass, 0, 0.32, 0.405); box(g, 0.08, 0.04, 0.01, m.glowY, -0.1, 0.2, 0.405); box(g, 0.08, 0.04, 0.01, m.glowY, 0.1, 0.2, 0.405);
+  box(g, 0.34, 0.13, 0.24, m.prim, 0, 0.195, 0.28); box(g, 0.34, 0.03, 0.24, m.prim, 0, 0.385, 0.28); box(g, 0.34, 0.12, 0.03, m.prim, 0, 0.31, 0.175);
+  for (const x of [-0.16, 0.16]) for (const z of [0.39, 0.17]) box(g, 0.02, 0.12, 0.02, m.prim, x, 0.31, z);
+  box(g, 0.3, 0.11, 0.012, m.glass, 0, 0.315, 0.397); box(g, 0.1, 0.1, 0.07, m.civ1, -0.07, 0.3, 0.27); ball(g, 0.038, m.skin || m.civ0, -0.07, 0.345, 0.28, { seg: 8 });   // a citizen at the wheel box(g, 0.08, 0.04, 0.01, m.glowY, -0.1, 0.2, 0.405); box(g, 0.08, 0.04, 0.01, m.glowY, 0.1, 0.2, 0.405);
   box(g, 0.36, 0.06, 0.5, m.primDark, 0, 0.18, -0.12);
   const cargo = new THREE.Group(); g.add(cargo); for (let i = 0; i < 4; i++) box(cargo, 0.15, 0.13, 0.2, m.crate, -0.08 + (i % 2) * 0.16, 0.28, -0.24 + Math.floor(i / 2) * 0.22);
   g.userData.cargo = cargo;

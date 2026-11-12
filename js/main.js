@@ -7,6 +7,17 @@ import { drawLogo, drawTrooper, lookOf, ensureLogo, readUpload, SHAPES, SYMBOLS,
 import { demoSim } from './demo.js';
 import * as audio from './audio.js';
 
+// The sci-fi interface (matched to Orbital Fury's) is the default; ?ui=classic goes back to phosphor green, and is remembered
+try {
+  const q = new URLSearchParams(location.search).get('ui');
+  if (q === 'scifi' || q === 'classic') localStorage.setItem('fob.ui', q);
+  if (localStorage.getItem('fob.ui') !== 'classic') {
+    document.body.classList.add('ui-scifi');
+    const l = document.createElement('link'); l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Share+Tech+Mono&display=swap';
+    document.head.appendChild(l);
+  }
+} catch (e) { /* no storage: the sci-fi look without remembering */ document.body.classList.add('ui-scifi'); }
 const $ = id => document.getElementById(id);
 const SAVE = 'fob-super-commander.save.v1';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -408,6 +419,12 @@ function setPause(p) { paused = p; $('ck-pause').textContent = p ? '▶' : 'II';
 function setSpeed(i) { speedI = Math.max(0, Math.min(C.SPEEDS.length - 1, i)); $('ck-speed').textContent = gameSpeed() + '×'; if (paused) setPause(false); audio.play('click'); }
 $('ck-pause').onclick = () => setPause(!paused);
 $('ck-slow').onclick = () => setSpeed(speedI - 1); $('ck-fast').onclick = () => setSpeed(speedI + 1);
+// graphics level: AUTO by default, remembered
+const GFX = ['auto', 'high', 'medium', 'low'];
+let gfx = 'auto'; try { gfx = localStorage.getItem('fob.gfx') || 'auto'; } catch (e) { /* default */ }
+const gfxLabel = () => { $('b-gfx').textContent = { auto: 'GFX', high: 'GFX+', medium: 'GFX=', low: 'GFX-' }[gfx]; };
+view.setQuality(gfx); gfxLabel();
+$('b-gfx').onclick = () => { gfx = GFX[(GFX.indexOf(gfx) + 1) % 4]; try { localStorage.setItem('fob.gfx', gfx); } catch (e) { /* not remembered */ } view.setQuality(gfx); gfxLabel(); flash(`Graphics: ${gfx.toUpperCase()}`); };
 function sndLabel() { $('b-snd').classList.toggle('on', !audio.isMuted()); $('b-snd').style.textDecoration = audio.isMuted() ? 'line-through' : ''; }
 $('b-snd').onclick = () => { audio.setMuted(!audio.isMuted()); sndLabel(); }; sndLabel();
 addEventListener('pointerdown', () => audio.unlock(), { capture: true }); addEventListener('keydown', () => audio.unlock(), { capture: true });
@@ -561,7 +578,16 @@ addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
 addEventListener('blur', () => held.clear());
 
 // ---------------------------------------------------------------- the loop
-function loop(now) {
+// if a frame ever fails, keep the game alive and say what happened instead of leaving a black screen
+let oops = 0;
+function trouble(msg) {
+  let el = $('trouble'); if (!el) { el = document.createElement('div'); el.id = 'trouble'; el.className = 'panel'; el.style.cssText = 'position:absolute;left:50%;top:70px;transform:translateX(-50%);z-index:30;padding:10px 14px;max-width:min(560px,92vw);font-size:12px;border-color:#ff6a4d'; $('app').appendChild(el); }
+  if (!msg) { el.remove(); return; }
+  el.innerHTML = `<b style="color:#ff6a4d">DISPLAY TROUBLE</b><br>${esc(msg)}<br><span style="opacity:.7">Your base is saved. Try a reload (Ctrl+Shift+R). If it comes back, send this message to the developers. v${VERSION}</span>`;
+}
+view.onLost = lost => trouble(lost ? 'The graphics driver dropped the 3D view. Waiting for it to come back.' : null);
+function loop(now) { try { loopBody(now); oops = 0; } catch (e) { console.error(e); if (++oops === 3) trouble(String(e && e.message || e)); requestAnimationFrame(loop); } }
+function loopBody(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (playing) {
     const fx = (held.has('d') || held.has('arrowright') ? 1 : 0) - (held.has('a') || held.has('arrowleft') ? 1 : 0);
@@ -589,7 +615,7 @@ function loop(now) {
     if (sim) { sim.step(dt); for (const ev of sim.drain()) life.event(ev); life.update(dt); }
   }
   if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
-  view.frame(dt);
+  if (!view.lost) view.frame(dt);
   requestAnimationFrame(loop);
 }
 

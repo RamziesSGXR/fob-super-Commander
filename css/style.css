@@ -255,3 +255,59 @@ table.st canvas { width: 20px; height: 20px; vertical-align: middle; margin-righ
   .bi { min-width: 88px; min-height: 44px; padding: 4px 6px; }
   #mins { max-height: 92vh; }
 }
+
+/* =====================================================================================================================
+   (0.5) The sci-fi interface, matched to Orbital Fury 0.59.1's: amber for what is yours to spend or build, cyan for
+   information and troops, red for trouble. Thin lines, cut corners, square readouts. It is the default here; ?ui=classic
+   on the address goes back to the phosphor-green look and is remembered (see main.js). Colours and shapes only: nothing
+   moves, so every layout rule above still holds.
+   ===================================================================================================================== */
+body.ui-scifi {
+  --g: #e6eadc; --g-dim: rgba(230, 234, 220, 0.62); --line: rgba(127, 233, 224, 0.4); --panel: rgba(10, 13, 12, 0.78); --bar: rgba(8, 11, 10, 0.93);
+  --yellow: #f5d547; --amber: #ffb648; --blue: #7fe9e0; --cy: #7fe9e0; --cy-d: rgba(127, 233, 224, 0.4); --am-d: rgba(245, 213, 71, 0.45);
+  --def: #ff6a4d; --pro: #f5d547; --tru: #7fe9e0;
+  --mono: "Share Tech Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; --hd: "Chakra Petch", "Share Tech Mono", ui-monospace, sans-serif;
+  --cut: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  --cutline-c: linear-gradient(135deg, transparent 4.4px, var(--cy-d) 4.4px 5.6px, transparent 5.6px), linear-gradient(315deg, transparent 4.4px, var(--cy-d) 4.4px 5.6px, transparent 5.6px);
+  --cutline-a: linear-gradient(135deg, transparent 4.4px, var(--am-d) 4.4px 5.6px, transparent 5.6px), linear-gradient(315deg, transparent 4.4px, var(--am-d) 4.4px 5.6px, transparent 5.6px);
+  letter-spacing: 0.03em;
+}
+body.ui-scifi .panel, body.ui-scifi .card { border-radius: 0; backdrop-filter: none; border-color: var(--cy-d); background-color: var(--panel); box-shadow: none; }
+body.ui-scifi .card { background-color: rgba(10, 13, 12, 0.9); border-top: 2px solid var(--yellow); }
+body.ui-scifi h1, body.ui-scifi h2, body.ui-scifi h3, body.ui-scifi .btn, body.ui-scifi .bi b, body.ui-scifi .md b, body.ui-scifi .ph, body.ui-scifi #ck-time, body.ui-scifi .ck-top b,
+body.ui-scifi .ri b, body.ui-scifi .week b, body.ui-scifi .who b, body.ui-scifi .tn b, body.ui-scifi .card2 b, body.ui-scifi .eyebrow, body.ui-scifi #photobar b, body.ui-scifi .srow .tot { font-family: var(--hd); font-weight: 600; }
+body.ui-scifi h1 { text-shadow: none; color: var(--yellow); letter-spacing: 0.1em; }
+body.ui-scifi .eyebrow, body.ui-scifi .ph { color: var(--cy); }
+/* buttons: cut corners, a dark plate, a cyan line; the build bar, which spends, is amber */
+body.ui-scifi .btn, body.ui-scifi .md, body.ui-scifi .sw button, body.ui-scifi .tn { border-radius: 0; clip-path: var(--cut); background-color: rgba(12, 16, 14, 0.9); background-image: var(--cutline-c); border-color: var(--cy-d); box-shadow: none; }
+body.ui-scifi .btn:hover, body.ui-scifi .md:hover { border-color: var(--cy); background-color: rgba(22, 34, 32, 0.95); }
+body.ui-scifi .bi { background-image: var(--cutline-a); border-color: var(--am-d); }
+body.ui-scifi .bi:hover { border-color: var(--yellow); }
+body.ui-scifi .bi.road { background-image: var(--cutline-c); border-color: var(--cy-d); }
+body.ui-scifi .bi .cost { color: var(--yellow); } body.ui-scifi .bi.road .cost { color: var(--cy); }
+body.ui-scifi .btn.on, body.ui-scifi .bi.on, body.ui-scifi .sw button.on, body.ui-scifi .tn.busy { border-color: var(--yellow); background-color: rgba(40, 36, 10, 0.95); background-image: var(--cutline-a); color: var(--yellow); box-shadow: none; }
+body.ui-scifi .btn.primary { background-color: var(--yellow); background-image: none; border-color: var(--yellow); color: #141204; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); letter-spacing: 0.14em; }
+body.ui-scifi .btn.primary:hover { background-color: #fff0a0; }
+body.ui-scifi .btn.danger { border-color: #ff6a4d; color: #ff6a4d; }
+body.ui-scifi .btn:disabled, body.ui-scifi .bi.lock { opacity: 0.45; }
+body.ui-scifi .tn.done { border-color: var(--cy); } body.ui-scifi .tn.done b { color: var(--cy); }
+/* the top bar and readouts: square, a line under them */
+body.ui-scifi #top, body.ui-scifi #build { border-radius: 0; border-color: var(--cy-d); background: var(--bar); }
+body.ui-scifi #top { border: 0; border-bottom: 1px solid var(--am-d); } body.ui-scifi #build { border: 0; border-top: 1px solid var(--am-d); }
+body.ui-scifi .ri i, body.ui-scifi .who span, body.ui-scifi .week, body.ui-scifi .md span, body.ui-scifi #ck-phase { color: var(--g-dim); }
+body.ui-scifi .ri b { color: var(--cy); } body.ui-scifi .ri.cr b { color: var(--yellow); } body.ui-scifi .ri.bad b { color: #ff6a4d; }
+body.ui-scifi .wbar { border-radius: 0; height: 3px; background: #263029; border: 0; } body.ui-scifi #w-fill { border-radius: 0; background: var(--yellow); }
+body.ui-scifi #stand, body.ui-scifi #orders, body.ui-scifi #comms, body.ui-scifi #selp, body.ui-scifi #clock { border: 0; border-top: 1px solid var(--cy-d); border-left: 2px solid var(--cy-d); background: rgba(10, 13, 12, 0.74); }
+body.ui-scifi #clock { border-left-color: var(--yellow); border-top-color: var(--am-d); } body.ui-scifi #ck-time { color: #fff; }
+body.ui-scifi #orders li.next { color: var(--yellow); } body.ui-scifi #orders li { color: var(--g); } body.ui-scifi #orders li.done { color: var(--g-dim); }
+body.ui-scifi #mdock { border-radius: 0; border-color: var(--cy-d); background: rgba(10, 13, 12, 0.74); }
+body.ui-scifi .srow.me .nm, body.ui-scifi .srow.me .tot { color: var(--yellow); }
+body.ui-scifi .meter, body.ui-scifi .prog, body.ui-scifi .bars3 span { border-radius: 0; } body.ui-scifi .meter i, body.ui-scifi .prog i, body.ui-scifi .bars3 span i { border-radius: 0; }
+body.ui-scifi .prog i { background: var(--cy); }
+body.ui-scifi kbd { border-radius: 0; border-color: var(--cy-d); background: rgba(127, 233, 224, 0.08); color: var(--cy); }
+body.ui-scifi #tip, body.ui-scifi .card2, body.ui-scifi input, body.ui-scifi textarea, body.ui-scifi #paused, body.ui-scifi .fx-troop, body.ui-scifi #fx-prev { border-radius: 0; }
+body.ui-scifi .card2 { border-color: rgba(127, 233, 224, 0.2); } body.ui-scifi .mi-body h3 { color: var(--cy); border-color: var(--cy-d); }
+body.ui-scifi #tip { border-color: var(--am-d); background: rgba(10, 13, 12, 0.95); }
+body.ui-scifi table.st th { color: var(--cy); } body.ui-scifi table.st tr.me td { color: var(--yellow); }
+body.ui-scifi .up { color: #8df0a0; } body.ui-scifi .cm em { font-family: var(--hd); }
+body.ui-scifi .c-sci { color: #c9a8ff; }

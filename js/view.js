@@ -12,8 +12,12 @@ export class View {
   constructor(canvas) {
     this.canvas = canvas;
     this.r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // a graphics driver can drop the 3D context (a black view under a working HUD): ask for it back and say so
+    this.lost = false;
+    canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.lost = true; this.onLost?.(true); });
+    canvas.addEventListener('webglcontextrestored', () => { this.lost = false; this.onLost?.(false); });
     this.r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-    this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFShadowMap;
+    this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFShadowMap; this.q = 0; this.qMode = 'auto'; this.qT = 0; this.qN = 0;
     this.r.toneMapping = THREE.ACESFilmicToneMapping; this.r.toneMappingExposure = 1.05;
     this.scene = new THREE.Scene();
     this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
@@ -379,8 +383,34 @@ export class View {
     this.syncVehicles(dt);
     this.smokeUpdate(dt);
     if (this.sel.visible) this.sel.material.color.setHSL(0.15, 1, 0.5 + 0.2 * Math.sin(t * 6));
+    // shadows are redrawn every frame only at the top graphics level; lower levels redraw them every few frames
+    const every = [1, 3, 6, 0][this.q];
+    this.fr = (this.fr || 0) + 1;
+    if (every > 1 && this.fr % every === 0) this.r.shadowMap.needsUpdate = true;
     this.r.render(this.scene, this.cam);
+    this.autoQuality();
     void s;
+  }
+  // graphics level: 0 full, 1 lighter shadows, 2 lower resolution, 3 no shadows. 'auto' steps down when frames run slow
+  setQuality(mode) {
+    this.qMode = mode; this.qT = 0; this.qN = 0;
+    this.applyQ(mode === 'auto' ? (this.q ?? 0) : mode === 'high' ? 0 : mode === 'low' ? 3 : 1);
+  }
+  applyQ(q) {
+    const was = this.q; this.q = q;
+    const dpr = window.devicePixelRatio || 1;
+    this.r.setPixelRatio([Math.min(2, dpr), Math.min(1.5, dpr), Math.min(1, dpr), Math.min(1, dpr) * 0.75][q]);
+    this.r.shadowMap.autoUpdate = q === 0; this.r.shadowMap.needsUpdate = true;
+    if ((q === 3) !== (was === 3)) { this.r.shadowMap.enabled = q !== 3; this.sun.castShadow = q !== 3; this.scene.traverse(o => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; }); }
+    this.resize(); this.onQuality?.(q);
+  }
+  autoQuality() {
+    const now = performance.now(), d = now - (this.qLast || now); this.qLast = now;
+    if (this.qMode !== 'auto' || d > 500 || document.hidden) return;   // a long gap is a tab switch, not a slow frame
+    this.qT += d; this.qN++;
+    if (this.qT < 2500) return;
+    const avg = this.qT / this.qN; this.qT = 0; this.qN = 0;
+    if (avg > 30 && this.q < 3) this.applyQ(this.q + 1);   // under about 33 frames a second: ease off
   }
 
   syncBuildings(dt) {
