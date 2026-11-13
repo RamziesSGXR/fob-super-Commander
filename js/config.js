@@ -1,20 +1,31 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.8';
+export const VERSION = '0.9';
 
 export const C = {
-  N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose
+  N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
   BOX: 40,                  // the starting wall encloses a BOX x BOX square in the middle
-  WALL: 4,                  // supplies per tile of wall
+  WALL: 4,
+  BRIDGE: 3,               // a road tile over water costs this many times as much
+  // the charter: how much ground the Bureau lets you build on. box: the side of the square, centred on the landing
+  STAGES: [
+    { name: 'Outpost', box: 36 },
+    { name: 'Fort', box: 56, troops: 40, pro: 55, cr: 1500, alloc: 0.25 },
+    { name: 'Major Base', box: 80, troops: 110, pro: 70, cr: 4000, alloc: 0.5 },
+  ],                  // supplies per tile of wall
   DAY: 120,                 // seconds of game time in one day at normal speed
   WEEK: 840,                // a week is seven days; the allocation comes every week
   T: 840 / 150,             // the economy was tuned on a 150 s week; every rate is stretched by this much
   BUILD: 4, PATROL: 4,      // construction (about half a day) and patrols (two to four days) take this many times longer than on the old short week
   SPEEDS: [0.5, 1, 2, 4, 8], // game speeds, stepped with [ and ]; keys 1, 2 and 3 pick 1x, 2x and 4x
   INSPECT_AT: 0.55,         // the Ministry of Truth inspects this far into each week
-  START: { supplies: 3600, credits: 300, troops: 6, morale: 55 },
-  DEPLOY_CR: 15,           // credits per trooper shipped, on top of the supplies
-  BUY: { cr: 60, sup: 100 },   // the Bureau sells supplies for credits, at its own rate
+  START: { supplies: 3600, credits: 600, troops: 6, morale: 55 },
+  WAGE: 2,                 // credits a day for every citizen on the staff
+  OVERDRAFT: 800,          // how far credits may go below zero before the Bureau stops lending
+  ODFEE: 0.03,             // a week's fee on any overdraft
+  DEPLOY_CR: 20,           // credits per trooper shipped, on top of the supplies
+  BUY: { cr: 60, sup: 100 },
+  SELL: { sup: 100, cr: 35 },   // and buys them back, at its own rate   // the Bureau sells supplies for credits, at its own rate
   SALES: { burger: 7, chicken: 6, cola: 8, vend: 1 },   // credits a day from the franchises
   REVIEWS_DAY: 5,          // files the Ministry will accept from you in a day
   REVIEW: 14,              // days before a trooper's file comes round again
@@ -69,7 +80,8 @@ export const TECH = {
   fortworks:{ name: 'Fortification Doctrine', tier: 1, cost: 180, hrs: 24, desc: 'Unlocks Defence Turrets, Floodlight Towers and the Emergency Operations Bunker.' },
   civic:    { name: 'Civic Programme', tier: 2, cost: 260, hrs: 30, needs: ['shelving'], desc: 'Unlocks DEMOCRA-MART, the Citizens\' Casino and the Memorial Halls.' },
   archive:  { name: 'Quantum Archives', tier: 2, cost: 300, hrs: 36, needs: ['radio'], desc: 'Unlocks the Server and Storage Vault, the Security Brig and Cryopreservation Storage.' },
-  warroom:  { name: 'Strategic Command', tier: 3, cost: 520, hrs: 60, needs: ['archive', 'command'], desc: 'Unlocks the War Room: every front in real time, better odds and more operations to choose from.' },
+  warroom:  { stage: 1, name: 'Strategic Command', tier: 3, cost: 520, hrs: 60, needs: ['archive', 'command'], desc: 'Unlocks the War Room: every front in real time, better odds and more operations to choose from.' },
+  industry: { name: 'State Industry', tier: 2, cost: 280, hrs: 36, needs: ['shelving'], desc: 'Unlocks the State Industrial Complex: your own supplies, made on the base, for fuel and power.' },
   tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
 };
 // Training: points a recruit earns per game hour at each place; 100 makes a trooper.
@@ -185,13 +197,13 @@ export const B = {
               desc: 'Luminite-core emitters that cut through fog, sandstorms and bio-acid haze. Lights the wall at night and watches seven tiles of it.' },
   turret:   { name: 'Defence Turret', group: 'military', w: 1, d: 1, cost: 220, up: 8, pw: -2, guns: 6, atWall: true, tech: 'fortworks', need: { ammo: 15 },
               desc: 'An autonomous rotary gun on Mag-Coil torque and a Guidance Core. Arms six tiles of wall either way. Walls deter; turrets destroy.' },
-  eob:      { name: 'Emergency Operations Bunker', group: 'military', w: 4, d: 3, cost: 900, up: 24, pw: 5, crew: 2, unique: true, tech: 'fortworks', large: true, mor: 3, weekly: { def: 2 },
+  eob:      { stage: 1, name: 'Emergency Operations Bunker', group: 'military', w: 4, d: 3, cost: 900, up: 24, pw: 5, crew: 2, unique: true, tech: 'fortworks', large: true, mor: 3, weekly: { def: 2 },
               desc: 'If the surface falls silent, the war continues below. Armoured walls, redundant comm relays and its own power grid. +2 Defence standing a week.' },
   vault:    { name: 'Server and Storage Vault', group: 'industry', w: 3, d: 3, cost: 640, up: 16, pw: -4, crew: 1, tech: 'archive', large: true, lab: 0.35, store: { rations: 60, fuel: 40, ammo: 40 },
               desc: 'Every battle log, strat-map and citizen record on quantum drives, cooled by Automaton heat plates. Research 35% faster, and a hardened store.' },
   warroom:  { name: 'War Room', group: 'military', w: 4, d: 4, cost: 1200, up: 30, pw: -6, crew: 3, unique: true, tech: 'warroom', needs: ['command'], large: true, prop: 8, odds: 0.08, offers: 1, staff: 2,
               desc: 'Illuminate holo cores cast every front in 360 degrees; Automaton servers crunch the threat. Special operations +8% odds, and one more to choose from.' },
-  halls:    { name: 'Memorial Halls', group: 'propaganda', w: 4, d: 3, cost: 980, up: 20, pw: -2, tech: 'civic', needs: ['memorial'], large: true, prop: 18, mor: 5, pride: 1,
+  halls:    { stage: 1, name: 'Memorial Halls', group: 'propaganda', w: 4, d: 3, cost: 980, up: 20, pw: -2, tech: 'civic', needs: ['memorial'], large: true, prop: 18, mor: 5, pride: 1,
               desc: 'One wing for legendary Helldivers, one for the battles that made them, in holographic panels lit by Luminite. Inspires every recruit who marches past.' },
   mart:     { name: 'DEMOCRA-MART', group: 'living', w: 3, d: 3, cost: 700, up: 14, pw: -3, tech: 'civic', large: true, mor: 4, sales: 14, staff: 3,
               desc: 'Rations upgrades, souvenir shrapnel mugs and liberty-approved luxuries, with self-checkout lanes run by Automaton cores. Earns credits every day.' },
@@ -201,6 +213,20 @@ export const B = {
               desc: 'A select few Helldivers kept frozen for just-in-case service, thawed when called. Special operations +5% odds.' },
   brig:     { name: 'Security Brig', group: 'military', w: 3, d: 2, cost: 560, up: 14, pw: -3, crew: 1, tech: 'archive', large: true, weekly: { tru: 2 }, inspect: 5,
               desc: 'Containment emitters and restraint bolts for prisoners, rogue AI cores, and any Helldiver who forgets what Managed Democracy means. +2 Truth a week; inspections +5.' },
+  partyhq:  { stage: 1, name: 'Party Headquarters', group: 'propaganda', w: 3, d: 3, cost: 820, up: 18, pw: -3, unique: true, needs: ['truth'], large: true, prop: 10, staff: 3, weekly: { tru: 1 }, reviews: 3,
+              desc: 'Administrative heart of the base\'s political life. +1 Truth a week, and three more roster files a day get read.' },
+  palace:   { stage: 2, name: 'Palace of Culture and Science', group: 'propaganda', w: 5, d: 5, cost: 2600, up: 40, pw: -6, unique: true, tech: 'civic', needs: ['partyhq'], large: true, prop: 30, mor: 6, pride: 2, staff: 4,
+              desc: 'Monumental architecture: a stepped tower with a spire, visible from orbit, or so the brochure says. A great deal of propaganda, morale and pride.' },
+  club:     { name: 'Workers\' Club', group: 'living', w: 2, d: 2, cost: 160, up: 4, pw: -1, needs: ['mess'], mor: 3, staff: 1,
+              desc: 'Chess, approved literature and a kettle. Morale for the evenings.' },
+  monument: { name: 'Ideological Monument', group: 'propaganda', w: 2, d: 2, cost: 420, up: 6, needs: ['truth'], prop: 12, pride: 1,
+              desc: 'A raised fist in bronze, eight metres tall, chin high, forearm straight. The Helldiver salute, forever.' },
+  extractor:{ name: 'E-710 Extractor', group: 'industry', w: 2, d: 2, cost: 420, up: 10, pw: -2, crew: 1, deposit: 3, pump: 24, store: { fuel: 80 },
+              desc: 'Built on an E-710 seep: pumps about 24 fuel a day into its tank, and the trucks carry it where it is needed. Deliveries cost less.' },
+  mine:     { name: 'Ore Mine', group: 'industry', w: 2, d: 2, cost: 380, up: 10, pw: -2, crew: 2, deposit: 4, make: 30,
+              desc: 'Built on an ore field: digs about 30 supplies a day while crewed and powered.' },
+  factory:  { stage: 1, name: 'State Industrial Complex', group: 'industry', w: 4, d: 3, cost: 900, up: 22, pw: -6, crew: 3, tech: 'industry', large: true, make: 45, need: { fuel: 40 },
+              desc: 'Turns E-710 and labour into supplies: about 45 a day while crewed, powered and fuelled. Trucks bring the fuel.' },
   memorial: { name: 'Memorial Wall', group: 'propaganda', w: 3, d: 1, cost: 180, up: 4, prop: 6, mor: 2, needs: ['barracks'],
               desc: 'A plaque for every trooper who fell. Halves the grief of each loss.' },
   statue:   { name: 'Liberty Statue', group: 'propaganda', w: 2, d: 2, cost: 360, up: 10, prop: 16, mor: 4, needs: ['truth', 'parade'],
@@ -208,7 +234,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'medbay', 'lookout', 'turret', 'flood', 'command', 'warroom', 'eob', 'cryo', 'brig', 'vault', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'factory', 'extractor', 'mine', 'mess', 'range', 'patrol', 'medbay', 'lookout', 'turret', 'flood', 'command', 'warroom', 'eob', 'cryo', 'brig', 'vault', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [
@@ -279,5 +305,26 @@ export const PARTS_FOR = {
   brig:    { floods: { watch: 5 }, guns: { guns: 5 }, antenna: { prop: 1 }, vents: { pw: 1 } },
   lab:     { antenna: { lab: 0.1 }, vents: { lab: 0.1 }, solar: { pw: 2 }, sign: { prop: 1 } },
   hdbarracks: { flags: { prop: 3 }, vents: { mor: 1 }, guns: { guns: 4 }, floods: { watch: 4 } },
+  partyhq: { flags: { prop: 3 }, sign: { prop: 2 }, holo: { prop: 4 }, planter: { mor: 1 } },
+  palace:  { flags: { prop: 4 }, floods: { prop: 3 }, holo: { prop: 5, mor: 1 }, planter: { mor: 2 } },
+  factory: { vents: { make: 8 }, solar: { pw: 4 }, antenna: { make: 4 }, floods: { make: 4 } },
   command: { holo: { prop: 4 }, antenna: { odds: 0.02 }, floods: { watch: 6 }, flags: { prop: 3 } },
+};
+
+// ---------------------------------------------------------------- loans: every base starts with the Founding Charter
+// rate: interest a week on what is owed. pay: the least taken each week. The Charter is what bought your start.
+export const LOANS = {
+  charter: { name: 'Founding Charter', amt: 3000, rate: 0.012, pay: 90, desc: 'Your landing, your first supplies and the Bureau\'s confidence, all on credit.' },
+  dev:     { name: 'Bureau Development Loan', amt: 1200, rate: 0.02, pay: 70, desc: 'For growth. The Bureau believes in you, at two per cent a week.' },
+  quick:   { name: 'Emergency Credit', amt: 500, rate: 0.045, pay: 60, desc: 'Fast, no questions, many consequences.' },
+};
+export const DEBT_MAX = 6000;   // the most the Bureau will have outstanding with one base
+
+// ---------------------------------------------------------------- difficulty, chosen when founding the faction
+// charter: the Founding Charter's size and weekly rate. sup: supplies you land with. rivals: how hard the other factions
+// push. pen: how much standing losses bite. od: how far credits may run overdrawn
+export const DIFF = {
+  recruit:   { name: 'Recruit', desc: 'A gentle Bureau. A smaller Charter at a lower rate, slower rivals, softer penalties.', charter: 2000, rate: 0.008, sup: 4200, rivals: 0.85, pen: 0.6, od: 1200 },
+  veteran:   { name: 'Veteran', desc: 'The standard posting.', charter: 3000, rate: 0.012, sup: 3600, rivals: 1, pen: 1, od: 800 },
+  helldiver: { name: 'Helldiver', desc: 'A big Charter at a steep rate, hungry rivals, and a Bureau that remembers everything.', charter: 4200, rate: 0.018, sup: 3600, rivals: 1.15, pen: 1.4, od: 400 },
 };

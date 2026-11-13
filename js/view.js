@@ -2,6 +2,7 @@
 import * as THREE from './vendor/three.js';
 import { B } from './config.js';
 import { dims } from './sim.js';
+import { BIOMES } from './site.js';
 import { makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
 import { Noise } from './noise.js';
@@ -61,10 +62,16 @@ export class View {
   buildGround() {
     const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = 16, c = document.createElement('canvas');
     c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P), d = img.data;
-    const hue = [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4];
+    const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4], T = s.terr, H = s.hgt;
     for (let y = 0; y < N * P; y++) for (let x = 0; x < N * P; x++) {
       const tx = Math.floor(x / P), tz = Math.floor(y / P), n = nz.fbm(x / 40, y / 40, 4), f = nz.v(x / 3, y / 3);
       let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
+      const tk = T ? T[tz * N + tx] : 0;
+      if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
+      else if (tk === 2) { r *= 0.62; gg *= 0.62; b *= 0.64; }
+      else if (tk === 3) { const sp = nz.v(x / 5, y / 5); r = r * 0.45 + 20 * sp; gg = gg * 0.35; b = b * 0.45 + 40 * sp; }   // E-710 seeps: dark, oily, a violet sheen
+      else if (tk === 4) { r = r * 0.8 + 40; gg = gg * 0.7 + 14; b = b * 0.55; }   // ore: rusty ground
+      else if (T && H) { const sh = Math.min(1, Math.max(0, (H[tz * N + tx] - bio.water) / (bio.rock - bio.water))); r *= 0.9 + sh * 0.18; gg *= 0.9 + sh * 0.18; b *= 0.9 + sh * 0.18; }
       const i = (y * N * P + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
     }
     g.putImageData(img, 0, 0);
@@ -90,6 +97,31 @@ export class View {
       q.setFromEuler(new THREE.Euler(a, a * 2, 0)); mx.compose(new THREE.Vector3(x, sc * 0.3, z), q, new THREE.Vector3(sc, sc * 0.7, sc)); rocks.setMatrixAt(n++, mx);
     }
     rocks.castShadow = rocks.receiveShadow = true; this.world.add(rocks);
+    // the site's own water and rock
+    if (T) {
+      const wt = [], rk = [], dp = [];
+      for (let i = 0; i < N * N; i++) { if (T[i] === 1) wt.push(i); else if (T[i] === 2) rk.push(i); else if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
+      if (wt.length) {
+        const wm = new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86 });
+        const wg = new THREE.PlaneGeometry(1.02, 1.02); wg.rotateX(-Math.PI / 2);
+        const wi = new THREE.InstancedMesh(wg, wm, wt.length); wt.forEach((i, k) => { mx.makeTranslation(this.wx(i % N + 0.5), 0.03, this.wx(((i / N) | 0) + 0.5)); wi.setMatrixAt(k, mx); });
+        wi.receiveShadow = true; this.world.add(wi); this.waterMat = wm;
+      }
+      if (rk.length) {   // each rock tile gets a boulder, taller the higher the ground
+        const ri = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.75, 0), rock, rk.length);
+        rk.forEach((i, k) => {
+          const x = i % N, z = (i / N) | 0, h = Math.min(2.6, 0.5 + (H[i] - bio.rock) * 28), j = nz.v(x * 1.3, z * 1.3);
+          q.setFromEuler(new THREE.Euler(j * 2, j * 5, j)); mx.compose(new THREE.Vector3(this.wx(x + 0.5), h * 0.4, this.wx(z + 0.5)), q, new THREE.Vector3(0.9 + j * 0.3, h, 0.9 + j * 0.3)); ri.setMatrixAt(k, mx);
+        });
+        ri.castShadow = ri.receiveShadow = true; this.world.add(ri);
+      }
+      if (dp.length) {   // violet crystals poking out of the seeps
+        const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
+        const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
+        dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.8, 1)); ci.setMatrixAt(k, mx); });
+        this.world.add(ci);
+      }
+    }
     // rock spires on the skyline, fading into the haze
     const sg = new THREE.ConeGeometry(1, 1, 5), spires = new THREE.InstancedMesh(sg, rock, 70);
     for (let i = 0; i < 70; i++) {
@@ -197,7 +229,17 @@ export class View {
       }
       (this.booms ||= []).push(boom);
     }
+    this.charterLine();
     this.streetLamps();
+  }
+  charterLine() {
+    const [lo, hi] = this.sim.box(); if (hi - lo >= this.N) return;
+    const mat = this.charterMat ||= new THREE.MeshBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.55 });
+    const geo = new THREE.PlaneGeometry(0.6, 0.08); geo.rotateX(-Math.PI / 2); const pts = [];
+    for (let t = lo; t < hi; t += 1) pts.push([t + 0.3, lo, 0], [t + 0.3, hi, 0], [lo, t + 0.3, 1], [hi, t + 0.3, 1]);
+    const im = new THREE.InstancedMesh(geo, mat, pts.length), mx = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), one = new THREE.Vector3(1, 1, 1);
+    pts.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x), 0.04, this.wx(z)), r ? qr : q, one); im.setMatrixAt(k, mx); });
+    this.roadG.add(im);
   }
   wallPiece(g, a, b) {
     const L = Math.hypot(b.x - a.x, b.z - a.z) + 0.9, ang = -Math.atan2(b.z - a.z, b.x - a.x), mx = this.wx((a.x + b.x) / 2), mz = this.wx((a.z + b.z) / 2);
@@ -469,6 +511,8 @@ export class View {
       if (ud.beam) ud.beam.rotation.z = Math.sin(t * 2.2 + b.id) * 0.28 * Math.min(1, w * 1.5);
       if (ud.spin) ud.spin.rotation.y += dt * 0.6;
       if (ud.spin2) ud.spin2.rotation.y -= dt * 0.9;
+      if (ud.nod) ud.nod.rotation.x = Math.sin(t * 1.6 + b.id) * 0.3;
+      if (ud.spinZ) ud.spinZ.rotation.z += dt * 1.4;
       if (ud.blink) { const on = (t + b.id * 0.37) % 1.6 < 0.8; for (const l of ud.blink) l.visible = on; }
       if (ud.glow) ud.glow.material.emissiveIntensity = w > 0 ? 1 + Math.sin(t * 9) * 0.3 : 0.1;
       if (ud.smoke && b.running && Math.random() < dt * 5) for (const p of ud.smoke) {

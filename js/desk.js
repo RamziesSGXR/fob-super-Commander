@@ -78,3 +78,16 @@ export function fileOf(t) {
 }
 export function merit(t) { return (t.q.aim + t.q.fit + t.q.con) / 3 + Math.min(12, t.missions * 3) + t.medals * 6; }
 export function trueGrade(t) { const m = merit(t); return m >= 80 ? 'A' : m >= 66 ? 'B' : m >= 52 ? 'C' : 'D'; }
+
+// ---------------------------------------------------------------- calls from the Ministries: optional, but ignoring them costs
+// g: what is asked for (rations, fuel, ammo, supplies, credits). n(sim): how much. m: whose standing. days: time to answer
+export const CALLS = [
+  { m: 'def', g: 'ammo', title: 'Ammunition for the Creek', text: 'The front at the Creek is short of rounds. The Ministry of Defence asks your base to set aside ammunition for the next transport.', n: s => 30 + s.week * 6, days: 4 },
+  { m: 'def', g: 'rations', title: 'Rations for a relief column', text: 'A relief column passes your sector and has eaten its boots. Set aside rations and they will collect.', n: s => 40 + s.week * 8, days: 4 },
+  { m: 'pro', g: 'fuel', title: 'E-710 for the fleet', text: 'A destroyer in orbit is running on fumes and optimism. The Ministry of Expansion requests E-710 from your stores.', n: s => 30 + s.week * 6, days: 5 },
+  { m: 'pro', g: 'supplies', title: 'A neighbouring outpost', text: 'An outpost two valleys over was built by a committee. It needs supplies to finish its own wall. Solidarity is mandatory.', n: s => 200 + s.week * 40, days: 5 },
+  { m: 'tru', g: 'credits', title: 'War bonds', text: 'The Ministry of Truth is selling Liberty Bonds. Bases are expected to show leadership by buying the first ones. Loudly.', n: s => 60 + s.week * 15, days: 5 },
+  { m: 'tru', g: 'supplies', title: 'A parade float', text: 'Super Earth\'s Liberty Day parade needs a float from every sector. Yours will be a large papier-mâché eagle. Supplies, please.', n: s => 150 + s.week * 30, days: 6 },
+  { m: 'def', g: 'credits', title: 'Medals for the fallen', text: 'The Ministry is striking medals for a battle your troopers fought in. Bases are invited to fund their own. It would look bad not to.', n: s => 50 + s.week * 12, days: 5 },
+  { m: 'pro', g: 'ammo', title: 'A training exercise', text: 'A sector-wide live-fire exercise is planned. Your base is asked to provide the live part.', n: s => 25 + s.week * 5, days: 4 },
+];

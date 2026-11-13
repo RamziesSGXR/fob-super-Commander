@@ -5,10 +5,11 @@
 // obstacle course, the parade ground and the Citizenship Hall, and Defence's deployment orders ship the trained ones
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
-import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR } from './config.js';
+import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
-import { REQUESTS, GRADES, trueGrade } from './desk.js';
+import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
+import { makeSite, biomeOf, GROUND, RW, RH, survey } from './site.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
@@ -23,6 +24,16 @@ export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of 
 export function dims(type, rot) { const d = B[type]; return rot % 2 ? [d.d, d.w] : [d.w, d.d]; }
 
 const zero = () => ({ rations: 0, fuel: 0, ammo: 0 });
+const fmt = n => Math.round(n).toLocaleString('en-US');
+// the most open, best-covered spot near the middle of the region map, for a base founded without picking one
+export function bestSite(seed, biome, N) {
+  let best = null;
+  for (let v = RH * 0.3; v <= RH * 0.7; v += 9) for (let u = RW * 0.3; u <= RW * 0.7; u += 9) {
+    const s = survey(seed, biome, u, v, Math.min(N, 56)), score = s.open * 0.7 + s.cover * 0.4 + (s.seeps ? 0.05 : 0) + (s.ore ? 0.05 : 0) - (s.open < 0.6 ? 1 : 0);
+    if (!best || score > best.score) best = { u, v, score };
+  }
+  return best;
+}
 // small things that go anywhere inside the wall; everything else is built on a roadside plot, door to the street
 export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar', 'lookout']);
 
@@ -34,8 +45,13 @@ export class Sim {
     this.N = C.N;
     this.t = 0; this.week = 1; this.wt = 0; this.inspected = false;
     this.faction = structuredClone(opts.faction || FACTION_DEFAULT);
+    this.diff = DIFF[opts.diff || this.faction.diff] ? opts.diff || this.faction.diff : 'veteran';
     this.planet = this.faction.planet || this.rng.pick(PLANETS);
-    this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null };
+    // the landing site: chosen on the planet map, or the best open spot near the middle if none was chosen
+    const biome = biomeOf(this.planet), site = opts.site || bestSite(this.seed, biome, this.N);
+    this.site = { seed: this.seed, biome, u: site.u, v: site.v }; this.stage = 0;
+    this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null, today: this.newDay(), days: [] };
+    this.loans = [{ k: 'charter', bal: this.D.charter }]; this.calls = []; this.supplies = this.D.sup;
     this.morale = C.START.morale; this.grief = 0; this.pride = 0; this.hunger = 0;
     this.stand = { def: C.STAND.start, pro: C.STAND.start, tru: C.STAND.start };
     this.rivals = RIVALS.map((r, i) => ({ id: i + 1, name: r.name, motto: r.motto, logo: r.logo, w: r.w, stand: { def: 0, pro: 0, tru: 0 } }));
@@ -67,6 +83,7 @@ export class Sim {
   genMap() {
     const N = this.N;
     this.occ = new Int32Array(N * N);
+    if (this.site) { const g = makeSite(this.site.seed, this.site.biome, this.site.u, this.site.v, N); this.terr = g.terr; this.hgt = g.hgt; } else { this.terr = new Uint8Array(N * N); this.hgt = null; }
     if (!this.roads) this.roads = new Uint8Array(N * N);
     if (!this.walls) this.walls = new Uint8Array(N * N);
     if (!this.inMask) this.inMask = new Uint8Array(N * N);
@@ -84,12 +101,31 @@ export class Sim {
     for (const [ax, az, bx, bz, k, w] of extra) line(ax, az, bx, bz, k, w);
   }
   rebuildNet() {
-    const r = raster(this.net, this.N);
+    const r = raster(this.net, this.N, this.blockMask());
     this.roads = r.roads; this.walls = r.walls; this.inMask = r.inside; this.gates = r.gates; this.area = r.area;
     // until a wall closes, the camp is open ground: build anywhere, defend nothing
     this.open = r.area === 0;
-    if (this.open) { const N = this.N; for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) this.inMask[z * N + x] = this.walls[z * N + x] ? 0 : 1; }
+    const N = this.N, bx = this.box();
+    if (this.open) for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) ? 0 : 1; }
+    // only inside the charter's bounds
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (x < bx[0] || z < bx[0] || x >= bx[1] || z >= bx[1]) this.inMask[z * N + x] = 0;
     this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
+  }
+  blocked(i) { const t = this.terr?.[i]; return t === GROUND.WATER || t === GROUND.ROCK; }
+  blockMask() { const N = this.N, m = new Uint8Array(N * N); if (this.terr) for (let i = 0; i < N * N; i++) m[i] = this.blocked(i) ? 1 : 0; return m; }
+  // the charter's square: [lo, hi) on both axes
+  box() { const s = Math.min(this.N, C.STAGES[this.stage || 0].box), lo = Math.floor((this.N - s) / 2); return [lo, lo + s]; }
+  // ---------------------------------------------------------------- the charter: outpost, fort, major base
+  nextStage() { return C.STAGES[(this.stage || 0) + 1] || null; }
+  stageCheck() {
+    const n = this.nextStage(); if (!n) return null;
+    return [{ ok: this.troops.length >= n.troops, text: `${n.troops} votes on the base (${this.troops.length})` }, { ok: this.stand.pro >= n.pro, text: `Expansion standing ${n.pro} (${Math.round(this.stand.pro)})` }, { ok: this.credits >= n.cr, text: `${n.cr.toLocaleString('en-US')} credits for the charter fee (${Math.round(this.credits).toLocaleString('en-US')})` }];
+  }
+  promote() {
+    const n = this.nextStage(), ck = this.stageCheck(); if (!n || ck.some(c => !c.ok)) return false;
+    this.spend('charter', 0, n.cr); this.stage++; this.rebuildNet(); this.gain('pro', 6); this.pride += 4;
+    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. The ground you may build on has grown to ${Math.min(this.N, n.box)} tiles a side, the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken.`);
+    this.events.push({ t: 'stage', stage: this.stage }); return true;
   }
   inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
   road(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.roads[z * this.N + x] > 0; }
@@ -107,7 +143,7 @@ export class Sim {
   walkGrid() {   // where people and vehicles can go: anywhere on the map that isn't a building or a wall; gates are open
     if (this._walkV === this.layoutV()) return this._walk;
     const N = this.N, w = new Uint8Array(N * N);
-    for (let i = 0; i < N * N; i++) w[i] = !this.occ[i] && this.walls[i] !== 1 ? 1 : 0;
+    for (let i = 0; i < N * N; i++) w[i] = !this.occ[i] && this.walls[i] !== 1 && (!this.blocked(i) || this.roads[i]) ? 1 : 0;
     this._walk = w; this._walkV = this.layoutV(); return w;
   }
   layoutV() { return this.b.length * 7919 + this.nid * 31 + (this.roadsV || 0); }
@@ -152,7 +188,10 @@ export class Sim {
   snapLine(p, mode, k, from) { return snap(this.net, p, mode, KINDS[k].w, from); }
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
   checkLine(a, b, k) {
-    const len = Math.hypot(b.x - a.x, b.z - a.z), cost = Math.ceil(len) * this.linePrice(k);
+    const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
+    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return { ok: false, why: 'Walls stop at the water: the shore defends itself', cost: 0 }; wet++; } }
+    const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
+    const [lo, hi] = this.box(); if ([a, b].some(p => p.x < lo - 1 || p.z < lo - 1 || p.x > hi + 1 || p.z > hi + 1)) return { ok: false, why: 'Outside the charter: the Bureau has not granted that ground yet', cost };
     if (len < 0.9) return { ok: false, why: 'Too short', cost };
     if (a.x < 0 || a.z < 0 || b.x < 0 || b.z < 0 || a.x > this.N || a.z > this.N || b.x > this.N || b.z > this.N) return { ok: false, why: 'Off the map', cost };
     for (const [x, z] of lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w)) if (this.occ[z * this.N + x]) return { ok: false, why: 'A building is in the way', cost };
@@ -162,11 +201,11 @@ export class Sim {
   drawLine(a, b, k) {
     const c = this.checkLine(a, b, k); if (!c.ok) return null;
     const s = addLine(this.net, a, b, k); if (!s) return null;
-    this.supplies -= c.cost; this.rebuildNet(); return s;
+    this.spend('build', c.cost); this.rebuildNet(); return s;
   }
   removeLine(x, z) {
     const s = nearestSeg(this.net, x, z); if (!s) return null;
-    this.supplies += Math.floor(Math.ceil(segLen(this.net, s)) * this.linePrice(s.k) / 2);
+    this.earn('refund', Math.floor(Math.ceil(segLen(this.net, s)) * this.linePrice(s.k) / 2));
     removeSeg(this.net, s.id); this.rebuildNet(); return s;
   }
   lineAt(x, z) { return nearestSeg(this.net, x, z); }
@@ -179,6 +218,7 @@ export class Sim {
   locked(type) {
     const d = B[type], n = (d.needs || []).filter(t => !this.has(t)).map(t => B[t].name);
     if (d.tech && !this.hasTech(d.tech)) n.push(TECH[d.tech].name + ' research');
+    if (d.stage && (this.stage || 0) < d.stage) n.push(`a ${C.STAGES[d.stage].name} charter`);
     if (d.pad && this.count('pad') >= this.padCap()) n.push(this.has('comms') || this.count('comms') ? 'another Comms Tower' : 'a Comms Tower');
     return n.length ? n : null;
   }
@@ -194,8 +234,8 @@ export class Sim {
   research(k) {
     if (!TECH[k] || this.techState(k) !== 'open' || this.tech.cur) return false;
     if (!this.b.some(b => b.type === 'lab' && b.done)) return false;
-    if (this.credits < TECH[k].cost) return false;
-    this.credits -= TECH[k].cost; this.tech.cur = k; this.tech.pts = 0;
+    if (this.credits - TECH[k].cost < -this.OD) return false;
+    this.spend('research', 0, TECH[k].cost); this.tech.cur = k; this.tech.pts = 0;
     this.say('base', `The Science Lab begins work on ${TECH[k].name}. Results in about ${TECH[k].hrs} lab hours.`);
     return true;
   }
@@ -221,6 +261,7 @@ export class Sim {
     if (this.supplies < this.costOf(type, spec)) return { ok: false, why: 'Not enough supplies' };
     if (d.atGate && !(this.gates || []).some(g => Math.hypot(g.x - x - 1, g.z - z - 0.5) < 4.5)) return { ok: false, why: 'Stands at a gate: within four tiles of one' };
     const f = this.fits(type, x, z, rot); if (!f.ok) return f;
+    if (d.deposit) { const [w, dd] = dims(type, rot); let on = 0; for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) if (this.terr?.[(z + j) * this.N + x + i] === d.deposit) on++; if (on < 2) return { ok: false, why: d.deposit === 3 ? 'Must stand on an E-710 seep' : 'Must stand on an ore field' }; }
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
     if (!LOOSE.has(type) && !this.frontage(type, x, z, rot)) return { ok: false, why: 'Needs a road out front: build along a road' };
     return f;
@@ -258,12 +299,13 @@ export class Sim {
       if (!this.inside(tx, tz)) return { ok: false, why: this.open ? 'Off the map' : 'Outside the wall' };
       if (this.occ[tz * this.N + tx]) return { ok: false, why: 'Something is in the way' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
+      const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
     }
     return { ok: true };
   }
   place(type, x, z, rot = 0, free = false, spec = null) {
     const d = B[type], cost = this.costOf(type, spec);
-    if (!free) { const c = this.canPlace(type, x, z, rot, spec); if (!c.ok) return null; this.supplies -= cost; }
+    if (!free) { const c = this.canPlace(type, x, z, rot, spec); if (!c.ok) return null; this.spend('build', cost); }
     const [w, dd] = dims(type, rot);
     const b = { id: this.nid++, type, x, z, rot, w, d: dd, cond: 100, prog: free ? 1 : 0, done: free, off: false, crew: 0, time: 6 + cost / 25, stock: zero() };
     if (d.squads) b.squads = d.squads;
@@ -286,7 +328,7 @@ export class Sim {
     const b = this.byId(id); if (!b || B[b.type].fixed) return false;
     for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = 0;
     this.b = this.b.filter(o => o !== b);
-    this.supplies += Math.round((b.cost ?? B[b.type].cost) * (b.done ? C.REFUND : 1));
+    this.earn('refund', Math.round((b.cost ?? B[b.type].cost) * (b.done ? C.REFUND : 1)));
     for (const t of this.troops) { if (t.job === id) { t.job = null; if (t.state === 'job') t.state = 'idle'; } if (t.at === id) t.at = null; }
     for (const v of this.veh) if (v.job && (v.job.src === id || v.job.dst === id)) this.dropJob(v);
     this.veh = this.veh.filter(v => v.home !== id);
@@ -298,7 +340,7 @@ export class Sim {
   repair(id) {
     const b = this.byId(id); if (!b || b.cond >= 100) return false;
     const c = this.repairCost(b); if (this.supplies < c) return false;
-    this.supplies -= c; b.cond = 100; return true;
+    this.spend('repair', c); b.cond = 100; return true;
   }
   toggle(id) { const b = this.byId(id); if (b && (B[b.type].crew || B[b.type].pw < 0)) b.off = !b.off; }
   setSquads(id, n) { const b = this.byId(id); if (b && B[b.type].squads) b.squads = clamp(n, 0, 3); }
@@ -419,6 +461,7 @@ export class Sim {
       power: -Math.round(15 * (1 - this.power.ratio)),
       grief: -Math.round(this.grief),
       mood: Math.round(this.mood || 0),
+      unpaid: this.unpaidDays ? -Math.min(10, 4 + this.unpaidDays) : 0,
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
     };
@@ -476,10 +519,11 @@ export class Sim {
     if (h === C.SUPPLY_AT) this.supplyRun();
     if (h === C.PATROL_AT) this.standingPatrols();
     if (h === C.DEPLOY_AT) this.deployRun();
-    if (h === 0) this.checkOrders();
-    if (h === 20) { let cr = 0; for (const b of this.b) if (b.done && !b.off) cr += (C.SALES[b.type] || 0) + this.stat(b, 'sales'); if (cr) this.earn('sales', 0, cr); }
+    if (h === 0) { this.checkOrders(); this.dayClose(); }
+    if (h === 20 && !this.unpaidDays) { let cr = 0; for (const b of this.b) if (b.done && !b.off) cr += (C.SALES[b.type] || 0) + this.stat(b, 'sales'); if (cr) this.earn('sales', 0, cr); }
     this.mood *= 0.985;
     this.deskHour(h);
+    if (h === 10) this.callDay();
     this.fort = this.fortify();
   }
 
@@ -664,7 +708,7 @@ export class Sim {
     const free = Math.max(0, this.beds - this.troops.length), r = Math.min(free ? Math.max(1, Math.round(free * C.FILL[this.rank])) : 0, pads.length * this.padSeats()), fresh = [];
     for (let i = 0; i < r; i++) fresh.push(this.addTroop().id);
     if (!n && !fresh.length) return;
-    this.supplies -= cost;
+    this.spend('deliveries', cost);
     for (const g of GKEYS) { let left = order[g]; for (const p of pads) { const put = Math.ceil(left / pads.length); p.stock[g] += Math.min(put, left); left -= Math.min(put, left); } }
     this.bill = { day: this.time.day, order, cost };
     this.events.push({ t: 'supply', n, fresh, pads: this.byPad(pads, fresh) });
@@ -678,7 +722,9 @@ export class Sim {
 
   // ---------------------------------------------------------------- Ministry of Defence: deployment orders, shipped automatically
   newOrder() {
-    const n = Math.min(40, 4 + this.week * 3), dueDay = (this.week - 1) * 7 + 8;
+    // the Ministry asks for a little more than you shipped last week, so a steady base can always keep up
+    const last = this.stats.deployed - (this.shipMark ?? 0); this.shipMark = this.stats.deployed;
+    const n = clamp(Math.round(Math.max(5, last) * 1.15) + 2, 7, 40), dueDay = (this.week - 1) * 7 + 8;
     this.orders.push({ id: this.nid++, n, sent: 0, due: dueDay, def: 8 + n, week: this.week });
     this.say('def', `Deployment order: ${n} trained troopers to the front by day ${dueDay}. Transports leave from the landing pad at ${C.DEPLOY_AT}:00.`);
   }
@@ -705,7 +751,8 @@ export class Sim {
     const day = this.time.day;
     for (const o of this.orders.filter(o => day > o.due)) {
       this.orders = this.orders.filter(x => x !== o);
-      const pen = Math.round(4 + (o.n - o.sent) * 1.5);
+      if (o.sent >= o.n * 0.75) { this.gain('def', Math.round(o.def * 0.4)); this.say('def', `Deployment order mostly met: ${o.sent} of ${o.n} shipped. +${Math.round(o.def * 0.4)} Defence standing.`); continue; }
+      const pen = Math.round(3 + (o.n - o.sent) * 0.8);
       this.gain('def', -pen);
       this.say('def', `Deployment order missed: ${o.sent} of ${o.n} shipped. -${pen} Defence standing. The front has been told to wait, and is not pleased.`);
     }
@@ -746,7 +793,7 @@ export class Sim {
     for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) this.occ[(f.z + j) * this.N + f.x + i] = 0;
     f.x = x; f.z = z;
     for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) this.occ[(z + j) * this.N + x + i] = f.id;
-    this.supplies -= C.FLAGMOVE; this.events.push({ t: 'moved', id: f.id });
+    this.spend('build', C.FLAGMOVE); this.events.push({ t: 'moved', id: f.id });
     this.say('base', 'The Super Earth flag has been moved, with ceremony. The base centre moves with it.');
     return { ok: true };
   }
@@ -926,7 +973,7 @@ export class Sim {
   // ---------------------------------------------------------------- the week, and the other factions
   updateRivals() {
     for (const r of this.rivals) for (const m of MKEYS) {
-      const target = 28 + r.w[m] * (26 + Math.min(52, this.week * 3.6)) + this.rng.range(-6, 6);
+      const target = (28 + r.w[m] * (26 + Math.min(52, this.week * 3.6))) * this.D.rivals + this.rng.range(-6, 6);
       r.stand[m] = clamp(r.stand[m] ? r.stand[m] + (target - r.stand[m]) * 0.5 : target, 0, 100);
     }
     // now and then a rival has a very good week
@@ -950,7 +997,7 @@ export class Sim {
     for (const m of MKEYS) this.stand[m] += (C.STAND.rest - this.stand[m]) * C.STAND.drift;
     this.updateRivals();
     const prev = this.rank, rank = this.ranking();
-    const amt = Math.round(C.ALLOC.base * C.ALLOC.mult[rank]);
+    const amt = Math.round(C.ALLOC.base * C.ALLOC.mult[rank] * (1 + (C.STAGES[this.stage || 0].alloc || 0)));
     this.closeFlow(); this.earn('alloc', amt, 0); this.lastAlloc = amt;
     const gross = Math.round(amt / 0.82), fee = Math.round(gross * 0.11);
     this.ledger = { week: this.week, gross, fee, consult: gross - fee - amt, net: amt };
@@ -966,19 +1013,15 @@ export class Sim {
       }
       for (const [m, v] of Object.entries(add)) if (v) this.gain(m, v);
       if (pr) this.pride += pr; }
-    for (const b of this.b) if (b.done && B[b.type].kickback) { this.supplies += B[b.type].kickback; this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
+    for (const b of this.b) if (b.done && B[b.type].kickback) { this.earn('sales', B[b.type].kickback); this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
     this.events.push({ t: 'alloc', amt });
     // upkeep: what you can't pay for wears out
+    // upkeep was paid day by day: a building that missed most of its days wears down
     const built = this.b.filter(b => b.done), bill = built.reduce((a, b) => a + B[b.type].up, 0);
     let unpaid = 0;
     const wear = b => C.WEAR * (DESIGNS[b.design || 0].wear || 1);
-    if (this.supplies >= bill) { this.supplies -= bill; for (const b of built) b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); }
-    else {
-      for (const b of this.rng.shuffle(built.slice())) {
-        if (this.supplies >= B[b.type].up) { this.supplies -= B[b.type].up; b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); }
-        else { b.cond = Math.max(5, b.cond - C.UNPAID); unpaid++; }
-      }
-    }
+    for (const b of built) { if ((b.unpaid || 0) >= 4) { b.cond = Math.max(5, b.cond - C.UNPAID); unpaid++; } else b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); b.unpaid = 0; }
+    this.payLoans();
     const place = ['1st', '2nd', '3rd', '4th'][rank];
     this.say('base', `Week ${this.week} closes. ${this.faction.name} ranks ${place} of 4: allocation ${amt} supplies. Upkeep ${bill}.`);
     if (unpaid) this.say('base', `Upkeep short: ${unpaid} building${unpaid > 1 ? 's' : ''} went unmaintained and are wearing down.`);
@@ -1013,19 +1056,72 @@ export class Sim {
     return f;
   }
   // ---------------------------------------------------------------- supplies and credits: every income goes through here
+  // ---------------------------------------------------------------- the daily round: upkeep and wages, then the books close
+  dayClose() {
+    // upkeep, a seventh of each building's week, in supplies; what can't be paid is marked against the building
+    for (const b of this.rng.shuffle(this.b.filter(b => b.done))) { const due = B[b.type].up / 7; if (this.supplies >= due) this.spend('upkeep', due); else b.unpaid = (b.unpaid || 0) + 1; }
+    // wages for the citizen staff, in credits. Into the overdraft if need be; past it, the staff go unpaid
+    const wages = (this.citizens || 0) * C.WAGE;
+    if (wages) { if (this.credits - wages >= -this.OD) { this.spend('wages', 0, wages); this.unpaidDays = 0; } else { this.unpaidDays = (this.unpaidDays || 0) + 1; if (this.unpaidDays === 1 || this.unpaidDays % 3 === 0) this.say('base', `The citizen staff were not paid today. The canteen is serving its opinion of you, cold.`); } }
+    // the industrial complexes turn fuel into supplies
+    for (const b of this.b) { const pm = B[b.type].pump; if (pm && b.done && !b.off) { const w = this.work(b); b.stock.fuel = Math.min(this.storeCap(b, 'fuel'), (b.stock.fuel || 0) + pm * w); } }
+    for (const b of this.b) { const mk = this.stat(b, 'make'); if (!b.done || b.off || !mk || (B[b.type].need?.fuel && (b.stock.fuel || 0) < 1)) continue; const w = this.work(b); if (w <= 0) continue; if (B[b.type].need?.fuel) b.stock.fuel = Math.max(0, b.stock.fuel - 10 * w); this.earn(b.type === 'mine' ? 'mine' : 'industry', Math.round(mk * w)); }
+    const f = this.flow; f.days.push(f.today); if (f.days.length > 7) f.days.shift(); f.today = this.newDay();
+  }
+  newDay() { return { sup: {}, cr: {} }; }
+  // average over the last few days: per category and the net, for supplies and credits
+  rates() {
+    const ds = this.flow.days.length ? this.flow.days : [this.flow.today], n = ds.length, out = { sup: {}, cr: {}, supNet: 0, crNet: 0, days: n };
+    for (const d of ds) for (const c of ['sup', 'cr']) for (const [k, v] of Object.entries(d[c])) out[c][k] = (out[c][k] || 0) + v / n;
+    out.supNet = Object.values(out.sup).reduce((a, b) => a + b, 0); out.crNet = Object.values(out.cr).reduce((a, b) => a + b, 0);
+    return out;
+  }
+  spend(cat, sup = 0, cr = 0) { this.earn(cat, -sup, -cr); }
+
+  // ---------------------------------------------------------------- debt: the Founding Charter, loans, the overdraft
+  debt() { return this.loans.reduce((a, l) => a + l.bal, 0) + Math.max(0, -this.credits); }
+  canBorrow(k) { const L = LOANS[k]; return !!L && k !== 'charter' && !this.loans.some(l => l.k === k) && this.debt() + L.amt <= DEBT_MAX && this.credits > -this.OD / 2; }
+  borrow(k) {
+    if (!this.canBorrow(k)) return false;
+    this.loans.push({ k, bal: LOANS[k].amt }); this.earn('loans', 0, LOANS[k].amt);
+    this.say('bur', `${LOANS[k].name} approved: ${LOANS[k].amt} credits. The Bureau will be in touch every week, at ${Math.round(LOANS[k].rate * 1000) / 10}% interest.`); return true;
+  }
+  repay(i, amt) {
+    const l = this.loans[i]; if (!l) return false; amt = Math.min(amt, l.bal, Math.max(0, this.credits)); if (amt <= 0) return false;
+    l.bal -= amt; this.spend('loans', 0, amt);
+    if (l.bal <= 0.5) { this.loans.splice(i, 1); this.gain('pro', 3); this.say('bur', `${LOANS[l.k].name} repaid in full. The Bureau is delighted, and slightly suspicious. +3 Expansion standing.`); }
+    return true;
+  }
+  // every week: interest on each loan, then the least payment; the overdraft has its own fee
+  payLoans() {
+    for (const l of [...this.loans]) {
+      const L = LOANS[l.k], int = Math.round(l.bal * (l.k === 'charter' ? this.D.rate : L.rate) * 10) / 10; l.bal += int; l.int = (l.int || 0) + int;   // interest goes on the loan, not out of pocket
+      const pay = Math.min(l.bal, L.pay); l.bal -= pay; this.spend('loans', 0, pay);
+      if (l.bal <= 0.5) { this.loans = this.loans.filter(x => x !== l); this.gain('pro', 3); this.say('bur', `${L.name} repaid in full. +3 Expansion standing.`); }
+    }
+    if (this.credits < 0) {
+      const fee = Math.round(-this.credits * C.ODFEE); this.spend('interest', 0, fee);
+      if (this.credits < -this.OD) { this.gain('pro', -2); this.say('bur', `Your base is ${fmt(-this.credits)} credits overdrawn, past the Bureau's patience. -2 Expansion standing. Staff wages will not be paid until this improves.`); }
+      else this.say('bur', `Overdraft fee: ${fee} credits on ${fmt(-this.credits)} overdrawn.`);
+    }
+  }
   newFlow() { return { sup: {}, cr: {}, sup0: this.supplies ?? 0, cr0: this.credits ?? 0 }; }
   earn(cat, sup = 0, cr = 0) {
     this.supplies += sup; this.credits += cr;
-    const f = this.flow.cur; if (sup) f.sup[cat] = (f.sup[cat] || 0) + sup; if (cr) f.cr[cat] = (f.cr[cat] || 0) + cr;
+    for (const f of [this.flow.cur, this.flow.today]) { if (sup) f.sup[cat] = (f.sup[cat] || 0) + sup; if (cr) f.cr[cat] = (f.cr[cat] || 0) + cr; }
   }
   closeFlow() {   // at the week's end: what came in by source, and what went out (everything else)
     const f = this.flow.cur, sum = o => Object.values(o).reduce((a, b) => a + b, 0);
     f.supOut = Math.round(f.sup0 + sum(f.sup) - this.supplies); f.crOut = Math.round(f.cr0 + sum(f.cr) - this.credits); f.week = this.week;
     this.flow.last = f; this.flow.cur = this.newFlow();
   }
+  sellSupplies() {
+    if (this.supplies < C.SELL.sup) return false;
+    this.spend('sold', C.SELL.sup); this.earn('sold', 0, C.SELL.cr); return true;
+  }
   buySupplies() {
-    if (this.credits < C.BUY.cr) return false;
-    this.credits -= C.BUY.cr; this.supplies += C.BUY.sup;
+    if (this.credits - C.BUY.cr < -this.OD) return false;
+    this.spend('bought', 0, C.BUY.cr); this.earn('bought', C.BUY.sup);
     this.say('bur', `The Bureau has sold you ${C.BUY.sup} supplies for ${C.BUY.cr} credits, at the patriotic rate.`); return true;
   }
 
@@ -1039,7 +1135,7 @@ export class Sim {
     const r = { id: this.nid++, k, name: `${'ABCDEFGHJKLMNPRSTVW'[this.rng.int(19)]}. ${this.rng.pick(SURNAMES)}`, due: this.t + C.DAY * 2 };
     this.desk.push(r); this.events.push({ t: 'desk', id: r.id });
   }
-  canDecide(r, i) { const fx = REQUESTS[r.k].opts[i].fx; return (!(fx.cr < 0) || this.credits + fx.cr >= 0) && (!(fx.sup < 0) || this.supplies + fx.sup >= 0); }
+  canDecide(r, i) { const fx = REQUESTS[r.k].opts[i].fx; return (!(fx.cr < 0) || this.credits + fx.cr >= -this.OD) && (!(fx.sup < 0) || this.supplies + fx.sup >= 0); }
   decide(id, i) {
     const r = this.desk.find(r => r.id === id); if (!r) return false;
     const o = REQUESTS[r.k].opts[i]; if (!o || !this.canDecide(r, i)) return false;
@@ -1054,8 +1150,39 @@ export class Sim {
     this.say('base', o.say.replaceAll('NAME', r.name)); return true;
   }
 
+  // ---------------------------------------------------------------- calls: set goods aside before the day, or pay for ignoring it
+  have(g) { return g === 'supplies' ? this.supplies : g === 'credits' ? this.credits : this.stored(g) + this.onPad(g); }
+  take(g, n) {   // out of the depots and off the pads, wherever it is
+    if (g === 'supplies') { this.spend('calls', n); return; } if (g === 'credits') { this.spend('calls', 0, n); return; }
+    for (const b of this.b) { if (n <= 0) break; const k = Math.min(n, b.stock[g] || 0); b.stock[g] -= k; n -= k; }
+  }
+  callDay() {
+    const day = this.time.day;
+    for (const c of this.calls.filter(c => day >= c.due)) {
+      this.calls = this.calls.filter(x => x !== c); const C0 = CALLS[c.k];
+      if (c.acc && this.have(c.g) >= c.n) {
+        this.take(c.g, c.n); this.gain(C0.m, 4 + this.week * 0.4 | 0); this.earn('calls', 0, Math.round(c.n * (c.g === 'credits' ? 0.2 : c.g === 'supplies' ? 0.15 : 0.6)));
+        this.mood += 2; this.say(C0.m, `"${C0.title}": ${c.n} ${c.g} handed over. The Ministry is grateful, in writing. +${4 + this.week * 0.4 | 0} standing and a small thank-you in credits.`);
+      } else {
+        const pen = c.acc ? 3 : 5; this.gain(C0.m, -pen); this.mood -= 2;
+        this.say(C0.m, c.acc ? `"${C0.title}": you set it aside but had only ${Math.floor(this.have(c.g))} of ${c.n} ${c.g} on the day. -${pen} standing.` : `"${C0.title}" went unanswered. -${pen} standing, and people heard about it.`);
+      }
+    }
+    if (this.calls.length < 2 && day >= 3 && this.rng.chance(0.3)) {
+      const open = new Set(this.calls.map(c => c.k)), pool = CALLS.map((c, k) => k).filter(k => !open.has(k));
+      const k = this.rng.pick(pool), C0 = CALLS[k], c = { id: this.nid++, k, g: C0.g, n: Math.round(C0.n(this)), due: day + C0.days, acc: false };
+      this.calls.push(c); this.events.push({ t: 'call', id: c.id });
+      this.say(C0.m, `Call from the Ministry: "${C0.title}". ${c.n} ${c.g} by day ${c.due}. Answer it in the Ledger.`);
+    }
+  }
+  answer(id, yes) {
+    const c = this.calls.find(c => c.id === id); if (!c) return false;
+    if (yes) { c.acc = true; this.say('base', `Set aside: ${c.n} ${c.g} for "${CALLS[c.k].title}", to go on day ${c.due}.`); }
+    else { this.calls = this.calls.filter(x => x !== c); this.gain(CALLS[c.k].m, -2); this.say(CALLS[c.k].m, `You declined "${CALLS[c.k].title}". Honest, at least. -2 standing.`); }
+    return true;
+  }
   // ---------------------------------------------------------------- roster review: read the file, give the grade
-  reviewsLeft() { const day = Math.floor(this.t / C.DAY); if (this.revN?.day !== day) this.revN = { day, n: 0 }; return C.REVIEWS_DAY - this.revN.n; }
+  reviewsLeft() { const day = Math.floor(this.t / C.DAY); if (this.revN?.day !== day) this.revN = { day, n: 0 }; return C.REVIEWS_DAY + this.b.filter(b => b.done && B[b.type].reviews).reduce((a, b) => a + B[b.type].reviews, 0) - this.revN.n; }
   toReview() { const day = Math.floor(this.t / C.DAY); return this.troops.filter(t => this.trained(t) && t.state !== 'patrol' && (t.grade == null || day - (t.revDay || 0) >= C.REVIEW)); }
   gradeTroop(id, g) {
     const t = this.troop(id); if (!t || !GRADES.includes(g) || this.reviewsLeft() <= 0) return null;
@@ -1065,12 +1192,14 @@ export class Sim {
     const out = { off, truth };
     if (off === 0) { this.earn('roster', 8, 3); out.text = `A fair grade. The Ministry of Defence concurs: +8 supplies, +3 credits.`; }
     else if (off === 1) { this.earn('roster', 3, 0); out.text = `Near enough. The Ministry had ${truth} in mind: +3 supplies.`; }
-    else { this.credits = Math.max(0, this.credits - 8); this.gain('tru', -1); out.text = `The Bureau audited the file and had ${truth} in mind. An 8 credit correction fee, and a note to Truth.`; }
+    else { this.spend('fees', 0, 8); this.gain('tru', -1); out.text = `The Bureau audited the file and had ${truth} in mind. An 8 credit correction fee, and a note to Truth.`; }
     if (g === 'D') { t.train = 70; for (const k in t.q) t.q[k] = Math.min(99, t.q[k] + 8); out.text += ' Sent back for remedial training.'; }
     if (g === 'A') out.text += ' Marked for distinction: worth half as much again when shipped.';
     return out;
   }
-  gain(m, v) { this.stand[m] = clamp(this.stand[m] + (v > 0 ? v * (1 - this.stand[m] / 115) : v), 0, 100); return Math.round(v > 0 ? v * (1 - (this.stand[m]) / 115) : v); }
+  get D() { return DIFF[this.diff || 'veteran']; }
+  get OD() { return this.D.od; }
+  gain(m, v) { if (v < 0) v *= this.D.pen; this.stand[m] = clamp(this.stand[m] + (v > 0 ? v * (1 - this.stand[m] / 115) : v), 0, 100); return Math.round(v > 0 ? v * (1 - (this.stand[m]) / 115) : v); }
 
   memo() {   // the Bureau writes every week, always pleased, never quite clear
     const lines = [
@@ -1092,7 +1221,7 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
     o.rngS = this.rng.s; o.v = 6;
     return JSON.parse(JSON.stringify(o));
   }
@@ -1115,6 +1244,7 @@ export class Sim {
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
     this.credits ??= C.START.credits; this.mood ||= 0; this.desk ||= []; this.flow ||= { cur: this.newFlow(), last: null };
+    this.flow.today ||= this.newDay(); this.flow.days ||= []; this.loans ||= []; this.calls ||= []; this.diff ||= 'veteran'; this.stage ??= 2;   // bases from before charters keep all their ground
     for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
     this.recalc(); this.tick();

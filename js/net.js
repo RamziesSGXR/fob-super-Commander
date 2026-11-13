@@ -86,7 +86,7 @@ export function removeSeg(net, id) {
 }
 
 // tiles from the network: roads (surface 1 dirt, 2 paved), walls (1 wall, 2 gate) and the enclosed base
-export function raster(net, N) {
+export function raster(net, N, block = null) {
   const roads = new Uint8Array(N * N), walls = new Uint8Array(N * N), inside = new Uint8Array(N * N);
   for (const s of net.segs) {
     const a = node(net, s.a), b = node(net, s.b);
@@ -98,14 +98,15 @@ export function raster(net, N) {
   for (let i = 0; i < N * N; i++) if (walls[i] && roads[i]) walls[i] = 2;   // a road through a wall is a gate
   // flood in from the map edge; what it can't reach, walls and gates aside, is inside
   const out = new Uint8Array(N * N), stack = [];
-  const seed = i => { if (!out[i] && !walls[i]) { out[i] = 1; stack.push(i); } };
+  const shut = i => walls[i] || (block && block[i] && !roads[i]);   // water and rock shut the base in like a wall, unless a road bridges them
+  const seed = i => { if (!out[i] && !shut(i)) { out[i] = 1; stack.push(i); } };
   for (let k = 0; k < N; k++) { seed(k); seed((N - 1) * N + k); seed(k * N); seed(k * N + N - 1); }
   while (stack.length) {
     const i = stack.pop(), x = i % N, z = (i / N) | 0;
     if (x > 0) seed(i - 1); if (x < N - 1) seed(i + 1); if (z > 0) seed(i - N); if (z < N - 1) seed(i + N);
   }
   let n = 0;
-  for (let i = 0; i < N * N; i++) if (!out[i] && !walls[i]) { inside[i] = 1; n++; }
+  for (let i = 0; i < N * N; i++) if (!out[i] && !shut(i)) { inside[i] = 1; n++; }
   // gates: clusters of gate tiles
   const gates = [], seen = new Uint8Array(N * N);
   for (let i = 0; i < N * N; i++) if (walls[i] === 2 && !seen[i]) {

@@ -571,6 +571,73 @@ const MAKE = {
     for (const z of [-0.8, 0, 0.8]) cyl(g, 0.02, 0.02, 0.65, m.steel, 1.2, 0.36, z);
     cyl(g, 0.02, 0.025, 0.9, m.metal, -1.1, 1.45, -0.6); box(g, 0.14, 0.1, 0.12, m.glowY, -1.1, 1.92, -0.55);
   },
+  extractor(g, m) {   // a pump jack nodding over the seep, and a tank for what it brings up
+    slab(g, m, 2, 2, m.asphalt);
+    box(g, 0.5, 0.2, 0.9, m.dark, -0.3, 0.12, 0); for (const z of [-0.2, 0.2]) box(g, 0.06, 0.9, 0.06, m.steel, -0.3, 0.6, z, { rx: z * 0.4 });
+    const beam = new THREE.Group(); beam.position.set(-0.3, 1.02, 0); g.add(beam);
+    box(beam, 0.1, 0.1, 1.2, m.hazard, 0, 0, 0); box(beam, 0.14, 0.32, 0.18, m.hazard, 0, -0.05, 0.62);
+    g.userData.nod = beam;
+    cyl(g, 0.04, 0.04, 0.5, m.steel, -0.3, 0.35, 0.62);
+    cyl(g, 0.36, 0.36, 0.7, m.e710, 0.5, 0.43, -0.2, { seg: 14 }); cyl(g, 0.37, 0.37, 0.05, m.prim, 0.5, 0.8, -0.2, { seg: 14 });
+    box(g, 0.3, 0.3, 0.3, m.metal, 0.55, 0.23, 0.55);
+  },
+  mine(g, m) {   // a headframe over the shaft, a conveyor and a heap of ore
+    slab(g, m, 2, 2, m.asphalt);
+    for (const [x, z] of [[-0.55, -0.45], [-0.05, -0.45], [-0.55, 0.05], [-0.05, 0.05]]) box(g, 0.06, 1.6, 0.06, m.steel, x, 0.8, z);
+    box(g, 0.6, 0.06, 0.6, m.steel, -0.3, 1.6, -0.2); cyl(g, 0.2, 0.2, 0.06, m.dark, -0.3, 1.7, -0.2, { rx: Math.PI / 2, seg: 14 });
+    const wheel = new THREE.Group(); wheel.position.set(-0.3, 1.7, -0.2); g.add(wheel); box(wheel, 0.04, 0.38, 0.04, m.hazard, 0, 0, 0.04); g.userData.spinZ = wheel;
+    box(g, 1.1, 0.05, 0.18, m.steel, 0.35, 0.5, 0.45, { rz: -0.4 });
+    add(g, new THREE.ConeGeometry(0.42, 0.45, 7), m.sandDark, 0.62, 0.22, 0.5);
+    box(g, 0.45, 0.4, 0.45, m.wall, -0.3, 0.2, -0.2);
+  },
+  partyhq(g, m) {   // three storeys of offices behind a portico, red banners down the front
+    slab(g, m, 3, 3);
+    for (let f = 0; f < 3; f++) block(g, m, 2.6, 0.75, 2.0, 0, 0.08 + f * 0.75, -0.3, m.red, 5);
+    box(g, 1.4, 0.1, 0.5, m.white, 0, 1.12, 0.95); for (const x of [-0.6, -0.2, 0.2, 0.6]) cyl(g, 0.06, 0.07, 1.04, m.white, x, 0.6, 1.1, { seg: 8 });
+    box(g, 0.5, 0.65, 0.05, m.dark, 0, 0.42, 0.71);
+    for (const x of [-1.05, 1.05]) box(g, 0.32, 1.6, 0.02, m.red, x, 1.3, 0.72);
+    plane(g, 0.6, 0.6, m.logoLit, 0, 1.85, 0.72);
+    cyl(g, 0.02, 0.025, 1.0, m.metal, 0, 2.8, -0.3); flagCloth(g, m.red, 0.5, 0.3, 0, 3.15, -0.3);
+  },
+  palace(g, m) {   // stepped tower, wings, a spire with a star
+    slab(g, m, 5, 5, m.stone);
+    for (const s of [-1, 1]) block(g, m, 1.2, 1.4, 3.6, s * 1.8, 0.08, -0.2, m.gold, 4);
+    block(g, m, 2.4, 1.3, 2.4, 0, 0.08, -0.4, m.gold, 5);
+    block(g, m, 1.9, 1.1, 1.9, 0, 1.38, -0.4, m.gold, 4);
+    block(g, m, 1.4, 1.0, 1.4, 0, 2.48, -0.4, m.gold, 3);
+    block(g, m, 0.9, 0.9, 0.9, 0, 3.48, -0.4, m.gold, 2);
+    cyl(g, 0.12, 0.35, 1.4, m.wall, 0, 5.08, -0.4, { seg: 8 }); cyl(g, 0.02, 0.08, 1.0, m.gold, 0, 6.28, -0.4, { seg: 8 });
+    add(g, new THREE.OctahedronGeometry(0.16), m.glowR, 0, 6.85, -0.4);
+    box(g, 2.0, 0.08, 0.7, m.white, 0, 1.0, 1.4); for (let i = 0; i < 6; i++) cyl(g, 0.07, 0.08, 0.92, m.white, -0.85 + i * 0.34, 0.54, 1.6, { seg: 8 });
+    for (let i = 0; i < 3; i++) box(g, 2.4 - i * 0.3, 0.06, 0.3, m.white, 0, 0.03 + i * 0.06, 2.1 - i * 0.12);
+    plane(g, 0.9, 0.9, m.logoLit, 0, 2.0, 0.81);
+    g.userData.blink = [ball(g, 0.05, m.glowR, -1.8, 1.55, -1.9), ball(g, 0.05, m.glowR, 1.8, 1.55, -1.9)];
+  },
+  club(g, m) {   // a small hall with a porch and a lit sign
+    slab(g, m, 2, 2);
+    block(g, m, 1.6, 0.8, 1.2, 0, 0.08, -0.15, m.sec, 3);
+    box(g, 1.3, 0.05, 0.4, m.prim, 0, 0.75, 0.62); for (const x of [-0.6, 0.6]) box(g, 0.04, 0.7, 0.04, m.steel, x, 0.38, 0.8);
+    box(g, 0.9, 0.16, 0.04, m.dark, 0, 1.0, 0.47); box(g, 0.8, 0.09, 0.02, m.glowY, 0, 1.0, 0.5);
+    for (const x of [-0.35, 0.35]) box(g, 0.25, 0.25, 0.25, m.sand, x, 0.15, 0.75);
+  },
+  monument(g, m) {   // the Helldiver salute: a fist at chin height on a vertical forearm, in bronze, on a stepped plinth
+    slab(g, m, 2, 2, m.stone);
+    box(g, 1.5, 0.25, 1.5, m.stone, 0, 0.15, 0); box(g, 1.1, 0.5, 1.1, m.concrete, 0, 0.52, 0); box(g, 1.15, 0.05, 1.15, m.gold, 0, 0.8, 0);
+    box(g, 0.34, 1.7, 0.34, m.bronze, 0, 1.68, 0);
+    box(g, 0.5, 0.42, 0.42, m.bronze, 0, 2.7, 0.03); for (let i = 0; i < 4; i++) box(g, 0.1, 0.1, 0.14, m.bronze, -0.18 + i * 0.12, 2.7, 0.27);
+    box(g, 0.12, 0.28, 0.12, m.bronze, 0.27, 2.62, 0.12);
+    plane(g, 0.5, 0.5, m.logo, 0, 0.55, 0.56);
+  },
+  factory(g, m) {   // sheds, a chimney, a conveyor and a fuel tank
+    slab(g, m, 4, 3, m.asphalt);
+    block(g, m, 2.4, 1.0, 1.8, -0.6, 0.08, -0.35, m.hazard, 0); prism(g, 2.4, 1.85, 0.4, m.metal, -0.6, 1.08, -0.35);
+    block(g, m, 1.2, 0.7, 1.4, 1.3, 0.08, -0.5, m.hazard, 2);
+    cyl(g, 0.14, 0.18, 2.4, m.concrete, 1.5, 1.28, -1.0, { seg: 10 }); cyl(g, 0.16, 0.16, 0.08, m.red, 1.5, 2.2, -1.0, { seg: 10 });
+    box(g, 1.6, 0.06, 0.3, m.steel, 0.3, 0.55, 0.9, { rz: 0.15 }); for (let i = 0; i < 4; i++) box(g, 0.22, 0.18, 0.22, m.sand, -0.3 + i * 0.38, 0.5 + i * 0.06, 0.9);
+    cyl(g, 0.35, 0.35, 0.7, m.e710, -1.6, 0.43, 1.0, { seg: 14 }); cyl(g, 0.36, 0.36, 0.05, m.red, -1.6, 0.8, 1.0, { seg: 14 });
+    box(g, 0.7, 0.55, 0.04, m.dark, -0.6, 0.36, 0.56);
+    g.userData.blink = [ball(g, 0.05, m.glowR, 1.5, 2.55, -1.0)];
+  },
   memorial(g, m) {
     box(g, 2.8, 0.08, 0.9, m.white, 0, 0.04, 0.05, { cast: false });
     box(g, 2.7, 0.8, 0.22, m.stone, 0, 0.48, -0.25); box(g, 2.78, 0.06, 0.28, m.dark, 0, 0.9, -0.25);
