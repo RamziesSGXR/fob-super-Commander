@@ -128,6 +128,8 @@ export function playAt(what, x, z) {
   }
   const { out } = spot(x, z, 'fx', 0.25, 2);
   if (what === 'place') { tone(140, t, 0.18, { type: 'triangle', vol: 0.3, glide: -60, dest: out }); noise(t, 0.12, { vol: 0.2, freq: 300, dest: out }); }
+  else if (what === 'gate') { tone(180, t, 0.9, { type: 'sawtooth', vol: 0.03, glide: 60, attack: 0.1, dest: out }); noise(t + 0.85, 0.06, { vol: 0.2, freq: 700, q: 2, attack: 0.01, dest: out }); }
+  else if (what === 'gatedown') { tone(220, t, 0.8, { type: 'sawtooth', vol: 0.025, glide: -60, attack: 0.1, dest: out }); noise(t + 0.8, 0.08, { vol: 0.25, freq: 400, q: 2, attack: 0.01, dest: out }); }
   else if (what === 'built') { for (let i = 0; i < 3; i++) noise(t + i * 0.16, 0.06, { vol: 0.3, freq: 2400, q: 3, attack: 0.05, dest: out }); tone(660, t + 0.5, 0.25, { vol: 0.08, dest: out }); }
   else if (what === 'demolish') { noise(t, 0.9, { vol: 0.4, freq: 220, type: 'lowpass', sweep: -160, dest: out }); for (let i = 0; i < 4; i++) noise(t + 0.1 + Math.random() * 0.6, 0.08, { vol: 0.25, freq: 1500, q: 2, attack: 0.05, dest: out }); }
 }
@@ -169,6 +171,8 @@ const KINDS = {
   truck:  { loop: o => { o.eng = osc(o, 'sawtooth', 42, 0.06, 260); hiss(o, 140, 0.06, 0.7, 'lowpass'); }, every: 0.3, tick: (o, t, s) => { brakes(o, t, s, 0.18); } },
   lift:   { loop: o => { o.eng = osc(o, 'triangle', 300, 0.012); }, tick: (o, t, s) => { if (s.moving) tone(1250, t, 0.25, { type: 'square', vol: 0.025, dest: o }); }, every: 0.6 },
   frv:    { loop: o => { o.eng = osc(o, 'sawtooth', 60, 0.05, 420); hiss(o, 200, 0.04, 0.7, 'lowpass'); }, every: 0.3, tick: (o, t, s) => { if (s.moving && !o.was) tone(110, t, 0.5, { type: 'sawtooth', vol: 0.06, glide: 90, dest: o }); o.was = s.moving; } },
+  // a squad in step: left, right, on gravel
+  march:  { loop: () => {}, every: 0.52, tick: (o, t) => { for (let i = 0; i < 2; i++) noise(t + i * 0.26, 0.07, { vol: 0.16, freq: 900 + i * 150, q: 1.2, attack: 0.008, dest: o }); } },
   // the pelican as it flies: a turbine whine over a heavy thrum, loudest low over the pad
   pelican:{ loop: o => { o.eng = osc(o, 'sawtooth', 55, 0.07, 300); osc(o, 'triangle', 1900, 0.006); hiss(o, 420, 0.09, 0.5, 'lowpass'); }, every: 0.12, tick: (o, t) => { noise(t, 0.08, { vol: 0.05, freq: 160, q: 1, attack: 0.03, dest: o }); } },
   tank:   { loop: o => { o.eng = osc(o, 'sawtooth', 30, 0.09, 160); hiss(o, 90, 0.12, 0.7, 'lowpass'); }, tick: (o, t, s) => { if (s.moving) for (let i = 0; i < 4; i++) noise(t + i * 0.1, 0.03, { vol: 0.12, freq: 1300, q: 3, attack: 0.05, dest: o }); }, every: 0.4 },

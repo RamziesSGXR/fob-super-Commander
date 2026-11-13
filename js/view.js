@@ -228,7 +228,7 @@ export class View {
         const sign = this.gateSign(this.faction); sign.position.set(0, 2.5, 0); g.add(sign);
         for (const sx of [-half, half]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), this.m.dark); p.position.set(sx, 1.9, 0); g.add(p); }
       }
-      (this.booms ||= []).push(boom);
+      boom.userData.gx = gt.x; boom.userData.gz = gt.z; boom.userData.r = half + 1.2; (this.booms ||= []).push(boom);
     }
     this.charterLine();
     this.streetLamps();
@@ -437,6 +437,12 @@ export class View {
     this.syncPeople(dt);
     this.syncVehicles(dt);
     this.smokeUpdate(dt);
+    // the boom barriers lift for anything on wheels and drop behind it
+    for (const bm of this.booms || []) {
+      const u = bm.userData, up = s.veh.some(v => !v.away && Math.hypot(v.x - u.gx, v.z - u.gz) < u.r);
+      if (up !== !!u.up) { u.up = up; this.onBoom?.(u.gx, u.gz, up); }
+      bm.rotation.z += ((up ? 1.35 : 0) - bm.rotation.z) * Math.min(1, dt * 4);
+    }
     if (this.sel.visible) this.sel.material.color.setHSL(0.15, 1, 0.5 + 0.2 * Math.sin(t * 6));
     // shadows are redrawn every frame only at the top graphics level; lower levels redraw them every few frames
     const every = [1, 3, 6, 0][this.q];

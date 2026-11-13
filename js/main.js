@@ -29,6 +29,7 @@ const fmt = n => Math.round(n).toLocaleString('en-US');
 const CH = { def: ['DEFENCE', 'var(--def)'], pro: ['EXPANSION', 'var(--pro)'], tru: ['TRUTH', 'var(--tru)'], base: ['BASE', '#ffffff'], bur: ['BUREAU', '#d8a6ff'], riv: ['BULLETIN', 'var(--amber)'], log: ['LOGISTICS', 'var(--g)'] };
 
 const view = new View($('view'));
+view.onBoom = (x, z, up) => { if (playing) audio.playAt(up ? 'gate' : 'gatedown', x, z); };
 let sim = null, life = null, playing = false, paused = false, speed = 1, tool = null, rot = 0, hover = null, group = 'expansion', minTab = 'def', speedI = 1;
 const gameSpeed = () => C.SPEEDS[speedI];
 const days = s => { const d = s / C.DAY; return d >= 1.5 ? `${Math.round(d)} days` : d >= 0.9 ? '1 day' : `${Math.max(1, Math.round(d * 24))} hours`; };
@@ -819,6 +820,9 @@ function soundscape() {
       list.push({ key: 'b' + b.id, kind: k, x: b.x + b.w / 2, z: b.z + b.d / 2, on: !b.done || ((!b.off || k === 'flag') && (!WHEN[k] || WHEN[k](h, ph))), vol: B[b.type].w * B[b.type].d > 4 ? 1.3 : 1 });
     }
     for (const v of sim.veh) if (!v.away) list.push({ key: 'v' + v.id, kind: v.kind, x: v.x, z: v.z, moving: v.path.length > 0, on: v.path.length > 0 || v.kind !== 'lift' });
+    // a squad marching out after its briefing: boots in step
+    for (const p of sim.patrols) if (!(p.brief > 0)) { const as = p.members.map(id => life.actors.get(id)).filter(a => a && !a.hidden && (a.act === 'walk' || a.act === 'run'));
+      if (as.length >= 2) list.push({ key: 'm' + p.id, kind: 'march', x: as.reduce((a, q) => a + q.x, 0) / as.length, z: as.reduce((a, q) => a + q.z, 0) / as.length, moving: true, on: true, vol: 0.6 + as.length * 0.15 }); }
     for (const f of life.flights) list.push({ key: 'p' + f.padKey, kind: 'pelican', x: f.x, z: f.z, moving: f.ph !== 'land', on: f.y < 15.5, vol: 2.2 - Math.min(1.4, f.y / 10) });
     audio.emitters(list);
   }
