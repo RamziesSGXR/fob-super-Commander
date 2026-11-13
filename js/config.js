@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.5';
+export const VERSION = '0.6';
 
 export const C = {
   N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose
@@ -12,7 +12,12 @@ export const C = {
   BUILD: 4, PATROL: 4,      // construction (about half a day) and patrols (two to four days) take this many times longer than on the old short week
   SPEEDS: [0.5, 1, 2, 4, 8], // game speeds, stepped with [ and ]; keys 1, 2 and 3 pick 1x, 2x and 4x
   INSPECT_AT: 0.55,         // the Ministry of Truth inspects this far into each week
-  START: { supplies: 1500, troops: 6, morale: 55 },
+  START: { supplies: 3600, credits: 300, troops: 6, morale: 55 },
+  DEPLOY_CR: 15,           // credits per trooper shipped, on top of the supplies
+  BUY: { cr: 60, sup: 100 },   // the Bureau sells supplies for credits, at its own rate
+  SALES: { burger: 7, chicken: 6, cola: 8, vend: 1 },   // credits a day from the franchises
+  REVIEWS_DAY: 5,          // files the Ministry will accept from you in a day
+  REVIEW: 14,              // days before a trooper's file comes round again
   // Super Earth splits its allocation by rank: 1st, 2nd, 3rd, 4th.
   ALLOC: { base: 650, mult: [1.5, 1.15, 0.85, 0.6] },
   FILL: [0.6, 0.5, 0.4, 0.3],   // share of empty bunks filled by each morning's recruits, by rank: housing is what makes a base grow
@@ -23,7 +28,7 @@ export const C = {
   HEAL: 300,               // a wounded trooper is back on duty after two and a half days in a Medical Bay
   REBUILD: 240,            // a wrecked FRV or tank is replaced in two days
   DEPLOY_AT: 16, SUPPLY_AT: 7, PATROL_AT: 9,   // hours: transports leave, supplies land, standing patrols go out
-  DEPLOY_PAY: 40,          // supplies for every trained trooper shipped to the front
+  DEPLOY_PAY: 30,          // supplies for every trained trooper shipped to the front
   WEAR: 3, MAINT: 12, UNPAID: 22,                 // condition: lost every week, regained when paid, lost when unpaid
   REFUND: 0.5,
   FLAGMOVE: 100,           // supplies to move the Super Earth flag

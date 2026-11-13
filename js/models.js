@@ -136,7 +136,7 @@ function block(g, m, w, h, d, x, y0, z, trim = m.prim, bays = 4) {
   box(g, w + 0.06, 0.1, d + 0.06, m.trim, x, y0 + 0.05, z);
   box(g, w, h - 0.1, d, m.wall, x, y0 + 0.1 + (h - 0.1) / 2, z);
   box(g, w + 0.05, 0.09, d + 0.05, trim, x, y0 + h - 0.1, z);
-  box(g, w + 0.02, 0.04, d + 0.02, m.dark, x, y0 + h - 0.02, z, { cast: false });
+  box(g, w + 0.02, 0.04, d + 0.02, m.dark, x, y0 + h + 0.005, z, { cast: false });   // sits proud of the wall top so the two never share a plane
   const wy = y0 + h * 0.5, wh = Math.min(0.22, h * 0.3);
   box(g, w - 0.3, wh + 0.06, 0.02, m.trim, x, wy, z + d / 2 + 0.005, { cast: false });
   for (let i = 0; i < bays; i++) box(g, (w - 0.4) / bays - 0.05, wh, 0.03, m.window, x - (w - 0.4) / 2 + (i + 0.5) * (w - 0.4) / bays, wy, z + d / 2 + 0.008, { cast: false });

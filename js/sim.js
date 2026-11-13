@@ -8,6 +8,7 @@
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
+import { REQUESTS, GRADES, trueGrade } from './desk.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
@@ -34,7 +35,7 @@ export class Sim {
     this.t = 0; this.week = 1; this.wt = 0; this.inspected = false;
     this.faction = structuredClone(opts.faction || FACTION_DEFAULT);
     this.planet = this.faction.planet || this.rng.pick(PLANETS);
-    this.supplies = C.START.supplies;
+    this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null };
     this.morale = C.START.morale; this.grief = 0; this.pride = 0; this.hunger = 0;
     this.stand = { def: C.STAND.start, pro: C.STAND.start, tru: C.STAND.start };
     this.rivals = RIVALS.map((r, i) => ({ id: i + 1, name: r.name, motto: r.motto, logo: r.logo, w: r.w, stand: { def: 0, pro: 0, tru: 0 } }));
@@ -48,18 +49,16 @@ export class Sim {
     this.genMap();
     this.updateRivals();
     const m = this.N / 2;
+    // you land with a command post, a flag and open ground: the roads, the wall, the pad and everything else are yours to lay out
     this.place('hq', m - 3, m - 3, 0, true);
-    this.place('pad', m + 3, m - 3, 0, true);
-    this.place('hab', m - 8, m - 2, 0, true);
     this.place('seflag', m - 5, m + 2, 0, true);
-    // the starting wall, and a paved road in from the edge of the map through the gate, with a branch to the HQ and the pad
-    this.startNet([]);
+    this.net = emptyNet();
     this.rebuildNet();
     const hq = this.b.find(b => b.type === 'hq'); hq.stock = { ...B.hq.store };
     for (let i = 0; i < C.START.troops; i++) this.addTroop(i < 3 ? 100 : 30);
     this.newOffers(); this.newOrder();
     this.ranking(); this.tick();
-    this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base.`);
+    this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base. You have open ground, a command post and ${C.START.supplies} supplies: draw a road, then build along it.`);
     this.say('def', 'The Ministry of Defence expects trained troopers. Train your recruits; transports leave from the landing pad every afternoon.');
     this.recalc();
   }
@@ -87,6 +86,9 @@ export class Sim {
   rebuildNet() {
     const r = raster(this.net, this.N);
     this.roads = r.roads; this.walls = r.walls; this.inMask = r.inside; this.gates = r.gates; this.area = r.area;
+    // until a wall closes, the camp is open ground: build anywhere, defend nothing
+    this.open = r.area === 0;
+    if (this.open) { const N = this.N; for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) this.inMask[z * N + x] = this.walls[z * N + x] ? 0 : 1; }
     this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
   }
   inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
@@ -192,8 +194,8 @@ export class Sim {
   research(k) {
     if (!TECH[k] || this.techState(k) !== 'open' || this.tech.cur) return false;
     if (!this.b.some(b => b.type === 'lab' && b.done)) return false;
-    if (this.supplies < TECH[k].cost) return false;
-    this.supplies -= TECH[k].cost; this.tech.cur = k; this.tech.pts = 0;
+    if (this.credits < TECH[k].cost) return false;
+    this.credits -= TECH[k].cost; this.tech.cur = k; this.tech.pts = 0;
     this.say('base', `The Science Lab begins work on ${TECH[k].name}. Results in about ${TECH[k].hrs} lab hours.`);
     return true;
   }
@@ -249,7 +251,7 @@ export class Sim {
     const [w, dd] = dims(type, rot);
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) {
       const tx = x + i, tz = z + j;
-      if (!this.inside(tx, tz)) return { ok: false, why: this.area ? 'Outside the wall' : 'The wall is open: close it to build' };
+      if (!this.inside(tx, tz)) return { ok: false, why: this.open ? 'Off the map' : 'Outside the wall' };
       if (this.occ[tz * this.N + tx]) return { ok: false, why: 'Something is in the way' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
     }
@@ -302,7 +304,8 @@ export class Sim {
 
   // ---------------------------------------------------------------- troops
   addTroop(train = 0) {
-    const t = { id: this.nid++, name: `${'ABCDEFGHJKLMNPRSTVW'[this.rng.int(19)]}. ${this.rng.pick(SURNAMES)}`, missions: 0, medals: 0, drill: 0, train, job: null, at: null, state: 'idle' };
+    const base = 40 + this.rng.int(40), tq = () => clamp(base + this.rng.int(36) - 12, 20, 99);
+    const t = { q: { aim: tq(), fit: tq(), con: tq() }, grade: null, id: this.nid++, name: `${'ABCDEFGHJKLMNPRSTVW'[this.rng.int(19)]}. ${this.rng.pick(SURNAMES)}`, missions: 0, medals: 0, drill: 0, train, job: null, at: null, state: 'idle' };
     this.troops.push(t); return t;
   }
   troop(id) { return this.troops.find(t => t.id === id); }
@@ -395,6 +398,7 @@ export class Sim {
       crowd: -Math.min(25, over * 4),
       power: -Math.round(15 * (1 - this.power.ratio)),
       grief: -Math.round(this.grief),
+      mood: Math.round(this.mood || 0),
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
     };
@@ -453,6 +457,9 @@ export class Sim {
     if (h === C.PATROL_AT) this.standingPatrols();
     if (h === C.DEPLOY_AT) this.deployRun();
     if (h === 0) this.checkOrders();
+    if (h === 20) { let cr = 0; for (const b of this.b) if (b.done && !b.off && C.SALES[b.type]) cr += C.SALES[b.type]; if (cr) this.earn('sales', 0, cr); }
+    this.mood *= 0.985;
+    this.deskHour(h);
     this.fort = this.fortify();
   }
 
@@ -666,9 +673,9 @@ export class Sim {
     const ids = go.map(t => t.id);
     this.troops = this.troops.filter(t => !ids.includes(t.id));
     o.sent += go.length; this.stats.deployed += go.length;
-    const pay = go.length * C.DEPLOY_PAY; this.supplies += pay;
+    const pay = go.length * C.DEPLOY_PAY, cr = Math.round(go.reduce((a, t) => a + C.DEPLOY_CR * (t.grade === 'A' ? 1.5 : 1), 0)); this.earn('deploy', pay, cr);
     this.events.push({ t: 'deploy', ids, names: go.map(t => t.name), pads: this.byPad(pads, ids) });
-    this.say('def', `${go.length} trooper${go.length > 1 ? 's' : ''} shipped to the front (${o.sent} of ${o.n}). +${pay} supplies.`);
+    this.say('def', `${go.length} trooper${go.length > 1 ? 's' : ''} shipped to the front (${o.sent} of ${o.n}). +${pay} supplies, +${cr} credits.`);
     if (o.sent >= o.n) {
       this.orders.shift(); this.gain('def', o.def);
       this.say('def', `Deployment order complete. +${o.def} Defence standing. The front thanks you, briefly.`);
@@ -837,7 +844,7 @@ export class Sim {
     for (const t of back) { t.state = t.hurt > 0 ? 'hurt' : 'idle'; t.missions++; }
     const quiet = !!p.office;   // standing patrols only report when something happens
     if (win) {
-      this.gain('def', p.def); this.supplies += p.sup; this.stats.patrolsWon++;
+      this.gain('def', p.def); this.earn('ops', p.sup, p.office ? 0 : p.diff * 10); this.stats.patrolsWon++;
       if (this.rng.chance((quiet ? 0.08 : 0.35) + 0.08 * p.diff)) {
         hero = this.rng.pick(back.filter(t => !(t.hurt > 0)).length ? back.filter(t => !(t.hurt > 0)) : back); hero.medals++; this.pride += 5;
         this.honours.push({ name: hero.name, rank: rankOf(hero.missions), op: p.op, week: this.week });
@@ -922,12 +929,12 @@ export class Sim {
     this.updateRivals();
     const prev = this.rank, rank = this.ranking();
     const amt = Math.round(C.ALLOC.base * C.ALLOC.mult[rank]);
-    this.supplies += amt; this.lastAlloc = amt;
+    this.closeFlow(); this.earn('alloc', amt, 0); this.lastAlloc = amt;
     const gross = Math.round(amt / 0.82), fee = Math.round(gross * 0.11);
     this.ledger = { week: this.week, gross, fee, consult: gross - fee - amt, net: amt };
     for (const b of this.b) if (b.done && B[b.type].cryo && !b.off && b.crew > 0 && this.power.ratio >= 1) { this.gain('def', 3); this.say('def', 'Helldivers thawed, briefed and shipped to the front. +3 Defence standing.'); }
     { const f = this.fort = this.fortify(), g = Math.round((f.score - 45) / 9);
-      if (g) { this.gain('def', g); this.say('def', g > 0 ? `Perimeter review: the base scores ${f.score} for defensibility. +${g} Defence standing.` : `Perimeter review: the base scores ${f.score} for defensibility${f.closed ? '' : ' (the wall is open)'}. ${g} Defence standing. Watch the wall and man the gates.`); } }
+      if (g && (this.week >= 3 || g > 0)) { this.gain('def', g); this.say('def', g > 0 ? `Perimeter review: the base scores ${f.score} for defensibility. +${g} Defence standing.` : `Perimeter review: the base scores ${f.score} for defensibility${f.closed ? '' : ' (there is no closed wall)'}. ${g} Defence standing. Watch the wall and man the gates.`); } }
     for (const b of this.b) if (b.done && B[b.type].kickback) { this.supplies += B[b.type].kickback; this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
     this.events.push({ t: 'alloc', amt });
     // upkeep: what you can't pay for wears out
@@ -967,9 +974,67 @@ export class Sim {
     const key = this.b.filter(b => b.done && (b.type === 'hq' || b.type === 'fueldepot'));
     let depth = 0;
     for (const b of key) { let m = 99; for (let k = 0; k < wt.length; k += 2) m = Math.min(m, Math.hypot(wt[k] - b.x - b.w / 2, wt[k + 1] - b.z - b.d / 2)); depth += Math.min(1, m / 7); }
-    const f = { closed: this.area > 0, cover: wall ? seen / wall : 0, gates: gs.length, manned, entr: gs.length <= 2 ? 1 : Math.max(0, 1 - (gs.length - 2) * 0.35), depth: key.length ? depth / key.length : 1 };
+    const f = { closed: !this.open, cover: wall ? seen / wall : 0, gates: gs.length, manned, entr: gs.length <= 2 ? 1 : Math.max(0, 1 - (gs.length - 2) * 0.35), depth: key.length ? depth / key.length : 1 };
     f.score = f.closed ? Math.round(45 * f.cover + 25 * (gs.length ? manned / gs.length : 1) + 15 * f.entr + 15 * f.depth) : 0;
     return f;
+  }
+  // ---------------------------------------------------------------- supplies and credits: every income goes through here
+  newFlow() { return { sup: {}, cr: {}, sup0: this.supplies ?? 0, cr0: this.credits ?? 0 }; }
+  earn(cat, sup = 0, cr = 0) {
+    this.supplies += sup; this.credits += cr;
+    const f = this.flow.cur; if (sup) f.sup[cat] = (f.sup[cat] || 0) + sup; if (cr) f.cr[cat] = (f.cr[cat] || 0) + cr;
+  }
+  closeFlow() {   // at the week's end: what came in by source, and what went out (everything else)
+    const f = this.flow.cur, sum = o => Object.values(o).reduce((a, b) => a + b, 0);
+    f.supOut = Math.round(f.sup0 + sum(f.sup) - this.supplies); f.crOut = Math.round(f.cr0 + sum(f.cr) - this.credits); f.week = this.week;
+    this.flow.last = f; this.flow.cur = this.newFlow();
+  }
+  buySupplies() {
+    if (this.credits < C.BUY.cr) return false;
+    this.credits -= C.BUY.cr; this.supplies += C.BUY.sup;
+    this.say('bur', `The Bureau has sold you ${C.BUY.sup} supplies for ${C.BUY.cr} credits, at the patriotic rate.`); return true;
+  }
+
+  // ---------------------------------------------------------------- the Base Ledger: requests on the Commander's desk
+  deskHour(h) {
+    for (const r of this.desk.filter(r => this.t >= r.due)) { this.desk = this.desk.filter(x => x !== r); this.mood -= 2; this.say('base', `"${REQUESTS[r.k].title}" sat on your desk until it was filed without action. People noticed.`); }
+    if (h < 9 || h > 17 || this.desk.length >= 4 || this.t < C.DAY || !this.rng.chance(0.17)) return;
+    const open = new Set(this.desk.map(r => r.k)), pool = REQUESTS.map((r, k) => k).filter(k => !open.has(k) && k !== this.deskLast && (!REQUESTS[k].when || REQUESTS[k].when(this)));
+    if (!pool.length) return;
+    const k = this.rng.pick(pool); this.deskLast = k;
+    const r = { id: this.nid++, k, name: `${'ABCDEFGHJKLMNPRSTVW'[this.rng.int(19)]}. ${this.rng.pick(SURNAMES)}`, due: this.t + C.DAY * 2 };
+    this.desk.push(r); this.events.push({ t: 'desk', id: r.id });
+  }
+  canDecide(r, i) { const fx = REQUESTS[r.k].opts[i].fx; return (!(fx.cr < 0) || this.credits + fx.cr >= 0) && (!(fx.sup < 0) || this.supplies + fx.sup >= 0); }
+  decide(id, i) {
+    const r = this.desk.find(r => r.id === id); if (!r) return false;
+    const o = REQUESTS[r.k].opts[i]; if (!o || !this.canDecide(r, i)) return false;
+    const fx = o.fx;
+    if (fx.sup || fx.cr) this.earn('ledger', fx.sup || 0, fx.cr || 0);
+    if (fx.mood) this.mood = clamp(this.mood + fx.mood, -15, 15);
+    if (fx.pride) this.pride += fx.pride;
+    for (const m of MKEYS) if (fx[m]) this.gain(m, fx[m]);
+    if (fx.clean) for (const b of this.b) if (b.type === 'potty') b.clean = 100;
+    if (fx.heal) for (const t of this.troops) if (t.hurt > 0) t.hurt *= 0.5;
+    this.desk = this.desk.filter(x => x !== r);
+    this.say('base', o.say.replaceAll('NAME', r.name)); return true;
+  }
+
+  // ---------------------------------------------------------------- roster review: read the file, give the grade
+  reviewsLeft() { const day = Math.floor(this.t / C.DAY); if (this.revN?.day !== day) this.revN = { day, n: 0 }; return C.REVIEWS_DAY - this.revN.n; }
+  toReview() { const day = Math.floor(this.t / C.DAY); return this.troops.filter(t => this.trained(t) && t.state !== 'patrol' && (t.grade == null || day - (t.revDay || 0) >= C.REVIEW)); }
+  gradeTroop(id, g) {
+    const t = this.troop(id); if (!t || !GRADES.includes(g) || this.reviewsLeft() <= 0) return null;
+    this.revN.n++;
+    const truth = trueGrade(t), off = Math.abs(GRADES.indexOf(g) - GRADES.indexOf(truth));
+    t.grade = g; t.revDay = Math.floor(this.t / C.DAY);
+    const out = { off, truth };
+    if (off === 0) { this.earn('roster', 8, 3); out.text = `A fair grade. The Ministry of Defence concurs: +8 supplies, +3 credits.`; }
+    else if (off === 1) { this.earn('roster', 3, 0); out.text = `Near enough. The Ministry had ${truth} in mind: +3 supplies.`; }
+    else { this.credits = Math.max(0, this.credits - 8); this.gain('tru', -1); out.text = `The Bureau audited the file and had ${truth} in mind. An 8 credit correction fee, and a note to Truth.`; }
+    if (g === 'D') { t.train = 70; for (const k in t.q) t.q[k] = Math.min(99, t.q[k] + 8); out.text += ' Sent back for remedial training.'; }
+    if (g === 'A') out.text += ' Marked for distinction: worth half as much again when shipped.';
+    return out;
   }
   gain(m, v) { this.stand[m] = clamp(this.stand[m] + (v > 0 ? v * (1 - this.stand[m] / 115) : v), 0, 100); return Math.round(v > 0 ? v * (1 - (this.stand[m]) / 115) : v); }
 
@@ -994,7 +1059,7 @@ export class Sim {
   save() {
     const o = {};
     for (const k of Object.keys(this)) if (!['rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 5;
+    o.rngS = this.rng.s; o.v = 6;
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -1015,6 +1080,8 @@ export class Sim {
     this.rebuildNet();
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
+    this.credits ??= C.START.credits; this.mood ||= 0; this.desk ||= []; this.flow ||= { cur: this.newFlow(), last: null };
+    for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
     this.recalc(); this.tick();
     if (!this.orders.length) this.newOrder();
