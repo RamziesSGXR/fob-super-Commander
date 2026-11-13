@@ -4,7 +4,7 @@
 
 Build and run your faction's base for Super Earth. A browser game for the **Super Earth Special Forces** community, in the same look as [Orbital Fury](https://orbitalfury.com/) and [Super Orbital Simulator](https://ramziessgxr.github.io/super-orbital-simulator/).
 
-> **Prototype 0.6** (the version shows on the title screen and in the menu). You land with a command post, a flag, open ground and a budget. Draw the roads and the wall, build along them, train troopers, and run the Commander's desk between deliveries.
+> **Prototype 0.7** (the version shows on the title screen and in the menu). You land with a command post, a flag, open ground and a budget. Draw the roads and the wall, build along them, train troopers, and run the Commander's desk between deliveries.
 
 You command a loyal sub-faction of Super Earth: your name, your crest, your colours, your base. The base turns recruits into troopers for the front. Every week the Federation hands out supplies, and the better your standing with its Ministries, the bigger your share. Three other loyal factions on the planet want the same supplies.
 
@@ -50,6 +50,8 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 - **Falling behind never ends the game.** A low rank means less supply, so upkeep goes unpaid and buildings wear down, morale slips and inspections suffer. You can always climb back.
 - **Sound.** Wind, a bugle for reveille and lights out, pelicans, building and a ping for every message. **SND** in the top bar turns it off.
 
+- **Sound.** Everything sounds from where it is. The ear sits at the camera: zoom in and the base gets louder, turn the view and the sounds turn with it. Every building type has its own sound (the generator hums, the range fires during duty hours, the mess clatters at mealtimes, the Medical Bay beeps, the comms mast crackles with Morse, flags flap), and so does every vehicle (truck engines, the forklift's reversing beep, the tank's tracks). Bugle calls come from the loudspeakers and the flag. Loudspeakers read out announcements in the browser's own voice, with a caption, and people near the camera say things in passing. The MENU has volume sliders for effects, base sounds, voices and music, and a switch for the spoken announcements.
+- **Music.** Add your own tracks to the `music` folder and list them in `music/tracks.json` (see `music/README.md`). They play shuffled with pauses between.
 - **Interface and graphics.** The interface matches Orbital Fury's sci-fi look (amber for what you spend, cyan for information); add `?ui=classic` to the address for the old green. GFX in the top bar sets graphics: by default it eases shadows and resolution off by itself when frames run slow.
 
 ### Controls

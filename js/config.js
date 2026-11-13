@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.6';
+export const VERSION = '0.7';
 
 export const C = {
   N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose

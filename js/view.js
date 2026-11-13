@@ -335,6 +335,18 @@ export class View {
   lookAt(tx, tz) { this.target.set(this.wx(tx), 0, this.wx(tz)); }
 
   // where the pointer is: the tile under it and the building it's over
+  // a point on the base, on screen: [x, y] in page pixels, or null if behind the camera or off screen
+  toScreen(x, z, y = 0) {
+    const v = new THREE.Vector3(this.wx(x), y, this.wx(z)).project(this.cam);
+    if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) return null;
+    const r = this.canvas.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
+  }
+  // where the ear is: the tile the camera looks at, how high the camera is, and the screen's right on the ground
+  ear() {
+    const h = this.photo ? Math.max(1.2, this.dist * Math.sin(this.tilt) + 0.6) : this.zoom * 0.8;
+    const e = this.cam.matrixWorld.elements, l = Math.hypot(e[0], e[2]) || 1;
+    return [this.target.x + this.N / 2, this.target.z + this.N / 2, h, e[0] / l, e[2] / l];
+  }
   pick(cx, cy) {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2((cx - rect.left) / rect.width * 2 - 1, -(cy - rect.top) / rect.height * 2 + 1);

@@ -7,6 +7,7 @@ import { View } from './view.js';
 import { drawLogo, drawTrooper, lookOf, ensureLogo, readUpload, SHAPES, SYMBOLS, PATTERNS, UNIFORMS, PALETTE } from './logo.js';
 import { demoSim } from './demo.js';
 import * as audio from './audio.js';
+import { PA, SAY } from './voices.js';
 
 // The sci-fi interface (matched to Orbital Fury's) is the default; ?ui=classic goes back to phosphor green, and is remembered
 try {
@@ -227,7 +228,7 @@ function selPanel() {
   if ($('sp-off')) $('sp-off').onclick = () => { sim.toggle(b.id); selPanel(); };
   if ($('sq-up')) $('sq-up').onclick = () => { sim.setSquads(b.id, b.squads + 1); selPanel(); };
   if ($('sq-dn')) $('sq-dn').onclick = () => { sim.setSquads(b.id, b.squads - 1); selPanel(); };
-  if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.play('demolish'); };
+  if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.playAt('demolish', b.x + b.w / 2, b.z + b.d / 2); };
   if ($('sp-move')) $('sp-move').onclick = () => { tool = 'moveflag'; view.showPlaza(sim.plazaAt(b.x, b.z, b.id)); flash('Pick a new spot for the flag. It needs open ground round it for the plaza.'); };
 }
 
@@ -468,6 +469,9 @@ view.setQuality(gfx); gfxLabel();
 $('b-gfx').onclick = () => { gfx = GFX[(GFX.indexOf(gfx) + 1) % 4]; try { localStorage.setItem('fob.gfx', gfx); } catch (e) { /* not remembered */ } view.setQuality(gfx); gfxLabel(); flash(`Graphics: ${gfx.toUpperCase()}`); };
 function sndLabel() { $('b-snd').classList.toggle('on', !audio.isMuted()); $('b-snd').style.textDecoration = audio.isMuted() ? 'line-through' : ''; }
 $('b-snd').onclick = () => { audio.setMuted(!audio.isMuted()); sndLabel(); }; sndLabel();
+for (const k of ['master', 'fx', 'amb', 'voice', 'music']) { const el = $('mx-' + k); el.value = audio.mix[k]; el.oninput = () => audio.setMix(k, +el.value); }
+$('mx-pa').checked = audio.mix.pa; $('mx-pa').onchange = () => audio.setMix('pa', $('mx-pa').checked);
+setInterval(() => { const m = audio.musicInfo(); $('mx-track').textContent = !m.loaded ? '' : !m.n ? 'No music added yet' : m.title ? 'Playing: ' + m.title : `${m.n} tracks`; }, 2000);
 addEventListener('pointerdown', () => audio.unlock(), { capture: true }); addEventListener('keydown', () => audio.unlock(), { capture: true });
 $('b-rl').onclick = () => view.rotate(-1); $('b-rr').onclick = () => view.rotate(1);
 $('b-hide').onclick = () => $('hud').classList.toggle('bare');
@@ -576,7 +580,7 @@ function up(e) {
   if (tool) {
     const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, t.rot);
     if (!ok.ok) { flash(ok.why); audio.play('deny'); return; }
-    sim.place(tool, t.tx, t.tz, t.rot); buildBar(); audio.play('place');
+    sim.place(tool, t.tx, t.tz, t.rot); buildBar(); audio.playAt('place', t.tx + 1, t.tz + 1);
     if (!e.shiftKey && !LOOSE.has(tool)) { tool = null; view.setGhost(null); view.showPlots(null); buildBar(); }
     else { const n = tileAt(e); view.setGhost(tool, n.tx, n.tz, n.rot, sim.canPlace(tool, n.tx, n.tz, n.rot).ok); if (!LOOSE.has(tool)) view.showPlots(sim.plotTiles()); }
     return;
@@ -619,6 +623,78 @@ addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
 addEventListener('blur', () => held.clear());
 
 // ---------------------------------------------------------------- the loop
+// ---------------------------------------------------------------- the soundscape: what you hear is where it happens
+// each building type's sound, and when it makes it. on(h, ph): only at those times
+const SOUND = {
+  gen: 'hum', solar: 'hvac', motorpool: 'clank', vbay: 'clank', depot: 'clank', fueldepot: 'hum', shed: 'hvac', armory: 'clank',
+  hq: 'radio', patrol: 'radio', command: 'radio', lookout: 'radio', comms: 'static', mast: 'static', speaker: 'hvac', billboard: 'hvac', truth: 'radio',
+  lab: 'beeps', medbay: 'heart', hdbarracks: 'cryo', shelter: 'hvac', range: 'shots', course: 'whistle', parade: 'drum', lecture: 'lecture',
+  mess: 'clatter', burger: 'fry', chicken: 'fry', cola: 'fridge', vend: 'fridge', barracks: 'murmur', hab: 'murmur', block: 'murmur',
+  seflag: 'flag', flag: 'flag', banner: 'flag', hdbanner: 'flag', pool: 'water', memorial: 'flame', dome: 'hum', potty: 'hvac',
+};
+const WHEN = {
+  shots: (h, ph) => ph === 'work' || ph === 'pt', drum: (h, ph) => ph === 'pt', lecture: (h, ph) => ph === 'work',
+  clatter: (h, ph) => ph === 'chow' || ph === 'mess' || ph === 'evening' || ph === 'work', whistle: (h, ph) => ph === 'pt' || ph === 'work',
+  murmur: (h, ph) => ph === 'evening' || ph === 'firstcall', fry: (h, ph) => ph !== 'night',
+};
+const horns = () => sim.b.filter(b => b.done && ['speaker', 'mast', 'seflag'].includes(b.type)).map(b => [b.x + b.w / 2, b.z + b.d / 2]);
+let sndT = 0, paT = 45, chatT = 6, bubbles = [];
+let sndLast = performance.now();
+function soundscape() {
+  const now = performance.now(), dt = Math.min(1, (now - sndLast) / 1000); sndLast = now;   // wall-clock time: the frame step is capped on slow machines
+  audio.listen(...view.ear());
+  if ((sndT -= dt) <= 0) {
+    sndT = 0.2;
+    const h = sim.time.hour, ph = sim.time.phase, list = [];
+    for (const b of sim.b) {
+      const k = b.done ? SOUND[b.type] || 'hvac' : 'build';
+      list.push({ key: 'b' + b.id, kind: k, x: b.x + b.w / 2, z: b.z + b.d / 2, on: !b.done || ((!b.off || k === 'flag') && (!WHEN[k] || WHEN[k](h, ph))), vol: B[b.type].w * B[b.type].d > 4 ? 1.3 : 1 });
+    }
+    for (const v of sim.veh) if (!v.away) list.push({ key: 'v' + v.id, kind: v.kind, x: v.x, z: v.z, moving: v.path.length > 0, on: v.path.length > 0 || v.kind !== 'lift' });
+    audio.emitters(list);
+  }
+  if (paused) return;
+  // the loudspeakers read something out every couple of minutes, from the one nearest you
+  if ((paT -= dt) <= 0) {
+    paT = 80 + Math.random() * 70;
+    const sp = sim.b.filter(b => b.done && (b.type === 'speaker' || b.type === 'mast')), [ex, ez] = view.ear();
+    if (sp.length && sim.time.phase !== 'night') {
+      const s = sp.reduce((a, b) => Math.hypot(a.x - ex, a.z - ez) < Math.hypot(b.x - ex, b.z - ez) ? a : b), line = PA[(Math.random() * PA.length) | 0];
+      if (audio.announce(line, s.x + 0.5, s.z + 0.5) > 0.12) caption(line);
+    }
+  }
+  // people near the camera say something now and then: a bubble over their head and a mumble from where they stand
+  if ((chatT -= dt) <= 0) {
+    chatT = 4 + Math.random() * 5;
+    const [ex, ez, eh] = view.ear();
+    if (eh < 11 && sim.time.phase !== 'night') {
+      const near = [...life.actors.values()].filter(a => !a.hidden && a.kind !== 'inspector' && Math.hypot(a.x - ex, a.z - ez) < eh * 0.9 && !['plan', 'salute', 'heart', 'run', 'lie'].includes(a.act));
+      if (near.length) {
+        const a = near[(Math.random() * near.length) | 0], t = a.extra === 'civ' ? sim.byId(a.home)?.type : null;
+        const pool = a.extra === 'hd' ? SAY.hd : t && SAY[t] ? SAY[t] : a.extra === 'civ' ? SAY.civ : sim.troop?.(a.id)?.hurt > 0 ? SAY.wounded : SAY.troop;
+        bubble(a, pool[(Math.random() * pool.length) | 0]);
+        audio.chatter(a.x, a.z, a.extra === 'civ' ? 170 + (a.n || 0) * 25 : a.extra === 'hd' ? 115 : 130 + (a.id % 4) * 12);
+      }
+    }
+  }
+  for (const b of bubbles) {
+    b.t -= dt; const a = life.actors.get(b.id), p = a && !a.hidden && b.t > 0 ? view.toScreen(a.x, a.z, 1.15) : null;
+    if (!p) { b.el.remove(); b.dead = true; continue; }
+    b.el.style.transform = `translate(${Math.round(p[0])}px, ${Math.round(p[1])}px) translate(-50%, -100%)`; b.el.style.opacity = Math.min(1, b.t * 2);
+  }
+  bubbles = bubbles.filter(b => !b.dead);
+}
+function bubble(a, text) {
+  if (bubbles.length >= 3) { bubbles[0].el.remove(); bubbles.shift(); }
+  const el = document.createElement('div'); el.className = 'bubble'; el.textContent = text; $('app').appendChild(el);
+  bubbles.push({ id: a.id, el, t: 4.5 });
+}
+let capT = 0;
+function caption(text) {
+  let el = $('pa-cap'); if (!el) { el = document.createElement('div'); el.id = 'pa-cap'; $('app').appendChild(el); }
+  el.innerHTML = `<i>LOUDSPEAKER</i> ${esc(text)}`; el.classList.add('on'); clearTimeout(capT); capT = setTimeout(() => el.classList.remove('on'), 9000);
+}
+
 // if a frame ever fails, keep the game alive and say what happened instead of leaving a black screen
 let oops = 0;
 function trouble(msg) {
@@ -639,14 +715,14 @@ function loopBody(now) {
       while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; }
       for (const ev of sim.drain()) {
         life.event(ev); if (ev.t === 'built' || ev.t === 'week') buildBar();
-        if (ev.t === 'built') audio.play('built');
+        if (ev.t === 'built') { const b = sim.byId(ev.id); if (b) audio.playAt('built', b.x + b.w / 2, b.z + b.d / 2); }
         if (ev.t === 'say') audio.play('ping', ev.ch);
-        if (ev.t === 'patrolBack' && ev.hero) audio.play('medal');
-        if (ev.t === 'phase') { if (ev.phase === 'reveille') audio.play('reveille'); if (ev.phase === 'retreat') audio.play('retreat'); if (ev.phase === 'night') audio.play('taps'); }
+        if (ev.t === 'patrolBack' && ev.hero) { const f = sim.b.find(b => b.type === 'seflag'); audio.callAt('medal', f ? [[f.x + 1, f.z + 1]] : []); }
+        if (ev.t === 'phase') { const c = { reveille: 'reveille', retreat: 'retreat', night: 'taps' }[ev.phase]; if (c) audio.callAt(c, horns()); }
         if (ev.t === 'moved') select(selId);
         if (ev.t === 'desk') deskPop(ev.id);
       }
-      if (life.flights.some(f => !f.heard)) { for (const f of life.flights) f.heard = true; audio.play('pelican'); }
+      for (const f of life.flights) if (!f.heard) { f.heard = true; audio.playAt('pelican', f.lx, f.lz); }
       life.update(dt * gameSpeed());
     }
     hudT -= dt; if (hudT <= 0) { hudT = 0.25; hud(); renderComms(); }
@@ -659,6 +735,7 @@ function loopBody(now) {
   }
   if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
   if (!view.lost) view.frame(dt);
+  if (sim && sim.time) soundscape(dt);
   requestAnimationFrame(loop);
 }
 
@@ -666,4 +743,4 @@ function loopBody(now) {
 title();
 if (params.has('play')) { const s = stored(); start(s ? new Sim({ state: s }) : new Sim({ seed: +(params.get('seed') || 7) })); }
 requestAnimationFrame(loop);
-window.__fob = { get sim() { return sim; }, get life() { return life; }, view };
+window.__fob = { get sim() { return sim; }, get life() { return life; }, view, audio, snd: () => ({ chatT, paT, sndT, n: bubbles.length, playing, paused }) };
