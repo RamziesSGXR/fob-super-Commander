@@ -1183,7 +1183,7 @@ export class Sim {
   decide(id, i) {
     const r = this.desk.find(r => r.id === id); if (!r) return false;
     const o = REQUESTS[r.k].opts[i]; if (!o || !this.canDecide(r, i)) return false;
-    const fx = o.fx;
+    const fx = o.fx; this.stats.desk = (this.stats.desk || 0) + 1;
     if (fx.sup || fx.cr) this.earn('ledger', fx.sup || 0, fx.cr || 0);
     if (fx.mood) this.mood = clamp(this.mood + fx.mood, -15, 15);
     if (fx.pride) this.pride += fx.pride;
@@ -1221,7 +1221,7 @@ export class Sim {
   }
   answer(id, yes) {
     const c = this.calls.find(c => c.id === id); if (!c) return false;
-    if (yes) { c.acc = true; this.say('base', `Set aside: ${c.n} ${c.g} for "${CALLS[c.k].title}", to go on day ${c.due}.`); }
+    if (yes) { c.acc = true; this.stats.calls = (this.stats.calls || 0) + 1; this.say('base', `Set aside: ${c.n} ${c.g} for "${CALLS[c.k].title}", to go on day ${c.due}.`); }
     else { this.calls = this.calls.filter(x => x !== c); this.gain(CALLS[c.k].m, -2); this.say(CALLS[c.k].m, `You declined "${CALLS[c.k].title}". Honest, at least. -2 standing.`); }
     return true;
   }
@@ -1230,7 +1230,7 @@ export class Sim {
   toReview() { const day = Math.floor(this.t / C.DAY); return this.troops.filter(t => this.trained(t) && t.state !== 'patrol' && (t.grade == null || day - (t.revDay || 0) >= C.REVIEW)); }
   gradeTroop(id, g) {
     const t = this.troop(id); if (!t || !GRADES.includes(g) || this.reviewsLeft() <= 0) return null;
-    this.revN.n++;
+    this.revN.n++; this.stats.graded = (this.stats.graded || 0) + 1;
     const truth = trueGrade(t), off = Math.abs(GRADES.indexOf(g) - GRADES.indexOf(truth));
     t.grade = g; t.revDay = Math.floor(this.t / C.DAY);
     const out = { off, truth };

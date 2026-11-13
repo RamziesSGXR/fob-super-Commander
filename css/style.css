@@ -340,3 +340,4 @@ body.ui-scifi .up { color: #8df0a0; } body.ui-scifi .cm em { font-family: var(--
 body.ui-scifi .c-sci { color: #c9a8ff; }
 .dz-go { display: flex; align-items: center; gap: 8px; margin-top: 8px; } .dz-go span { flex: 1; font-size: 12px; }
 .dz-go .c-ok { color: #59ff8a; } .dz-go .c-bad { color: #ff6a5a; } .dz-go button[disabled] { opacity: 0.4; pointer-events: none; }
+#or-list .or-n { list-style: none; margin-left: -1.2em; text-decoration: none; opacity: 0.6; font-size: 11px; letter-spacing: 0.08em; }

@@ -316,7 +316,7 @@ function logoImg(logo) {
   const c = document.createElement('canvas'); c.width = c.height = 44; drawLogo(c.getContext('2d'), logo, 1, 1, 42); const u = c.toDataURL(); logoCache.set(k, u); return u;
 }
 const ORDERS = [
-  ['Draw a road from your HQ (Expansion bar, drag)', s => s.net.segs.some(q => q.k !== 'wall')],
+  ['Draw a road from your HQ (Expansion bar, drag). Stay inside the dashed charter line', s => s.net.segs.some(q => q.k !== 'wall')],
   ['Build a Landing Pad on it: supplies and recruits arrive at 07:00', s => s.has('pad')],
   ['Build a Supply Depot near the landing pad', s => s.has('depot')],
   ['Build a Mess Hall so every vote can eat', s => s.has('mess')],
@@ -324,8 +324,13 @@ const ORDERS = [
   ['Build a Firing Range to train recruits', s => s.has('range')],
   ['Close a wall round the base (Defence bar), with a road through it for a gate', s => !s.open && s.gates.length > 0],
   ['Ship trained troopers to the front (16:00)', s => s.stats.deployed > 0],
+  ['Open the LEDGER: decide a request or grade a trooper\'s file', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
+  ['Answer a Ministry call: set aside what they ask for', s => (s.stats.calls || 0) > 0],
+  ['Keep supplies and credits rising: the net per day is under each in the top bar', s => { const r = s.rates(); return s.week >= 2 && r.supNet >= 0 && r.crNet >= 0; }],
   ['Build a Patrol Office for standing patrols', s => s.has('patrol')],
   ['Raise two Banners with your crest', s => s.b.filter(b => b.type === 'banner' && b.done).length >= 2],
+  ['Pay back the Founding Charter (LEDGER)', s => !s.loans.some(l => l.k === 'charter')],
+  ['Be promoted to a Fort (EXPANSION tab, CHARTER)', s => s.stage >= 1],
   ['Score 60+ in an inspection', s => s.inspection && s.inspection.score >= 60],
   ['Reach 1st place in the standings', s => s.rank === 0],
 ];
@@ -359,7 +364,9 @@ function hud() {
   // first orders
   const done = ORDERS.map(o => o[1](s)), next = done.indexOf(false);
   $('orders').classList.toggle('hidden', next < 0);
-  $('or-list').innerHTML = ORDERS.map((o, i) => `<li class="${done[i] ? 'done' : i === next ? 'next' : ''}">${o[0]}</li>`).join('');
+  // only the next few show, so the list stays short on a small screen; the count says how far along you are
+  { const nd = done.filter(Boolean).length, show = ORDERS.map((o, i) => i).filter(i => !done[i]).slice(0, 5);
+    $('or-list').innerHTML = (nd ? `<li class="or-n">${nd} of ${ORDERS.length} done</li>` : '') + show.map(i => `<li value="${i + 1}" class="${i === next ? 'next' : ''}">${ORDERS[i][0]}</li>`).join(''); }
   // the build bar's affordability, and the selection
   for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < B[k].cost); b.classList.toggle('lock', !!s.locked(k)); }
   if (selId) selPanel();

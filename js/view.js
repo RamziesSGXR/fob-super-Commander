@@ -43,7 +43,7 @@ export class View {
   attach(sim, life) {
     this.sim = sim; this.life = life; this.N = sim.N;
     this.world.clear();
-    this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
+    this.chunks = new Map(); this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
     this.ghostKey = '';
     this.buildGround();
     this.setFaction(sim.faction);
@@ -52,6 +52,7 @@ export class View {
     if (this.m) for (const t of this.m.tex) t.dispose();
     this.m = makeMats(f);
     for (const g of this.bm.values()) this.world.remove(g); this.bm.clear();
+    for (const c of this.chunks?.values() || []) { this.world.remove(c.group); for (const m of c.group.children) m.geometry.dispose(); } this.chunks = new Map();
     this.pm.clear(); if (this.crowd) for (const c of Object.values(this.crowd)) for (const im of c.ims) { this.world.remove(im); im.dispose(); } this.crowd = {};
     for (const g of this.vm.values()) this.world.remove(g); this.vm.clear();
     this.ghostKey = '';
@@ -472,7 +473,7 @@ export class View {
     for (const b of s.b) {
       let g = this.bm.get(b.id);
       const key = `${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}`;
-      if (g && g.userData.key !== key) { this.world.remove(g); this.bm.delete(b.id); g = null; }   // refitted: build it again
+      if (g && g.userData.key !== key) { if (g.userData.ck) this.unbatch(g); this.world.remove(g); this.bm.delete(b.id); g = null; }   // refitted: build it again
       if (!g) {
         g = new THREE.Group(); g.userData.b = b.id; g.userData.key = key;
         const model = buildModel(b.type, this.m, true, b.design || b.parts?.length ? { design: b.design, parts: b.parts, wing: wingOf(b) } : null); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
@@ -496,14 +497,15 @@ export class View {
       const worn = b.cond < 60 ? (b.cond < 35 ? 2 : 1) : 0;
       if (g.userData.worn !== worn) {
         if (g.userData.grime) g.remove(g.userData.grime);
-        g.userData.grime = null; g.userData.worn = worn; model.rotation.z = worn === 2 ? 0.025 : 0;
+        g.userData.grime = null; g.userData.worn = worn; model.rotation.z = worn === 2 ? 0.025 : 0; if (g.userData.ck) this.unbatch(g);
         if (worn) {
           const gr = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: worn === 2 ? '#1a120a' : '#3a2c1a', transparent: true, opacity: worn === 2 ? 0.55 : 0.35, depthWrite: false });
           for (let i = 0; i < 3 + worn * 3; i++) { const p = new THREE.Mesh(new THREE.CircleGeometry(0.15 + Math.random() * 0.25, 7), mat); p.rotation.x = -Math.PI / 2; p.position.set((Math.random() - 0.5) * (b.w - 0.4), g.userData.top + 0.01, (Math.random() - 0.5) * (b.d - 0.4)); gr.add(p); }
           g.add(gr); g.userData.grime = gr;
         }
       }
-      if (!b.done) continue;
+      if (!b.done) { if (g.userData.ck) this.unbatch(g); continue; }
+      if (!g.userData.ck && !this.noBatch) this.batch(g);
       const w = s.work(b);
       if (g.userData.lamp) {
         const d = B[b.type], noCrew = d.crew && b.crew < d.crew, noPow = d.pw < 0 && s.power.ratio < 1;
@@ -533,13 +535,66 @@ export class View {
         }
         pos.needsUpdate = true; }
     }
-    for (const [id, g] of this.bm) if (!s.byId(id)) { this.world.remove(g); this.bm.delete(id); if (this.selId === id) this.select(null); }
+    for (const [id, g] of this.bm) if (!s.byId(id)) { if (g.userData.ck) this.unbatch(g); this.world.remove(g); this.bm.delete(id); if (this.selId === id) this.select(null); }
+    // one chunk a frame is re-merged, so a big change spreads over a few frames
+    for (const c of this.chunks?.values() || []) if (c.dirty) { this.rebuildChunk(c); break; }
+  }
+  // ---------------------------------------------------------------- batching: the still parts of finished buildings are
+  // merged per 32-tile chunk and material, so a Major Base is a few hundred draw calls, not a few thousand. The building's
+  // own copies stay (hidden) for picking, and come back while it's being built, refitted or changes its wear
+  batch(g) {
+    const mm = g.userData.mm ||= (() => { const l = []; g.userData.model.traverse(o => { if (o.isMesh && o.userData.merged) l.push(o); }); return l; })();
+    if (!mm.length) { g.userData.ck = 'none'; return; }
+    const ck = `${Math.floor(g.position.x / 32)},${Math.floor(g.position.z / 32)}`;
+    this.chunks ||= new Map();
+    let c = this.chunks.get(ck); if (!c) { c = { members: new Set(), group: new THREE.Group(), dirty: true }; this.world.add(c.group); this.chunks.set(ck, c); }
+    c.members.add(g); c.dirty = true; g.userData.ck = ck;
+  }
+  unbatch(g) {
+    const c = this.chunks?.get(g.userData.ck); g.userData.ck = null;
+    for (const m of g.userData.mm || []) m.visible = true;
+    if (c) { c.members.delete(g); c.dirty = true; }
+  }
+  rebuildChunk(c) {
+    c.dirty = false;
+    for (const m of [...c.group.children]) { c.group.remove(m); m.geometry.dispose(); }
+    this.world.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(this.world.matrixWorld).invert(), groups = new Map(), mx = new THREE.Matrix4();
+    for (const g of c.members) for (const m of g.userData.mm) {
+      m.visible = false;
+      const key = m.material.uuid + (m.castShadow ? 's' : '');
+      if (!groups.has(key)) groups.set(key, { mat: m.material, cast: m.castShadow, list: [] });
+      groups.get(key).list.push([m.geometry, mx.multiplyMatrices(inv, m.matrixWorld).clone()]);
+    }
+    for (const { mat, cast, list } of groups.values()) {
+      const n = list.reduce((a, [geo]) => a + geo.attributes.position.count, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+      let k = 0; const v = new THREE.Vector3(), nm = new THREE.Matrix3();
+      for (const [geo, M] of list) {
+        const P = geo.attributes.position.array, Nn = geo.attributes.normal.array, cnt = geo.attributes.position.count; nm.getNormalMatrix(M);
+        for (let i = 0; i < cnt; i++) {
+          v.set(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]).applyMatrix4(M); pos[(k + i) * 3] = v.x; pos[(k + i) * 3 + 1] = v.y; pos[(k + i) * 3 + 2] = v.z;
+          v.set(Nn[i * 3], Nn[i * 3 + 1], Nn[i * 3 + 2]).applyMatrix3(nm).normalize(); nor[(k + i) * 3] = v.x; nor[(k + i) * 3 + 1] = v.y; nor[(k + i) * 3 + 2] = v.z;
+        }
+        uv.set(geo.attributes.uv.array, k * 2); k += cnt;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = cast; mesh.receiveShadow = true; mesh.raycast = () => {}; c.group.add(mesh);
+    }
+    this.r.shadowMap.needsUpdate = true;
   }
 
   padCrates(g, b) {   // supplies waiting on the pad, as stacks of crates
     const st = b.stock || {}, n = Math.min(18, Math.ceil(((st.rations || 0) + (st.fuel || 0) + (st.ammo || 0)) / 12));
-    if (!g.userData.pc) { g.userData.pc = []; for (let i = 0; i < 18; i++) { const c = makeCrate(this.m); c.position.set(-1.1 + (i % 3) * 0.36, 0.1 + Math.floor(i / 9) * 0.27, 0.75 + (Math.floor(i / 3) % 3) * 0.33); g.add(c); g.userData.pc.push(c); } }
-    g.userData.pc.forEach((c, i) => c.visible = i < n);
+    // two instanced meshes (the crates and their hazard bands) instead of 36 meshes per pad
+    if (!g.userData.pc) {
+      const body = new THREE.InstancedMesh(this.crateGeo ||= new THREE.BoxGeometry(0.3, 0.26, 0.3), this.m.crate, 18), band = new THREE.InstancedMesh(this.bandGeo ||= new THREE.BoxGeometry(0.31, 0.05, 0.31), this.m.hazard, 18), o = new THREE.Object3D();
+      for (let i = 0; i < 18; i++) { o.position.set(-1.1 + (i % 3) * 0.36, 0.1 + Math.floor(i / 9) * 0.27 + 0.13, 0.75 + (Math.floor(i / 3) % 3) * 0.33); o.updateMatrix(); body.setMatrixAt(i, o.matrix); o.position.y += 0.06; o.updateMatrix(); band.setMatrixAt(i, o.matrix); }
+      body.castShadow = true; body.userData.bid = band.userData.bid = b.id; body.raycast = band.raycast = () => {};
+      g.add(body, band); g.userData.pc = [body, band];
+    }
+    for (const im of g.userData.pc) im.count = n;
   }
   puff(p) {
     let m = this.smoke.find(q => !q.visible);
@@ -555,12 +610,29 @@ export class View {
 
   syncPeople(dt) {
     const L = this.life, t = this.t;
+    // only people on screen are posed and drawn; zoomed far out, limbs stop moving (nobody can see them) and a person who
+    // has not moved keeps last frame's matrices
+    this.cam.updateMatrixWorld(); const fr = this.frust ||= new THREE.Frustum(), sph = this.psph ||= new THREE.Sphere(new THREE.Vector3(), 1.2);
+    fr.setFromProjectionMatrix((this.pmat ||= new THREE.Matrix4()).multiplyMatrices(this.cam.projectionMatrix, this.cam.matrixWorldInverse));
+    const far = this.zoom > 20;
     for (const [id, a] of L.actors) {
       let g = this.pm.get(id);
       // each person is a rig that is never drawn itself: its parts are copied into one instanced mesh per part
       if (!g) { g = makePerson(this.m, a.kind); g.scale.setScalar(1.15); g.userData.list = []; g.traverse(o => { if (o.isMesh) g.userData.list.push(o); }); this.pm.set(id, g); }
       g.visible = !a.hidden;
-      g.position.set(this.wx(a.x), 0, this.wx(a.z)); g.rotation.set(0, a.yaw, 0);
+      const u = g.userData, wx = this.wx(a.x), wz = this.wx(a.z);
+      sph.center.set(wx, 0.6, wz); u.seen = g.visible && fr.intersectsSphere(sph);
+      if (!u.seen) continue;
+      if (far && a.act !== 'lie') {
+        if (!u.rest || u.px !== wx || u.pz !== wz || u.yaw !== a.yaw) {
+          if (!u.rest) for (const k of ['legL', 'legR', 'armL', 'armR', 'head']) u.parts[k].rotation.set(0, 0, 0);
+          if (!u.rest) { u.parts.armL.userData.elbow.rotation.set(0, 0, 0); u.parts.armR.userData.elbow.rotation.set(0, 0, 0); }
+          g.position.set(wx, 0, wz); g.rotation.set(0, a.yaw, 0); u.rest = true; u.dirty = true; u.px = wx; u.pz = wz; u.yaw = a.yaw;
+        }
+        continue;
+      }
+      u.rest = false; u.dirty = true; u.px = NaN;
+      g.position.set(wx, 0, wz); g.rotation.set(0, a.yaw, 0);
       const p = g.userData.parts, ph = t * 9 + a.seed;
       p.legL.rotation.set(0, 0, 0); p.legR.rotation.set(0, 0, 0); p.armL.rotation.set(0, 0, 0); p.armR.rotation.set(0, 0, 0); p.head.rotation.set(0, 0, 0);
       const eL = p.armL.userData.elbow, eR = p.armR.userData.elbow; eL.rotation.set(0, 0, 0); eR.rotation.set(0, 0, 0);
@@ -588,12 +660,12 @@ export class View {
   drawCrowd() {
     const counts = {};
     for (const [id, g] of this.pm) {
-      if (!g.visible) continue;
+      if (!g.visible || !g.userData.seen) continue;
       const kind = this.life.actors.get(id)?.kind || 'troop';
       let c = this.crowd[kind];
       const n = counts[kind] || 0;
       if (!c || n >= c.cap) c = this.growCrowd(kind, Math.max(64, (c?.cap || 32) * 2), g);
-      g.updateMatrixWorld(true);
+      if (g.userData.dirty) { g.updateMatrixWorld(true); g.userData.dirty = false; }
       const list = g.userData.list;
       for (let i = 0; i < list.length && i < c.ims.length; i++) c.ims[i].setMatrixAt(n, list[i].matrixWorld);
       counts[kind] = n + 1;
