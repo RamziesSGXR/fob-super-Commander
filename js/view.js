@@ -472,7 +472,7 @@ export class View {
     const s = this.sim, t = this.t;
     for (const b of s.b) {
       let g = this.bm.get(b.id);
-      const key = `${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}`;
+      const key = `${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}@${b.x},${b.z}`;
       if (g && g.userData.key !== key) { if (g.userData.ck) this.unbatch(g); this.world.remove(g); this.bm.delete(b.id); g = null; }   // refitted: build it again
       if (!g) {
         g = new THREE.Group(); g.userData.b = b.id; g.userData.key = key;

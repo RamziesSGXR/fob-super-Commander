@@ -164,7 +164,7 @@ $('ld-mark').addEventListener('click', e => { const r = e.target.getBoundingClie
 let suggestN = 0;
 $('ld-best').onclick = () => { const l = bestSite(land.seed, land.biome, C.N, true), b = l[++suggestN % Math.min(6, l.length)]; pickSite(b.u, b.v); };
 $('ld-back').onclick = () => show('s-faction');
-$('ld-go').onclick = () => start(new Sim({ faction: draft, diff: draft.diff, seed: land.seed, site: { u: land.u, v: land.v } })).then(store);
+$('ld-go').onclick = () => start(new Sim({ faction: draft, diff: draft.diff, seed: land.seed, site: { u: land.u, v: land.v } })).then(() => { store(); startMoveHQ(); });
 
 $('b-new').onclick = () => openFaction(false);
 $('b-continue').onclick = () => { const s = stored(); if (s) start(new Sim({ state: s })); };
@@ -291,7 +291,7 @@ function selPanel() {
   }
   const crew = sim.troops.filter(t => t.job === b.id).map(t => `${rankOf(t.missions)} ${esc(t.name)}`).join(', ');
   const html = `<div class="ph"><span>${d.name.toUpperCase()}</span><button class="x" id="sp-x" type="button">×</button></div><div class="sp-body">${bits.join('')}<p>${d.desc}</p>${crew ? `<p>On duty: ${crew}</p>` : ''}</div>
-    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
+    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.type === 'hq' && sim.unsettled() ? `<button class="btn primary" id="sp-hq" type="button">MOVE HQ (free until your first road)</button>` : ''}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
   p.classList.remove('hidden');
   if (p._html === html) return;
   p.innerHTML = p._html = html;
@@ -301,6 +301,7 @@ function selPanel() {
   if ($('sq-up')) $('sq-up').onclick = () => { sim.setSquads(b.id, b.squads + 1); selPanel(); };
   if ($('sq-dn')) $('sq-dn').onclick = () => { sim.setSquads(b.id, b.squads - 1); selPanel(); };
   if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.playAt('demolish', b.x + b.w / 2, b.z + b.d / 2); };
+  if ($('sp-hq')) $('sp-hq').onclick = () => startMoveHQ();
   if ($('sp-refit')) $('sp-refit').onclick = () => { refit = refit?.id === b.id ? null : { id: b.id, sp: { design: b.design || 0, parts: [...(b.parts || [])] } }; refitShow(); selPanel(); };
   if ($('sp-move')) $('sp-move').onclick = () => { tool = 'moveflag'; view.showPlaza(sim.plazaAt(b.x, b.z, b.id)); flash('Pick a new spot for the flag. It needs open ground round it for the plaza.'); };
 }
@@ -315,7 +316,9 @@ function logoImg(logo) {
   const k = JSON.stringify(logo); if (logoCache.has(k)) return logoCache.get(k);
   const c = document.createElement('canvas'); c.width = c.height = 44; drawLogo(c.getContext('2d'), logo, 1, 1, 42); const u = c.toDataURL(); logoCache.set(k, u); return u;
 }
+function startMoveHQ() { select(null); tool = 'movehq'; flash('Pick where the HQ stands, inside the dashed charter line. The flag goes beside it.'); }
 const ORDERS = [
+  ['Choose where the HQ stands: select it and press MOVE HQ, or just start building here', s => s.hqSet || !s.unsettled()],
   ['Draw a road from your HQ (Expansion bar, drag). Stay inside the dashed charter line', s => s.net.segs.some(q => q.k !== 'wall')],
   ['Build a Landing Pad on it: supplies and recruits arrive at 07:00', s => s.has('pad')],
   ['Build a Supply Depot near the landing pad', s => s.has('depot')],
@@ -405,8 +408,38 @@ function deskPop(id) {
   $('deskpop').innerHTML = `<i>BASE LEDGER · ${q.from.toUpperCase()}</i><b>${esc(q.title)}</b><p>${esc(q.text.replaceAll('NAME', r.name))}</p><button class="btn" data-open-led="1" type="button">OPEN THE LEDGER</button><button class="btn" data-later="1" type="button">LATER</button>`;
   $('deskpop').classList.remove('hidden'); deskT = 14; audio.play('ping');
 }
-$('deskpop').onclick = e => { if (e.target.closest('[data-open-led]')) { minTab = 'led'; openMins(); } if (e.target.closest('button')) $('deskpop').classList.add('hidden'); };
+$('deskpop').onclick = e => { if (e.target.closest('[data-open-led]')) { minTab = 'led'; openMins(); } { const d = e.target.closest('[data-open-def]'); if (d) { repOpen = +d.dataset.openDef; minTab = 'def'; openMins(); } } if (e.target.closest('button')) $('deskpop').classList.add('hidden'); };
 const vPick = {};   // vehicles picked for each special operation card
+let repOpen = null;  // the after-action report open in the Defence tab
+// the operations map: a window on the region map round the base, with the operations on offer and the squads out there
+let opImg = null;
+function drawOpMap(cv) {
+  const s = sim, site = s.opSite(), g = cv.getContext('2d'), W = cv.width, H = cv.height, Z = 4;   // 4 canvas px per region px
+  if (!opImg || opImg.key !== site.seed + site.biome) {
+    const c = document.createElement('canvas'); c.width = RW; c.height = RH; const cg = c.getContext('2d'), im = cg.createImageData(RW, RH);
+    im.data.set(regionImage(site.seed, site.biome)); cg.putImageData(im, 0, 0); opImg = { c, key: site.seed + site.biome };
+  }
+  const ox = site.u - W / Z / 2, oy = site.v - H / Z / 2, X = u => (u - ox) * Z, Y = v => (v - oy) * Z;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.fillStyle = '#111'; g.fillRect(0, 0, W, H); g.drawImage(opImg.c, ox, oy, W / Z, H / Z, 0, 0, W, H);
+  g.fillStyle = 'rgba(8,12,14,0.25)'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(255,230,0,0.18)'; g.lineWidth = 1;
+  for (const km of [2.5, 5, 7.5, 10]) { g.beginPath(); g.arc(X(site.u), Y(site.v), km / 0.25 * Z, 0, Math.PI * 2); g.stroke(); }
+  g.font = '600 13px ui-monospace, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  s.offers.forEach((o, i) => { if (o.px == null) return; const x = X(o.px), y = Y(o.py);
+    g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillStyle = o.heavy ? '#ff6a5a' : '#ffe600'; g.fillRect(-8, -8, 16, 16); g.restore();
+    g.fillStyle = '#111'; g.fillText(String(i + 1), x, y + 1); });
+  for (const p of s.patrols) { if (p.px == null) continue; const f = p.brief > 0 ? 0 : p.t / p.dur, k = f < 0.5 ? f * 2 : (1 - f) * 2;
+    const x = X(site.u + (p.px - site.u) * k), y = Y(site.v + (p.py - site.v) * k);
+    g.setLineDash([4, 4]); g.strokeStyle = p.office ? 'rgba(89,255,138,0.35)' : 'rgba(110,220,255,0.6)'; g.beginPath(); g.moveTo(X(site.u), Y(site.v)); g.lineTo(X(p.px), Y(p.py)); g.stroke(); g.setLineDash([]);
+    g.fillStyle = p.office ? '#59ff8a' : '#6edcff'; g.beginPath(); g.arc(x, y, p.office ? 4 : 6, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#ffe600'; g.strokeStyle = '#111'; g.lineWidth = 2; g.fillRect(X(site.u) - 7, Y(site.v) - 7, 14, 14); g.strokeRect(X(site.u) - 7, Y(site.v) - 7, 14, 14);
+  g.fillStyle = 'rgba(255,255,255,0.8)'; g.font = '600 11px ui-monospace, monospace'; g.textAlign = 'left'; g.fillText(s.faction.base.toUpperCase(), X(site.u) + 12, Y(site.v)); g.fillText('N ↑   rings every 2.5 km', 8, H - 10);
+}
+function reportPop(id) {
+  const r = sim.reports?.find(r => r.id === id); if (!r) return;
+  $('deskpop').innerHTML = `<i>AFTER-ACTION REPORT · DAY ${r.day}</i><b>${esc(r.op)}: <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><p>${r.lines.map(esc).join(' ')}</p><button class="btn" data-open-def="${r.id}" type="button">OPEN IN DEFENCE</button><button class="btn" data-later="1" type="button">FILE IT</button>`;
+  $('deskpop').classList.remove('hidden'); deskT = 18;
+}
 function renderMins(force) {
   const s = sim;
   const tabs = [['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['led', 'LEDGER'], ['sci', 'SCIENCE'], ['st', 'STANDINGS']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
@@ -430,16 +463,24 @@ function renderMins(force) {
         + `<div class="kv"><span>WALL WATCHED</span><b>${pc(f.cover)}</b></div><div class="kv"><span>WALL ARMED</span><b>${pc(f.armed || 0)}</b></div><div class="kv"><span>GATES MANNED</span><b>${f.manned} of ${f.gates}</b></div><div class="kv"><span>HQ AND FUEL FROM THE WALL</span><b>${pc(f.depth)}</b></div>`
         + `<p class="fine left">${f.closed ? '' : '<span class="down">No closed wall yet. </span>'}Reviewed every week: above 45 earns Defence standing, below loses it. Lookout Towers watch the wall, every gate takes one trained trooper, and more than two gates is asking for trouble.</p>`; }
     h += `<h3>STANDING PATROLS</h3>` + (offices.length ? offices.map(b => `<div class="kv"><span>Patrol Office</span><b>${s.patrols.filter(p => p.office === b.id).length} of ${b.squads} squads out · ammo ${Math.floor(b.stock.ammo)}</b></div>`).join('') : `<p>Build a Patrol Office and it sends squads of three trained troopers out every morning at ${C.PATROL_AT}:00, on its own.</p>`);
-    h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3>`;
-    for (const o of s.offers) {
+    h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3><canvas id="opmap" width="560" height="240" title="Operations map: the base, the operations on offer and the squads in the field"></canvas>`;
+    for (const [oi, o] of s.offers.entries()) {
       const pick = (vPick[o.id] || []).filter(k => s.armourFree(k)), ch = s.chance({ ...o, veh: pick }), ok = home.length >= o.size;
       const vb = ['frv', 'tank'].filter(k => s.veh.some(v => v.kind === k)).map(k => { const free = s.armourFree(k), on = pick.includes(k);
         return `<button class="btn ${on ? 'on' : ''}" data-veh="${o.id}:${k}" ${free ? '' : 'disabled'} type="button" title="${VEHICLES[k].desc} Burns ${VEHICLES[k].fuel} fuel.">${on ? '✓ ' : '+ '}${VEHICLES[k].name.toUpperCase()}</button>`; }).join('');
-      h += `<div class="card2"><div class="l"><b>${esc(o.op)}${o.heavy ? ' <span class="warn">· HEAVY</span>' : ''}</b><span>${o.kind} · difficulty ${'◆'.repeat(o.diff)}${'◇'.repeat(5 - o.diff)} · ${o.size} troopers · ${days(o.dur * C.PATROL)} · reward +${o.def} DEF, +${o.sup} SUP</span>${vb ? `<div class="vpick">${vb}</div>` : ''}</div>
+      const where = o.place ? `<span class="opwhere"><i class="opn">${oi + 1}</i> The ${esc(o.place)}, ${o.km} km ${o.dir}${o.wants ? ` · <b class="${pick.includes(o.wants) ? 'up' : o.needs ? 'down' : 'warn'}">${o.needs ? 'NEEDS' : 'CALLS FOR'} ${o.wants === 'frv' ? 'AN FRV' : 'A TANK'}</b>` : ''}</span>` : '';
+      h += `<div class="card2"><div class="l"><b>${esc(o.op)}${o.heavy ? ' <span class="warn">· HEAVY</span>' : ''}</b>${where}<span>${o.kind} · difficulty ${'◆'.repeat(o.diff)}${'◇'.repeat(5 - o.diff)} · ${o.size} troopers · ${days(o.dur * C.PATROL)} · reward +${o.def} DEF, +${o.sup} SUP</span>${vb ? `<div class="vpick">${vb}</div>` : ''}</div>
         <div style="text-align:right"><b class="${ch >= 0.65 ? 'up' : ch < 0.45 ? 'down' : 'warn'}">${ok ? Math.round(ch * 100) + '%' : '—'}</b><br><button class="btn" data-send="${o.id}" ${ok ? '' : 'disabled'} type="button">SEND</button></div></div>`;
     }
     if (!s.has('vbay')) h += `<p class="fine left">Research Fast Recon Vehicles and build a Vehicle Bay, and operations can take an FRV, or later a tank, along.</p>`;
     if (s.patrols.length) { h += `<h3>IN THE FIELD</h3>`; for (const p of s.patrols) h += `<div class="card2"><div class="l"><b>${esc(p.op)}</b><span>${p.brief > 0 ? 'BRIEFING · ' : ''}${p.kind} · ${p.members.length} troopers${p.veh?.length ? ' · ' + p.veh.map(k => VEHICLES[k].name).join(', ') : ''} · odds ${Math.round(p.chance * 100)}%</span><div class="prog"><i style="width:${p.t / p.dur * 100}%"></i></div></div></div>`; }
+    if (s.reports?.length) {
+      h += `<h3>AFTER-ACTION REPORTS</h3>`;
+      for (const r of s.reports.slice(-8).reverse()) {
+        const open = repOpen === r.id;
+        h += `<div class="card2 rep ${r.win ? '' : 'lost'}" data-rep="${r.id}"><div class="l"><b>${esc(r.op)} <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><span>Day ${r.day} · ${esc(r.kind)}${r.place ? ` · the ${esc(r.place)}, ${r.km} km ${r.dir}` : ''} · ${r.n} troopers under ${esc(r.leader || '—')}${r.veh.length ? ' · ' + r.veh.join(', ') : ''} · ${r.def >= 0 ? '+' : ''}${r.def} DEF${r.sup ? `, +${r.sup} SUP` : ''}</span>${open ? `<p class="rep-t">${r.lines.map(esc).join(' ')}</p>` : ''}</div><div style="text-align:right"><button class="btn" type="button">${open ? 'CLOSE' : 'READ'}</button></div></div>`;
+      }
+    }
     if (s.honours.length) h += `<h3>MEDALS OF VALOUR</h3><div class="list2">${s.honours.slice(-12).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, week ${x.week}</div>`).join('')}</div>`;
     if (s.fallen.length) h += `<h3>THE FALLEN</h3><div class="list2">${s.fallen.slice(-16).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, ${esc(x.op)}</div>`).join('')}</div>`;
   } else if (minTab === 'pro') {
@@ -530,9 +571,11 @@ function renderMins(force) {
   }
   // only redraw what changed, and never under the pointer, so buttons stay put while you click them
   if ($('mi-body')._html !== h && (force || !$('mins').matches(':hover'))) $('mi-body').innerHTML = $('mi-body')._html = h;
+  if ($('opmap')) drawOpMap($('opmap'));
 }
 $('mi-tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { minTab = b.dataset.t; renderMins(true); } };
 $('mi-body').onclick = e => {
+  { const r = e.target.closest('[data-rep]'); if (r) { repOpen = repOpen === +r.dataset.rep ? null : +r.dataset.rep; renderMins(true); return; } }
   const s = e.target.closest('[data-send]');
   if (s && sim.send(+s.dataset.send, vPick[s.dataset.send] || [])) { delete vPick[s.dataset.send]; renderMins(true); renderComms(); }
   const v = e.target.closest('[data-veh]');
@@ -634,11 +677,11 @@ function roadPreview(e) {
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
-  if (tool !== 'moveflag' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
+  if (tool !== 'moveflag' && tool !== 'movehq' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
     const pl = sim.plotFor(tool, p.x, p.z, specOf(tool)?.design);
     if (pl) return { ...p, tx: pl.tx, tz: pl.tz, rot: pl.rot };
   }
-  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
+  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool === 'movehq' ? 'hq' : tool, tool === 'movehq' ? 0 : rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -665,6 +708,7 @@ cv.addEventListener('pointermove', e => {
   }
   if (photo) return;
   if (isRoad(tool)) roadPreview(e);
+  else if (tool === 'movehq') { const t = tileAt(e); hover = t; const ok = sim.canMoveHQ(t.tx, t.tz); view.setGhost('hq', t.tx, t.tz, 0, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, t.rot, specOf(tool)); view.setGhost(tool, t.tx, t.tz, t.rot, ok.ok, specOf(tool)); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
@@ -690,6 +734,11 @@ function up(e) {
   if (photo) return;
   if (d.moved) return;
   if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else select(null); return; }
+  if (tool === 'movehq') {
+    const t = tileAt(e), r = sim.moveHQ(t.tx, t.tz);
+    if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+    tool = null; view.setGhost(null); audio.play('place'); flash('The HQ is set down here. Draw your first road from it.'); return;
+  }
   if (tool === 'moveflag') {
     const t = tileAt(e), r = sim.moveFlag(t.tx, t.tz);
     if (!r.ok) { flash(r.why); audio.play('deny'); return; }
@@ -842,6 +891,7 @@ function loopBody(now) {
         if (ev.t === 'moved') select(selId);
         if (ev.t === 'desk') deskPop(ev.id);
         if (ev.t === 'call') callPop(ev.id);
+        if (ev.t === 'report') reportPop(ev.id);
       }
 
       life.update(dt * gameSpeed());

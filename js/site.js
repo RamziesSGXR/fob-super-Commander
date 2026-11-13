@@ -81,3 +81,22 @@ export function survey(seed, biome, cx, cy, N) {
       cnt[4] ? `Ore fields (${cnt[4]} tiles): a Mine can dig your own supplies.` : 'No ore worth digging.',
       cnt[1] / n > 0.08 ? 'Water on site: bridges cost extra, but the shore is a wall you never pay for.' : ''].filter(Boolean) };
 }
+
+// what is at a region pixel (for placing operations on the map): k is a GROUND kind, h the height
+const fields = new Map();
+export function regionKind(seed, biome, x, y) {
+  const b = BIOMES[biome]; let f = fields.get(seed); if (!f) { f = field(seed); fields.set(seed, f); }
+  const u = x * SCALE * 0.9, v = y * SCALE * 0.9, h = f.h(u, v);
+  return { k: classify(b, h, f.dep(u, v)), h };
+}
+// a name for a place out in the region, from what the ground is there
+const PLACE = {
+  desert: ['Saltpan', 'Dune', 'Scorch', 'Mesa', 'Dustbowl', 'Sunstrike'], steppe: ['Windgrass', 'Longsight', 'Barrow', 'Plainsman', 'Thistle', 'Greyfield'],
+  ice: ['Frostbite', 'Glacier', 'Whiteout', 'Rime', 'Shiver', 'Hoarfrost'], jungle: ['Vinewall', 'Mire', 'Canopy', 'Rootknot', 'Fernshade', 'Greenhell'],
+  ash: ['Cinder', 'Slag', 'Ember', 'Soot', 'Blackglass', 'Smoulder'],
+};
+const FEATURE = { 0: ['Flats', 'Hollow', 'Crossing', 'Plain', 'Basin', 'Draw'], 2: ['Ridge', 'Heights', 'Crags', 'Spur', 'Bluffs', 'Pass'], 3: ['Seep', 'Wells', 'Vents'], 4: ['Diggings', 'Lode', 'Quarry'], shore: ['Shore', 'Ford', 'Bank', 'Inlet'] };
+export function placeName(biome, k, shore, r) {
+  const a = PLACE[biome] || PLACE.steppe, f = FEATURE[shore ? 'shore' : k] || FEATURE[0];
+  return `${a[Math.floor(r() * a.length)]} ${f[Math.floor(r() * f.length)]}`;
+}

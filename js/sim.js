@@ -9,7 +9,8 @@ import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, P
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
-import { makeSite, biomeOf, GROUND, RW, RH, survey } from './site.js';
+import { makeSite, biomeOf, GROUND, RW, RH, survey, regionKind, placeName } from './site.js';
+import { writeReport } from './reports.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
@@ -831,6 +832,39 @@ export class Sim {
     if (cap < Math.min(need, 120)) return { ok: false, why: `Not enough open ground: the plaza holds ${cap}, you have ${need} votes` };
     return { ok: true };
   }
+  // until the first road goes down (and nothing else is built), the HQ and its flag can be set down anywhere inside the charter
+  unsettled() { return !this.net.segs.length && this.b.every(b => b.type === 'hq' || b.type === 'seflag'); }
+  hqFlagSpot(x, z, hq) {
+    const [w, d] = dims('hq', 0), f = this.b.find(b => b.type === 'seflag');
+    for (const [dx, dz] of [[-2, d + 1], [w + 1, d + 1], [-3, 0], [w + 1, 0], [0, -3], [w - 2, -3], [-3, d - 2], [w + 1, d - 2]]) {
+      const fx = x + dx, fz = z + dz; let ok = true;
+      for (let j = 0; j < 2 && ok; j++) for (let i = 0; i < 2 && ok; i++) {
+        const tx = fx + i, tz = fz + j, o = this.inside(tx, tz) ? this.occ[tz * this.N + tx] : -1;
+        if (o === -1 || (o && o !== f?.id && o !== hq.id) || this.blocked?.(tx, tz) || (tx >= x && tx < x + w && tz >= z && tz < z + d)) ok = false;
+      }
+      if (ok) return [fx, fz];
+    }
+    return null;
+  }
+  canMoveHQ(x, z) {
+    if (!this.unsettled()) return { ok: false, why: 'The HQ is dug in: it can only move before the first road' };
+    const hq = this.b.find(b => b.type === 'hq'), f = this.fits('hq', x, z, 0, 0, hq.id);
+    if (!f.ok && f.why !== 'Something is in the way') return f;
+    const [w, d] = dims('hq', 0), fl = this.b.find(b => b.type === 'seflag');
+    for (let j = 0; j < d; j++) for (let i = 0; i < w; i++) { const o = this.occ[(z + j) * this.N + x + i]; if (o && o !== hq.id && o !== fl?.id) return { ok: false, why: 'Something is in the way' }; }
+    if (!this.hqFlagSpot(x, z, hq)) return { ok: false, why: 'No room beside it for the flag' };
+    return { ok: true };
+  }
+  moveHQ(x, z) {
+    const c = this.canMoveHQ(x, z); if (!c.ok) return c;
+    const hq = this.b.find(b => b.type === 'hq'), fl = this.b.find(b => b.type === 'seflag'), [fx, fz] = this.hqFlagSpot(x, z, hq);
+    for (let i = 0; i < this.occ.length; i++) if (this.occ[i] === hq.id || this.occ[i] === fl.id) this.occ[i] = 0;
+    hq.x = x; hq.z = z; fl.x = fx; fl.z = fz;
+    for (const b of [hq, fl]) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
+    this.hqSet = true; this.rebuildNet();
+    this.events.push({ t: 'moved', id: hq.id }, { t: 'moved', id: fl.id });
+    return { ok: true };
+  }
   moveFlag(x, z) {
     const c = this.canMoveFlag(x, z); if (!c.ok) return c;
     const f = this.b.find(b => b.type === 'seflag');
@@ -852,12 +886,29 @@ export class Sim {
         if (squad.length < 3) break;
         b.stock.ammo -= 4;
         const diff = this.rng.chance(0.3) ? 2 : 1;
-        const p = { id: this.nid++, op: `${this.rng.pick(['North', 'South', 'East', 'West', 'Perimeter', 'Ridge', 'Valley'])} sector patrol`, kind: 'Standing patrol', diff, size: 3,
+        const spot = this.opSpot(3, 9);
+        const p = { id: this.nid++, op: `${spot.place} patrol`, kind: 'Standing patrol', diff, size: 3, ...spot,
           dur: C.DAY / C.PATROL, def: 2 + diff, sup: 15 * diff, office: b.id, t: 0, members: squad.map(t => t.id) };
         p.chance = this.chance(p, squad);
         this.startPatrol(p, squad, b.id);
       }
     }
+  }
+  // where an operation goes: a spot out in the region round the base, on dry ground, with a name and a distance
+  opSite() { return this.site || { seed: this.seed, biome: biomeOf(this.planet), u: RW / 2, v: RH / 2 }; }
+  opSpot(r0, r1) {
+    const s = this.opSite(), dirs = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+    for (let i = 0; i < 24; i++) {
+      const a = this.rng.angle(), r = this.rng.range(r0, r1), x = s.u + Math.cos(a) * r, y = s.v + Math.sin(a) * r;
+      if (x < 2 || y < 2 || x > RW - 3 || y > RH - 3) continue;
+      const g = regionKind(s.seed, s.biome, x, y); if (g.k === GROUND.WATER) continue;
+      const shore = [[2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dy]) => regionKind(s.seed, s.biome, x + dx, y + dy).k === GROUND.WATER);
+      const dir = dirs[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
+      let place = placeName(s.biome, g.k, shore, () => this.rng.next());
+      if ([...this.offers, ...this.patrols].some(o => o.place === place) && i < 20) continue;
+      return { px: x, py: y, km: Math.round(r * 2.5) / 10, dir, place };
+    }
+    return { px: s.u + r0, py: s.v, km: Math.round(r0 * 2.5) / 10, dir: 'E', place: 'Eastern Flats' };
   }
   newOffers() {
     this.offers = [];
@@ -868,8 +919,9 @@ export class Sim {
       let m; do { m = this.rng.pick(pool); } while (used.has(m.kind)); used.add(m.kind);
       const diff = m.diff[0] + this.rng.int(m.diff[1] - m.diff[0] + 1) + (this.week > 6 && this.rng.chance(0.3) ? 1 : 0);
       const size = m.size[0] + this.rng.int(m.size[1] - m.size[0] + 1);
-      this.offers.push({ id: this.nid++, op: `Operation ${this.rng.pick(OP_A)} ${this.rng.pick(OP_B)}`, kind: m.kind, diff: Math.min(5, diff), size,
-        dur: Math.round(this.rng.range(m.dur[0], m.dur[1])), def: Math.round((4 + diff * 3) * (m.heavy ? 1.5 : 1)), sup: Math.round(diff * 40 * (m.heavy ? 1.5 : 1)), heavy: !!m.heavy });
+      const spot = this.opSpot(m.heavy ? 22 : 8, m.heavy ? 40 : 32);
+      this.offers.push({ id: this.nid++, op: `Operation ${this.rng.pick(OP_A)} ${this.rng.pick(OP_B)}`, kind: m.kind, diff: Math.min(5, diff), size, ...spot, wants: m.wants || null, needs: !!m.needs,
+        dur: Math.round(this.rng.range(m.dur[0], m.dur[1]) * (0.75 + spot.km / 16)), def: Math.round((4 + diff * 3) * (m.heavy ? 1.5 : 1)), sup: Math.round(diff * 40 * (m.heavy ? 1.5 : 1)), heavy: !!m.heavy });
     }
   }
   squadFor(size) {   // trained troopers first, idle before busy
@@ -880,7 +932,7 @@ export class Sim {
   oddsBonus() { return this.b.filter(b => b.done && !b.off && (!B[b.type].crew || b.crew > 0)).reduce((a, b) => a + this.stat(b, 'odds'), 0); }
   chance(o, squad = this.squadFor(o.size), kinds = o.veh || []) {
     if (squad.length < o.size) return 0;
-    const armour = kinds.reduce((a, k) => a + VEHICLES[k].bonus, 0);
+    const armour = kinds.reduce((a, k) => a + VEHICLES[k].bonus, 0) + (o.wants && kinds.includes(o.wants) ? 0.08 : 0) - (o.needs && !kinds.includes(o.wants) ? 0.2 : 0);
     const vet = squad.reduce((a, t) => a + Math.min(1, t.missions / 6), 0) / squad.length;
     const drill = squad.reduce((a, t) => a + t.drill, 0) / squad.length;
     const raw = squad.reduce((a, t) => a + (this.trained(t) ? 0 : 0.15), 0) / squad.length;
@@ -899,6 +951,9 @@ export class Sim {
     const vs = [...new Set(kinds)].map(k => this.armourFree(k)).filter(Boolean);
     const p = { ...o, id: this.nid++, t: 0, veh: vs.map(v => v.kind), vids: vs.map(v => v.id), members: squad.map(t => t.id) };
     p.chance = this.chance(p, squad);
+    // the FRV gets there and back in two thirds of the time; the right vehicle for the job pays a quarter more
+    if (p.veh.includes('frv')) p.dur = Math.round(p.dur * 0.67);
+    if (p.wants && p.veh.includes(p.wants)) p.sup = Math.round(p.sup * 1.25);
     for (const v of vs) { v.mission = p.id; v.parked = false; const h = this.byId(v.home); h.stock.fuel -= VEHICLES[v.kind].fuel; }
     this.offers = this.offers.filter(x => x !== o);
     this.startPatrol(p, squad, this.b.find(b => b.type === 'patrol' && b.done)?.id ?? this.b.find(b => b.type === 'hq').id);
@@ -935,12 +990,12 @@ export class Sim {
     for (const t of evac) this.troops = this.troops.filter(x => x !== t);
     if (evac.length) this.say('def', `${evac.map(t => t.name).join(', ')}: badly hurt on ${p.op} and flown off planet for treatment. The Bureau has sent a card.`);
     if (hurt.length) this.say('def', `${hurt.map(t => t.name).join(', ')}: wounded on ${p.op}${this.wardBeds ? ' and admitted to the Medical Bay' : ', resting in quarters: there is no Medical Bay'}.`);
-    const g = this.gate();
+    const g = this.gate(), lostVeh = [];
     for (const v of vs) {
       const h = this.byId(v.home);
       if (this.rng.chance(win ? 0.05 : v.kind === 'tank' ? 0.3 : 0.5)) {
         this.veh = this.veh.filter(x => x !== v);
-        if (h) { h.wreck ||= {}; h.wreck[v.kind] = C.REBUILD; }
+        if (h) { h.wreck ||= {}; h.wreck[v.kind] = C.REBUILD; } lostVeh.push(VEHICLES[v.kind].name);
         this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two days, billed to the base's gratitude.`);
         continue;
       }
@@ -967,6 +1022,14 @@ export class Sim {
     } else {
       this.gain('def', -(2 + p.diff)); this.stats.patrolsLost++;
       this.say('def', `${p.op}: failed. -${2 + p.diff} Defence standing.` + (dead.length ? ` Fallen: ${dead.map(t => t.name).join(', ')}.` : ''));
+    }
+    // the after-action report: every special operation files one; standing patrols only when something happened
+    if (!quiet || dead.length || hurt.length || evac.length || hero) {
+      const nm = t => `${rankOf(t.missions)} ${t.name}`, out = { win, dead: dead.map(nm), hurt: hurt.map(nm), evac: evac.map(nm), lostVeh, hero: hero ? nm(hero) : null };
+      const rep = { id: this.nid++, day: this.time.day, week: this.week, op: p.op, kind: p.office ? 'Standing patrol' : p.kind, place: p.place, km: p.km, dir: p.dir, px: p.px, py: p.py,
+        win, leader: this.troop(p.leader)?.name || back[0]?.name, n: p.members.length, veh: (p.veh || []).map(k => VEHICLES[k].name), lines: writeReport(() => this.rng.next(), p, out), def: win ? p.def : -(2 + p.diff), sup: win ? p.sup : 0 };
+      (this.reports ||= []).push(rep); if (this.reports.length > 30) this.reports.shift();
+      if (!quiet) this.events.push({ t: 'report', id: rep.id });
     }
     this.events.push({ t: 'patrolBack', members: back.map(t => t.id), dead: dead.map(t => t.name), hero: hero?.id ?? null, win });
   }

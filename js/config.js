@@ -240,13 +240,13 @@ export const CREW_ORDER = ['gen', 'motorpool', 'factory', 'extractor', 'mine', '
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [
   { kind: 'Recon sweep', diff: [1, 2], size: [2, 3], dur: [45, 70] },
-  { kind: 'Bug hole closure', diff: [2, 4], size: [3, 4], dur: [60, 90] },
-  { kind: 'Convoy escort', diff: [2, 3], size: [4, 4], dur: [80, 100] },
-  { kind: 'Bot outpost raid', diff: [3, 5], size: [4, 6], dur: [100, 130] },
-  { kind: 'Civilian evacuation', diff: [2, 4], size: [3, 5], dur: [70, 110] },
+  { kind: 'Bug hole closure', diff: [2, 4], size: [3, 4], dur: [60, 90], wants: 'tank' },
+  { kind: 'Convoy escort', diff: [2, 3], size: [4, 4], dur: [80, 100], wants: 'frv' },
+  { kind: 'Bot outpost raid', diff: [3, 5], size: [4, 6], dur: [100, 130], wants: 'tank' },
+  { kind: 'Civilian evacuation', diff: [2, 4], size: [3, 5], dur: [70, 110], wants: 'frv' },
   { kind: 'Retrieve stolen flag', diff: [1, 1], size: [2, 2], dur: [40, 50] },
   { kind: 'Orbital spotting run', diff: [2, 3], size: [2, 3], dur: [50, 80] },
-  { kind: 'Armoured assault', diff: [5, 5], size: [5, 6], dur: [110, 140], heavy: true },
+  { kind: 'Armoured assault', diff: [5, 5], size: [5, 6], dur: [110, 140], heavy: true, wants: 'tank', needs: true },
 ];
 export const OP_A = ['Righteous', 'Unyielding', 'Glorious', 'Patriotic', 'Steadfast', 'Liberty', 'Iron', 'Free', 'Lawful', 'Radiant', 'Vigilant', 'Sovereign'];
 export const OP_B = ['Harvest', 'Thunder', 'Gavel', 'Lantern', 'Ballot', 'Anvil', 'Sunrise', 'Verdict', 'Beacon', 'Hammer', 'Mandate', 'Anthem'];
