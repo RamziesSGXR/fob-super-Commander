@@ -27,6 +27,9 @@ export function makeMats(f) {
     skin: std('#c99a78'), uniform: std(lookOf(f).uniform), helmet: std(lookOf(f).helmet), armband: std(lookOf(f).armband), crestOn: lookOf(f).crest, boots: std('#22251f'),
     hdArmour: std('#17181a', { metalness: 0.4, roughness: 0.5 }), hdGold: std('#e0b21c', { metalness: 0.5, roughness: 0.4 }), hair: std('#3b2f25'),
     civ0: std('#c9c2ad'), civ1: std('#7d8b99'), civ2: std('#a3b18a'), trim: std('#2a3038', { roughness: 0.7 }),
+    floodPool: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.4)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+      return new THREE.MeshBasicMaterial({ color: '#fff3d0', map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); })(),
     coat: std('#141414'), cap: std('#e9e9e9'), paper: std('#f2f2ea'),
     pelican: std('#4c5550', { metalness: 0.35, roughness: 0.6 }), olive: std('#4d5638', { metalness: 0.3, roughness: 0.7 }), oliveDark: std('#33392a', { metalness: 0.3, roughness: 0.7 }), lift: std('#e0b21c'), crate: std('#5d6a3e'), scaffold: new THREE.LineBasicMaterial({ color: '#ffd21f', transparent: true, opacity: 0.8 }),
   };
@@ -469,6 +472,105 @@ const MAKE = {
     add(g, new THREE.CylinderGeometry(0.05, 0.13, 1.1, 4), m.white, 0, 0.6, -0.84, { ry: Math.PI / 4 });
     for (const x of [-0.9, 0.9]) box(g, 0.45, 0.06, 0.15, m.stone, x, 0.15, 0.87);
   },
+  // ---------------------------------------------------------------- Fort Sanctuary
+  plaque(g, m) {   // a dark stone slab holding a lens of Illuminate glass, the poem lit inside it
+    slab(g, m, 2, 1);
+    box(g, 1.5, 0.12, 0.5, m.stone, 0, 0.14, 0); box(g, 1.3, 0.85, 0.16, m.stone, 0, 0.62, -0.05);
+    box(g, 1.08, 0.62, 0.04, m.glowB, 0, 0.64, 0.04); box(g, 1.14, 0.03, 0.06, m.gold, 0, 0.97, 0.03); box(g, 1.14, 0.03, 0.06, m.gold, 0, 0.31, 0.03);
+    for (let i = 0; i < 6; i++) box(g, 0.7 - (i % 3) * 0.12, 0.018, 0.01, m.white, 0, 0.84 - i * 0.07, 0.065, { cast: false });
+    for (const s of [-1, 1]) { cyl(g, 0.02, 0.02, 1.5, m.metal, s * 0.85, 0.75, 0); flagCloth(g, m.prim, 0.3, 0.45, s * 0.85, 1.25, 0.02); }
+  },
+  flood(g, m) {   // a lattice mast with a bank of lamps that light the wall at night
+    for (const [x, z] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) box(g, 0.05, 2.4, 0.05, m.steel, x, 1.2, z);
+    for (let y = 0.4; y < 2.4; y += 0.4) { box(g, 0.4, 0.025, 0.025, m.steel, 0, y, -0.18); box(g, 0.4, 0.025, 0.025, m.steel, 0, y, 0.18); }
+    box(g, 0.7, 0.06, 0.3, m.dark, 0, 2.45, 0.05);
+    const lamps = []; for (let i = 0; i < 4; i++) { box(g, 0.14, 0.12, 0.1, m.metal, -0.24 + i * 0.16, 2.55, 0.12); lamps.push(box(g, 0.11, 0.09, 0.02, m.glowY, -0.24 + i * 0.16, 2.55, 0.18)); }
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(3.2, 24), m.floodPool); pool.rotation.x = -Math.PI / 2; pool.position.set(0, 0.035, 1.6); pool.receiveShadow = false; pool.castShadow = false; g.add(pool);
+    g.userData.night = pool;
+  },
+  turret(g, m) {   // a rotary gun on a concrete ring, turning to watch the approaches
+    cyl(g, 0.45, 0.5, 0.35, m.concrete, 0, 0.18, 0, { seg: 10 }); cyl(g, 0.36, 0.36, 0.06, m.dark, 0, 0.38, 0, { seg: 10 });
+    const t = new THREE.Group(); t.position.set(0, 0.42, 0); g.add(t);
+    box(t, 0.42, 0.26, 0.42, m.metal, 0, 0.13, 0); box(t, 0.44, 0.04, 0.44, m.prim, 0, 0.27, 0); box(t, 0.3, 0.16, 0.1, m.dark, 0, 0.14, 0.24);
+    for (const x of [-0.05, 0.05]) for (const y of [0.1, 0.18]) cyl(t, 0.022, 0.022, 0.7, m.steel, x, y, 0.6, { rx: Math.PI / 2, seg: 6 });
+    cyl(t, 0.05, 0.05, 0.12, m.dark, 0.14, 0.32, -0.08); box(t, 0.06, 0.03, 0.02, m.glowR || m.red, 0.14, 0.4, -0.02);
+    g.userData.spin = t;
+  },
+  eob(g, m) {   // the bunker: a low armoured blockhouse over a ramp down, comm masts and its own generators
+    slab(g, m, 4, 3);
+    box(g, 3.5, 0.75, 2.2, m.concrete, 0, 0.45, -0.35); box(g, 3.6, 0.12, 2.3, m.dark, 0, 0.86, -0.35); box(g, 3.65, 0.08, 2.35, m.prim, 0, 0.78, -0.35);
+    for (const s of [-1, 1]) { const w = box(g, 0.3, 0.6, 2.2, m.concrete, s * 1.82, 0.3, -0.35, { rz: s * 0.4 }); void w; }
+    box(g, 1.4, 0.05, 1.4, m.asphalt || m.dark, 0, 0.14, 1.0, { rx: -0.18 }); box(g, 1.1, 0.55, 0.06, m.dark, 0, 0.3, 0.76); for (let i = 0; i < 6; i++) box(g, 1.1, 0.012, 0.07, m.steel, 0, 0.08 + i * 0.09, 0.78);
+    box(g, 1.5, 0.04, 0.04, m.hazard, 0, 0.62, 0.77);
+    for (const s of [-1, 1]) { box(g, 0.5, 0.35, 0.4, m.metal, s * 1.2, 1.05, -0.9); cyl(g, 0.06, 0.06, 0.3, m.dark, s * 1.2, 1.35, -0.9); }
+    cyl(g, 0.02, 0.03, 1.6, m.metal, 0.4, 1.7, -0.6); cyl(g, 0.015, 0.02, 1.1, m.metal, -0.3, 1.45, -0.4);
+    g.userData.blink = [ball(g, 0.05, m.glowR, 0.4, 2.52, -0.6), ball(g, 0.04, m.glowR, -0.3, 2.02, -0.4)];
+    for (const x of [-1.5, -0.9, 0.9, 1.5]) box(g, 0.22, 0.08, 0.04, m.glowY, x, 0.5, 0.77);
+  },
+  vault(g, m) {   // server halls: a windowless block with cooling stacks and conduit
+    slab(g, m, 3, 3);
+    block(g, m, 2.6, 1.1, 2.4, 0, 0.08, -0.1, m.trim, 0);
+    for (let i = 0; i < 5; i++) box(g, 0.32, 0.6, 0.03, m.dark, -1.0 + i * 0.5, 0.6, 1.11);
+    for (let i = 0; i < 5; i++) box(g, 0.24, 0.02, 0.02, m.glowB, -1.0 + i * 0.5, 0.8, 1.13);
+    box(g, 0.6, 0.7, 0.05, m.metal, 0, 0.45, 1.12); box(g, 0.5, 0.05, 0.03, m.hazard, 0, 0.84, 1.14);
+    for (const [x, z] of [[-0.7, -0.6], [0, -0.6], [0.7, -0.6]]) { box(g, 0.5, 0.35, 0.5, m.metal, x, 1.38, z); cyl(g, 0.18, 0.18, 0.05, m.dark, x, 1.58, z, { seg: 12 }); }
+    box(g, 2.4, 0.08, 0.08, m.steel, 0, 1.25, 0.4); box(g, 0.08, 0.08, 1.2, m.steel, 1.1, 1.25, -0.2);
+  },
+  warroom(g, m) {   // a broad command block with a glass drum on top: the strat map turns inside it
+    slab(g, m, 4, 4);
+    block(g, m, 3.6, 1.0, 3.2, 0, 0.08, -0.2, m.prim, 6);
+    block(g, m, 2.6, 0.8, 2.2, 0, 1.08, -0.3, m.trim, 4);
+    cyl(g, 0.95, 0.95, 0.55, m.glass, 0, 2.2, -0.3, { seg: 24 }); cyl(g, 1.0, 1.0, 0.08, m.dark, 0, 2.5, -0.3, { seg: 24 }); cyl(g, 1.0, 1.0, 0.08, m.dark, 0, 1.92, -0.3, { seg: 24 });
+    const holo = new THREE.Group(); holo.position.set(0, 2.2, -0.3); g.add(holo);
+    add(holo, new THREE.SphereGeometry(0.42, 16, 10), m.glowB, 0, 0, 0); add(holo, new THREE.TorusGeometry(0.6, 0.015, 6, 32), m.glowY, 0, 0, 0, { rx: Math.PI / 2 });
+    g.userData.spin = holo;
+    box(g, 1.2, 0.85, 0.06, m.dark, 0, 0.5, 1.42); box(g, 1.6, 0.08, 0.6, m.prim, 0, 0.98, 1.6); for (const x of [-0.7, 0.7]) box(g, 0.08, 0.95, 0.08, m.steel, x, 0.5, 1.85);
+    plane(g, 0.9, 0.9, m.logoLit, 0, 1.55, 0.81);
+    for (const [x, z] of [[-1.6, -1.7], [1.6, -1.7]]) { cyl(g, 0.02, 0.03, 1.4, m.metal, x, 1.8, z); }
+    g.userData.blink = [ball(g, 0.05, m.glowR, -1.6, 2.52, -1.7), ball(g, 0.05, m.glowR, 1.6, 2.52, -1.7)];
+  },
+  halls(g, m) {   // two wings and a colonnade, with holographic panels for the fallen
+    slab(g, m, 4, 3, m.stone);
+    for (const s of [-1, 1]) block(g, m, 1.3, 1.15, 2.2, s * 1.25, 0.08, -0.25, m.gold, 2);
+    box(g, 1.2, 1.5, 2.2, m.white, 0, 0.83, -0.35); box(g, 1.3, 0.12, 2.3, m.gold, 0, 1.6, -0.35);
+    add(g, new THREE.CylinderGeometry(0.55, 0.55, 0.3, 20, 1, false, 0, Math.PI), m.white, 0, 1.75, -0.35, { rz: Math.PI / 2, ry: Math.PI / 2 });
+    for (let i = 0; i < 6; i++) cyl(g, 0.07, 0.08, 1.2, m.white, -1.6 + i * 0.64, 0.68, 1.0, { seg: 10 });
+    box(g, 3.6, 0.1, 0.5, m.white, 0, 1.33, 1.0); box(g, 3.7, 0.12, 0.6, m.stone, 0, 0.08, 1.05);
+    for (let i = 0; i < 4; i++) box(g, 0.42, 0.7, 0.02, m.glowB, -1.35 + i * 0.9, 0.62, 0.79);
+    for (const s of [-1, 1]) { cyl(g, 0.1, 0.12, 0.15, m.dark, s * 0.4, 0.2, 1.3, { seg: 10 }); ball(g, 0.06, m.glowY, s * 0.4, 0.3, 1.3, { seg: 8 }); }
+  },
+  mart(g, m) {   // a bright store: glass front, a canopy and the DEMOCRA-MART sign
+    slab(g, m, 3, 3);
+    block(g, m, 2.7, 1.0, 2.3, 0, 0.08, -0.25, m.hazard, 0);
+    box(g, 2.4, 0.6, 0.04, m.glass, 0, 0.45, 0.92); for (let i = 0; i < 5; i++) box(g, 0.04, 0.62, 0.05, m.steel, -1.2 + i * 0.6, 0.45, 0.93);
+    box(g, 2.9, 0.06, 0.7, m.prim, 0, 0.9, 1.2); for (const x of [-1.35, 1.35]) box(g, 0.05, 0.85, 0.05, m.steel, x, 0.45, 1.5);
+    box(g, 2.0, 0.32, 0.08, m.dark, 0, 1.25, 0.94); box(g, 1.85, 0.2, 0.02, m.glowY, 0, 1.25, 0.99);
+    for (let i = 0; i < 3; i++) { box(g, 0.25, 0.3, 0.2, m.white, -0.8 + i * 0.8, 0.25, 1.35); box(g, 0.2, 0.06, 0.15, m.red, -0.8 + i * 0.8, 0.43, 1.35); }
+    box(g, 0.8, 0.3, 0.6, m.metal, 0.7, 1.25, -0.8);
+  },
+  casino(g, m) {   // lights, gold, a marquee: luck, supervised
+    slab(g, m, 3, 3);
+    block(g, m, 2.6, 1.3, 2.3, 0, 0.08, -0.25, m.gold, 0);
+    box(g, 2.0, 0.08, 0.6, m.dark, 0, 0.95, 1.15); for (const x of [-0.95, 0.95]) box(g, 0.06, 0.95, 0.06, m.gold, x, 0.47, 1.4);
+    const bulbs = []; for (let i = 0; i < 12; i++) bulbs.push(ball(g, 0.035, m.glowY, -0.92 + i * 0.167, 1.0, 1.44, { seg: 6 }));
+    box(g, 0.9, 0.6, 0.04, m.glass, 0, 0.4, 0.92); box(g, 1.6, 0.42, 0.08, m.red, 0, 1.6, 0.92); box(g, 1.5, 0.3, 0.02, m.glowY, 0, 1.6, 0.97);
+    for (const s of [-1, 1]) { cyl(g, 0.22, 0.22, 0.05, m.gold, s * 0.9, 1.6, 0.94, { rx: Math.PI / 2, seg: 16 }); }
+    g.userData.blink = bulbs.filter((_, i) => i % 2 === 0);
+  },
+  cryo(g, m) {   // a cold hall of upright pods, frost on the vents
+    slab(g, m, 3, 2);
+    block(g, m, 2.6, 0.95, 1.4, 0, 0.08, -0.2, m.glowB, 0);
+    for (let i = 0; i < 5; i++) { cyl(g, 0.17, 0.17, 0.7, m.glass, -0.96 + i * 0.48, 0.48, 0.66, { seg: 10 }); cyl(g, 0.12, 0.12, 0.55, m.white, -0.96 + i * 0.48, 0.46, 0.66, { seg: 10 }); cyl(g, 0.19, 0.19, 0.06, m.metal, -0.96 + i * 0.48, 0.86, 0.66, { seg: 10 }); }
+    for (const x of [-0.8, 0, 0.8]) { box(g, 0.45, 0.25, 0.4, m.white, x, 1.18, -0.4); box(g, 0.4, 0.04, 0.35, m.glowB, x, 1.32, -0.4); }
+  },
+  brig(g, m) {   // cell block: bars, a fenced yard, a watch light
+    slab(g, m, 3, 2);
+    block(g, m, 2.0, 0.95, 1.4, -0.35, 0.08, -0.2, m.red, 0);
+    for (let i = 0; i < 4; i++) { box(g, 0.3, 0.32, 0.02, m.dark, -1.05 + i * 0.47, 0.6, 0.51); for (let k = 0; k < 4; k++) box(g, 0.015, 0.32, 0.02, m.steel, -1.15 + i * 0.47 + k * 0.07, 0.6, 0.53); }
+    for (const [x, z, w, d] of [[1.2, 0, 0.03, 1.6], [0.95, -0.8, 0.5, 0.03], [0.95, 0.8, 0.5, 0.03]]) box(g, w, 0.55, d, m.steel, x, 0.35, z);
+    for (const z of [-0.8, 0, 0.8]) cyl(g, 0.02, 0.02, 0.65, m.steel, 1.2, 0.36, z);
+    cyl(g, 0.02, 0.025, 0.9, m.metal, -1.1, 1.45, -0.6); box(g, 0.14, 0.1, 0.12, m.glowY, -1.1, 1.92, -0.55);
+  },
   memorial(g, m) {
     box(g, 2.8, 0.08, 0.9, m.white, 0, 0.04, 0.05, { cast: false });
     box(g, 2.7, 0.8, 0.22, m.stone, 0, 0.48, -0.25); box(g, 2.78, 0.06, 0.28, m.dark, 0, 0.9, -0.25);
@@ -495,8 +597,40 @@ const MAKE = {
   },
 };
 
-export function buildModel(type, m, merge = false) {
-  const g = new THREE.Group(); (MAKE[type] || MAKE.hab)(g, m); if (merge) mergeStatic(g); return g;
+export function buildModel(type, m, merge = false, spec = null) {
+  const g = new THREE.Group(); (MAKE[type] || MAKE.hab)(g, m);
+  if (spec && (spec.design || spec.parts?.length)) decorate(g, m, spec);
+  if (merge) mergeStatic(g); return g;
+}
+// Designs and parts, added round any building's required shape. The building faces +z; its door is on that side.
+function decorate(g, m, spec) {
+  const bb = new THREE.Box3().setFromObject(g), x0 = bb.min.x + 0.1, x1 = bb.max.x - 0.1, z0 = bb.min.z + 0.1, z1 = bb.max.z - 0.1;
+  const top = Math.max(0.6, Math.min(bb.max.y, 2.4)), W = x1 - x0, D = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const roofZ = cz - D * 0.15;
+  if (spec.design === 1) {   // Fortified: blast walls along the sides and back, sandbags at the door, armour plate on the corners
+    for (const s of [-1, 1]) box(g, 0.14, 0.42, D * 0.85, m.concrete, cx + s * (W / 2 + 0.02), 0.21, cz - D * 0.05);
+    box(g, W * 0.9, 0.42, 0.14, m.concrete, cx, 0.21, z0 - 0.02);
+    for (const s of [-1, 1]) sandbags(g, m, cx + s * W * 0.32, z1 + 0.05, W * 0.22);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.18, top * 0.9, 0.18, m.oliveDark || m.dark, cx + sx * W / 2, top * 0.45, cz + sz * D / 2);
+    box(g, W * 0.6, 0.05, 0.06, m.hazard, cx, 0.46, z0 - 0.06);
+  } else if (spec.design === 2) {   // Monumental: a colonnade in front, gold trim, tall banners, steps
+    const n = Math.max(3, Math.round(W / 0.55));
+    for (let i = 0; i < n; i++) cyl(g, 0.055, 0.065, top * 0.85, m.white, x0 + 0.1 + i * (W - 0.2) / (n - 1), top * 0.425 + 0.06, z1 + 0.05, { seg: 8 });
+    box(g, W + 0.1, 0.08, 0.3, m.gold, cx, top * 0.85 + 0.1, z1 + 0.05);
+    box(g, W * 0.7, 0.06, 0.4, m.white, cx, 0.03, z1 + 0.25); box(g, W * 0.6, 0.06, 0.25, m.white, cx, 0.09, z1 + 0.18);
+    for (const s of [-1, 1]) { cyl(g, 0.02, 0.025, top + 1.1, m.gold, cx + s * (W / 2 + 0.15), (top + 1.1) / 2, z1 + 0.15); flagCloth(g, m.prim, 0.3, 0.6, cx + s * (W / 2 + 0.15), top + 0.7, z1 + 0.16); }
+  }
+  for (const p of spec.parts || []) {
+    if (p === 'antenna') { for (const [dx, h] of [[-0.3, 1.2], [0.25, 0.8]]) { cyl(g, 0.015, 0.02, h, m.metal, cx + dx * W * 0.5, top + h / 2, roofZ); } add(g, new THREE.SphereGeometry(0.22, 12, 6, 0, Math.PI * 2, 0, 1.0), m.white, cx + W * 0.3, top + 0.2, roofZ + 0.2, { rx: -0.8 }); (g.userData.blink ||= []).push(ball(g, 0.04, m.glowR, cx - 0.15 * W, top + 1.22, roofZ)); }
+    else if (p === 'floods') { for (const s of [-1, 1]) { cyl(g, 0.02, 0.02, 0.5, m.steel, cx + s * W * 0.42, top + 0.25, z1 - 0.1); box(g, 0.16, 0.1, 0.08, m.glowY, cx + s * W * 0.42, top + 0.52, z1 - 0.06); } const pl = new THREE.Mesh(new THREE.CircleGeometry(Math.max(W, D) * 0.9, 20), m.floodPool); pl.rotation.x = -Math.PI / 2; pl.position.set(cx, 0.036, z1 + D * 0.4); g.add(pl); g.userData.night = g.userData.night ? [].concat(g.userData.night, pl) : pl; }
+    else if (p === 'sign') { box(g, W * 0.6, 0.26, 0.06, m.dark, cx, top + 0.18, z1 - 0.05); box(g, W * 0.55, 0.16, 0.02, m.glowY, cx, top + 0.18, z1 - 0.01); }
+    else if (p === 'flags') { for (let i = 0; i < 3; i++) { const x = cx - W * 0.35 + i * W * 0.35; cyl(g, 0.015, 0.02, 1.2, m.metal, x, top + 0.6, roofZ - D * 0.2); flagCloth(g, i === 1 ? m.seflag || m.prim : m.prim, 0.28, 0.18, x, top + 1.08, roofZ - D * 0.2); } }
+    else if (p === 'solar') { for (let i = 0; i < 3; i++) box(g, W * 0.24, 0.03, D * 0.45, m.panel, cx - W * 0.3 + i * W * 0.3, top + 0.12, roofZ, { rx: -0.35 }); }
+    else if (p === 'guns') { const t = new THREE.Group(); t.position.set(cx + W * 0.25, top, roofZ); g.add(t); cyl(t, 0.18, 0.2, 0.14, m.concrete, 0, 0.07, 0); box(t, 0.22, 0.14, 0.22, m.metal, 0, 0.2, 0); for (const x of [-0.04, 0.04]) cyl(t, 0.018, 0.018, 0.45, m.steel, x, 0.22, 0.3, { rx: Math.PI / 2, seg: 6 }); g.userData.spin = g.userData.spin || t; }
+    else if (p === 'planter') { for (const s of [-1, 1]) { box(g, 0.45, 0.18, 0.3, m.concrete, cx + s * W * 0.38, 0.09, z1 + 0.35); ball(g, 0.2, m.green || m.olive, cx + s * W * 0.38, 0.32, z1 + 0.35, { seg: 8 }); } }
+    else if (p === 'vents') { for (let i = 0; i < 2; i++) { box(g, 0.4, 0.3, 0.4, m.metal, cx - W * 0.2 + i * W * 0.4, top + 0.15, roofZ - D * 0.15); cyl(g, 0.14, 0.14, 0.04, m.dark, cx - W * 0.2 + i * W * 0.4, top + 0.32, roofZ - D * 0.15, { seg: 10 }); } }
+    else if (p === 'holo') { const h = new THREE.Group(); h.position.set(cx - W * 0.25, top + 0.55, roofZ); g.add(h); add(h, new THREE.OctahedronGeometry(0.22), m.glowB, 0, 0, 0); add(h, new THREE.TorusGeometry(0.34, 0.012, 6, 24), m.glowY, 0, 0, 0, { rx: Math.PI / 2 }); cyl(g, 0.12, 0.16, 0.12, m.dark, cx - W * 0.25, top + 0.06, roofZ); if (!g.userData.spin) g.userData.spin = h; else (g.userData.spin2 = h); }
+  }
 }
 // Fold every part that never moves into one mesh per material, so a building costs a handful of draw calls instead of
 // dozens. Anything an animation reaches through userData (dishes, crates, flags, lights) is left alone.

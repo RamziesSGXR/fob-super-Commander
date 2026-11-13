@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.7';
+export const VERSION = '0.8';
 
 export const C = {
   N: 64,                    // the map is N x N tiles; the base is whatever your walls enclose
@@ -66,6 +66,10 @@ export const TECH = {
   highrise: { name: 'Vertical Housing', tier: 2, cost: 280, hrs: 36, needs: ['shelving'], desc: 'Unlocks the Hab Block: three storeys, thirty bunks, one plot.' },
   broadcast:{ name: 'Planetary Broadcast', tier: 2, cost: 300, hrs: 36, needs: ['radio'], desc: 'Unlocks the Broadcast Mast: a very tall mast that runs four landing pads and carries the Ministry of Truth to every ear.' },
   command:  { name: 'Unified Command', tier: 3, cost: 480, hrs: 60, needs: ['broadcast', 'highrise'], desc: 'Unlocks the Command Tower, which watches a long stretch of wall and makes the whole base stand straighter.' },
+  fortworks:{ name: 'Fortification Doctrine', tier: 1, cost: 180, hrs: 24, desc: 'Unlocks Defence Turrets, Floodlight Towers and the Emergency Operations Bunker.' },
+  civic:    { name: 'Civic Programme', tier: 2, cost: 260, hrs: 30, needs: ['shelving'], desc: 'Unlocks DEMOCRA-MART, the Citizens\' Casino and the Memorial Halls.' },
+  archive:  { name: 'Quantum Archives', tier: 2, cost: 300, hrs: 36, needs: ['radio'], desc: 'Unlocks the Server and Storage Vault, the Security Brig and Cryopreservation Storage.' },
+  warroom:  { name: 'Strategic Command', tier: 3, cost: 520, hrs: 60, needs: ['archive', 'command'], desc: 'Unlocks the War Room: every front in real time, better odds and more operations to choose from.' },
   tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
 };
 // Training: points a recruit earns per game hour at each place; 100 makes a trooper.
@@ -174,6 +178,29 @@ export const B = {
               desc: 'Your logo, name and motto, lit up at night.' },
   pool:     { name: 'Reflecting Pool', group: 'propaganda', w: 3, d: 2, cost: 200, up: 8, prop: 8, mor: 4,
               desc: 'A calm place to reflect on liberty.' },
+  // ---------------------------------------------------------------- Fort Sanctuary (from the SESF base build)
+  plaque:   { name: 'Memorial Plaque', group: 'propaganda', w: 2, d: 1, cost: 120, up: 2, prop: 5, mor: 2, needs: ['memorial'], atGate: true,
+              desc: 'A poem for those who stood firm on Mars, held in refracted light by lens shards from Illuminate wreckage. Stands at a gate.' },
+  flood:    { name: 'Floodlight Tower', group: 'military', w: 1, d: 1, cost: 110, up: 4, pw: -2, watch: 7, atWall: true, tech: 'fortworks',
+              desc: 'Luminite-core emitters that cut through fog, sandstorms and bio-acid haze. Lights the wall at night and watches seven tiles of it.' },
+  turret:   { name: 'Defence Turret', group: 'military', w: 1, d: 1, cost: 220, up: 8, pw: -2, guns: 6, atWall: true, tech: 'fortworks', need: { ammo: 15 },
+              desc: 'An autonomous rotary gun on Mag-Coil torque and a Guidance Core. Arms six tiles of wall either way. Walls deter; turrets destroy.' },
+  eob:      { name: 'Emergency Operations Bunker', group: 'military', w: 4, d: 3, cost: 900, up: 24, pw: 5, crew: 2, unique: true, tech: 'fortworks', large: true, mor: 3, weekly: { def: 2 },
+              desc: 'If the surface falls silent, the war continues below. Armoured walls, redundant comm relays and its own power grid. +2 Defence standing a week.' },
+  vault:    { name: 'Server and Storage Vault', group: 'industry', w: 3, d: 3, cost: 640, up: 16, pw: -4, crew: 1, tech: 'archive', large: true, lab: 0.35, store: { rations: 60, fuel: 40, ammo: 40 },
+              desc: 'Every battle log, strat-map and citizen record on quantum drives, cooled by Automaton heat plates. Research 35% faster, and a hardened store.' },
+  warroom:  { name: 'War Room', group: 'military', w: 4, d: 4, cost: 1200, up: 30, pw: -6, crew: 3, unique: true, tech: 'warroom', needs: ['command'], large: true, prop: 8, odds: 0.08, offers: 1, staff: 2,
+              desc: 'Illuminate holo cores cast every front in 360 degrees; Automaton servers crunch the threat. Special operations +8% odds, and one more to choose from.' },
+  halls:    { name: 'Memorial Halls', group: 'propaganda', w: 4, d: 3, cost: 980, up: 20, pw: -2, tech: 'civic', needs: ['memorial'], large: true, prop: 18, mor: 5, pride: 1,
+              desc: 'One wing for legendary Helldivers, one for the battles that made them, in holographic panels lit by Luminite. Inspires every recruit who marches past.' },
+  mart:     { name: 'DEMOCRA-MART', group: 'living', w: 3, d: 3, cost: 700, up: 14, pw: -3, tech: 'civic', large: true, mor: 4, sales: 14, staff: 3,
+              desc: 'Rations upgrades, souvenir shrapnel mugs and liberty-approved luxuries, with self-checkout lanes run by Automaton cores. Earns credits every day.' },
+  casino:   { name: 'Citizens\' Casino', group: 'living', w: 3, d: 3, cost: 760, up: 16, pw: -4, tech: 'civic', large: true, mor: 5, sales: 18, staff: 3, weekly: { tru: -1 },
+              desc: 'Statistically approved wagering on Illuminate RNG cores. Luck and liberty, both supervised. Good for morale and credits; the Ministry of Truth frowns slightly.' },
+  cryo:     { name: 'Cryopreservation Storage', group: 'military', w: 3, d: 2, cost: 680, up: 18, pw: -5, crew: 1, tech: 'archive', needs: ['hdbarracks'], large: true, odds: 0.05,
+              desc: 'A select few Helldivers kept frozen for just-in-case service, thawed when called. Special operations +5% odds.' },
+  brig:     { name: 'Security Brig', group: 'military', w: 3, d: 2, cost: 560, up: 14, pw: -3, crew: 1, tech: 'archive', large: true, weekly: { tru: 2 }, inspect: 5,
+              desc: 'Containment emitters and restraint bolts for prisoners, rogue AI cores, and any Helldiver who forgets what Managed Democracy means. +2 Truth a week; inspections +5.' },
   memorial: { name: 'Memorial Wall', group: 'propaganda', w: 3, d: 1, cost: 180, up: 4, prop: 6, mor: 2, needs: ['barracks'],
               desc: 'A plaque for every trooper who fell. Halves the grief of each loss.' },
   statue:   { name: 'Liberty Statue', group: 'propaganda', w: 2, d: 2, cost: 360, up: 10, prop: 16, mor: 4, needs: ['truth', 'parade'],
@@ -181,7 +208,7 @@ export const B = {
 };
 
 // Crew is filled in this order when there aren't enough troops for everything.
-export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'medbay', 'lookout', 'command', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
+export const CREW_ORDER = ['gen', 'motorpool', 'mess', 'range', 'patrol', 'medbay', 'lookout', 'turret', 'flood', 'command', 'warroom', 'eob', 'cryo', 'brig', 'vault', 'lab', 'vbay', 'armory', 'lecture', 'truth', 'hdbarracks', 'dome'];
 
 // Patrol missions the Ministry of Defence offers. diff 1-5.
 export const MISSIONS = [
@@ -219,4 +246,38 @@ export const FACTION_DEFAULT = {
   name: 'Super Earth Special Forces', base: 'Fort Sanctuary', motto: 'Liberty, delivered.',
   primary: '#2e4a2a', secondary: '#ffe600',
   logo: { shape: 'shield', symbol: 'eagle', bg: '#1b2a1a', fg: '#ffe600', rim: '#ffe600', text: 'SESF' },
+};
+
+// ---------------------------------------------------------------- designs and parts for the large buildings
+// Every large building keeps its required shape. Pick one of three designs, then add parts: each costs more and does more.
+export const DESIGNS = [
+  { key: 'std', name: 'Standard Issue', cost: 1, desc: 'The approved pattern. Cheapest.' },
+  { key: 'fort', name: 'Fortified', cost: 1.25, wear: 0.5, desc: 'Blast walls and armour plate. Wears half as fast and adds 1 Defence standing a week.', weekly: { def: 1 } },
+  { key: 'mon', name: 'Monumental', cost: 1.4, prop: 6, pride: 1, desc: 'Columns, gold trim and banners. +6 propaganda and pride; people stand up straighter walking past.' },
+];
+// the part library: what each part looks like is drawn in models.js; what it does depends on the building (PARTS_FOR)
+export const PARTS = {
+  antenna: { name: 'Relay Antennas', cost: 60 },
+  floods:  { name: 'Roof Floodlights', cost: 50 },
+  sign:    { name: 'Lit Sign', cost: 40 },
+  flags:   { name: 'Flag Poles', cost: 45 },
+  solar:   { name: 'Solar Roof', cost: 90 },
+  guns:    { name: 'Roof Gun', cost: 120 },
+  planter: { name: 'Planters', cost: 30 },
+  vents:   { name: 'Heat Exchangers', cost: 70 },
+  holo:    { name: 'Holo Display', cost: 110 },
+};
+// per building: which parts it can take and what each adds. Keys: prop, mor, sales, watch, guns, odds, lab, pw, pride
+export const PARTS_FOR = {
+  eob:     { antenna: { odds: 0.02 }, vents: { pw: 2 }, guns: { guns: 5 }, flags: { prop: 2 } },
+  vault:   { vents: { lab: 0.15 }, antenna: { lab: 0.1 }, solar: { pw: 3 }, guns: { guns: 4 } },
+  warroom: { holo: { odds: 0.04 }, antenna: { odds: 0.02 }, flags: { prop: 3 }, floods: { watch: 6 } },
+  halls:   { holo: { prop: 6 }, flags: { prop: 3 }, planter: { mor: 2 }, floods: { prop: 2 } },
+  mart:    { sign: { sales: 4 }, holo: { sales: 5, prop: 2 }, planter: { mor: 1 }, solar: { pw: 3 } },
+  casino:  { sign: { sales: 5 }, holo: { sales: 6 }, floods: { mor: 1 }, planter: { mor: 1 } },
+  cryo:    { vents: { odds: 0.02 }, solar: { pw: 3 }, flags: { prop: 2 }, guns: { guns: 4 } },
+  brig:    { floods: { watch: 5 }, guns: { guns: 5 }, antenna: { prop: 1 }, vents: { pw: 1 } },
+  lab:     { antenna: { lab: 0.1 }, vents: { lab: 0.1 }, solar: { pw: 2 }, sign: { prop: 1 } },
+  hdbarracks: { flags: { prop: 3 }, vents: { mor: 1 }, guns: { guns: 4 }, floods: { watch: 4 } },
+  command: { holo: { prop: 4 }, antenna: { odds: 0.02 }, floods: { watch: 6 }, flags: { prop: 3 } },
 };

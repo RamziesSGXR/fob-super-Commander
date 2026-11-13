@@ -292,7 +292,7 @@ export class View {
     this.hemi.color.setRGB(0.32 + 0.55 * d, 0.38 + 0.53 * d, 0.6 + 0.4 * d);
     this.scene.background.copy(this.skyNight).lerp(this.skyDay, d); this.scene.fog.color.copy(this.scene.background);
     if (this.lampHead) { this.lampHead.emissiveIntensity = 0.1 + (1 - d) * 2.4; this.lampPool.opacity = (1 - d) * 0.75; }
-    if (this.m) { this.m.window.emissiveIntensity = 0.25 + (1 - d) * 1.6; this.m.glowY.emissiveIntensity = 1.4 + (1 - d) * 1.2; this.m.colaFace.emissiveIntensity = 0.55 + (1 - d) * 0.8; }
+    if (this.m) { this.m.floodPool.opacity = Math.max(0, 0.75 - d * 1.2); this.m.window.emissiveIntensity = 0.25 + (1 - d) * 1.6; this.m.glowY.emissiveIntensity = 1.4 + (1 - d) * 1.2; this.m.colaFace.emissiveIntensity = 0.55 + (1 - d) * 0.8; }
   }
 
   // ---------------------------------------------------------------- the camera
@@ -358,12 +358,12 @@ export class View {
   }
 
   // ---------------------------------------------------------------- the build ghost and the selection
-  setGhost(type, x, z, rot, ok) {
+  setGhost(type, x, z, rot, ok, spec = null) {
     if (!type) { if (this.ghostG) this.ghostG.visible = false; this.foot.visible = false; this.range.visible = false; this.grid.visible = false; return; }
-    const key = type + rot;
+    const key = type + rot + JSON.stringify(spec);
     if (key !== this.ghostKey) {
       if (this.ghostG) this.world.remove(this.ghostG);
-      this.ghostG = buildModel(type, this.m); this.ghostKey = key;
+      this.ghostG = buildModel(type, this.m, false, spec); this.ghostKey = key;
       this.ghostMat = new THREE.MeshStandardMaterial({ color: '#59ff8a', transparent: true, opacity: 0.55, depthWrite: false });
       this.ghostG.traverse(o => { if (o.isMesh) { o.material = this.ghostMat; o.castShadow = false; } });
       this.ghostG.rotation.y = rot * Math.PI / 2; this.world.add(this.ghostG);
@@ -431,7 +431,7 @@ export class View {
       let g = this.bm.get(b.id);
       if (!g) {
         g = new THREE.Group(); g.userData.b = b.id;
-        const model = buildModel(b.type, this.m, true); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
+        const model = buildModel(b.type, this.m, true, b.design || b.parts?.length ? { design: b.design, parts: b.parts } : null); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
         g.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2));
         g.traverse(o => { o.userData.bid = b.id; });
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;
@@ -468,6 +468,7 @@ export class View {
       }
       if (ud.beam) ud.beam.rotation.z = Math.sin(t * 2.2 + b.id) * 0.28 * Math.min(1, w * 1.5);
       if (ud.spin) ud.spin.rotation.y += dt * 0.6;
+      if (ud.spin2) ud.spin2.rotation.y -= dt * 0.9;
       if (ud.blink) { const on = (t + b.id * 0.37) % 1.6 < 0.8; for (const l of ud.blink) l.visible = on; }
       if (ud.glow) ud.glow.material.emissiveIntensity = w > 0 ? 1 + Math.sin(t * 9) * 0.3 : 0.1;
       if (ud.smoke && b.running && Math.random() < dt * 5) for (const p of ud.smoke) {

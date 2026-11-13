@@ -5,7 +5,7 @@
 // obstacle course, the parade ground and the Citizenship Hall, and Defence's deployment orders ship the trained ones
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
-import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH } from './config.js';
+import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 import { REQUESTS, GRADES, trueGrade } from './desk.js';
@@ -199,7 +199,10 @@ export class Sim {
     this.say('base', `The Science Lab begins work on ${TECH[k].name}. Results in about ${TECH[k].hrs} lab hours.`);
     return true;
   }
-  labRate() { return this.b.filter(b => b.type === 'lab' && b.done && !b.off).reduce((a, b) => a + this.work(b), 0); }
+  labRate() {
+    const on = this.b.filter(b => b.done && !b.off), boost = on.filter(b => b.type !== 'lab').reduce((a, b) => a + this.stat(b, 'lab') * this.work(b), 0);
+    return on.filter(b => b.type === 'lab').reduce((a, b) => a + this.work(b) * (1 + this.stat(b, 'lab')), 0) * (1 + boost);
+  }
   study(dt) {
     const k = this.tech.cur; if (!k) return;
     this.tech.pts += this.labRate() * dt / C.DAY * 24;
@@ -209,13 +212,14 @@ export class Sim {
     this.say('base', `Research complete: ${TECH[k].name}. ${TECH[k].desc} The scientists have been thanked and reassigned.`);
   }
 
-  canPlace(type, x, z, rot = 0) {
+  canPlace(type, x, z, rot = 0, spec = null) {
     const d = B[type]; if (!d) return { ok: false, why: 'Unknown building' };
     if (d.fixed) return { ok: false, why: 'Cannot be built' };
     if (d.unique && this.count(type)) return { ok: false, why: 'Only one allowed' };
     if (d.chain) { const other = this.b.find(b => B[b.type].chain && b.type !== type); if (other) return { ok: false, why: `Exclusive franchise agreement with ${B[other.type].name}` }; }
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.join(' and ') };
-    if (this.supplies < d.cost) return { ok: false, why: 'Not enough supplies' };
+    if (this.supplies < this.costOf(type, spec)) return { ok: false, why: 'Not enough supplies' };
+    if (d.atGate && !(this.gates || []).some(g => Math.hypot(g.x - x - 1, g.z - z - 0.5) < 4.5)) return { ok: false, why: 'Stands at a gate: within four tiles of one' };
     const f = this.fits(type, x, z, rot); if (!f.ok) return f;
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
     if (!LOOSE.has(type) && !this.frontage(type, x, z, rot)) return { ok: false, why: 'Needs a road out front: build along a road' };
@@ -257,12 +261,13 @@ export class Sim {
     }
     return { ok: true };
   }
-  place(type, x, z, rot = 0, free = false) {
-    const d = B[type];
-    if (!free) { const c = this.canPlace(type, x, z, rot); if (!c.ok) return null; this.supplies -= d.cost; }
+  place(type, x, z, rot = 0, free = false, spec = null) {
+    const d = B[type], cost = this.costOf(type, spec);
+    if (!free) { const c = this.canPlace(type, x, z, rot, spec); if (!c.ok) return null; this.supplies -= cost; }
     const [w, dd] = dims(type, rot);
-    const b = { id: this.nid++, type, x, z, rot, w, d: dd, cond: 100, prog: free ? 1 : 0, done: free, off: false, crew: 0, time: 6 + d.cost / 25, stock: zero() };
+    const b = { id: this.nid++, type, x, z, rot, w, d: dd, cond: 100, prog: free ? 1 : 0, done: free, off: false, crew: 0, time: 6 + cost / 25, stock: zero() };
     if (d.squads) b.squads = d.squads;
+    if (this.designable(type)) { b.design = spec?.design || 0; b.parts = (spec?.parts || []).filter(p => PARTS_FOR[type][p]); b.cost = cost; }
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) this.occ[(z + j) * this.N + x + i] = b.id;
     this.b.push(b);
     if (!free) this.events.push({ t: 'placed', id: b.id });
@@ -281,7 +286,7 @@ export class Sim {
     const b = this.byId(id); if (!b || B[b.type].fixed) return false;
     for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = 0;
     this.b = this.b.filter(o => o !== b);
-    this.supplies += Math.round(B[b.type].cost * (b.done ? C.REFUND : 1));
+    this.supplies += Math.round((b.cost ?? B[b.type].cost) * (b.done ? C.REFUND : 1));
     for (const t of this.troops) { if (t.job === id) { t.job = null; if (t.state === 'job') t.state = 'idle'; } if (t.at === id) t.at = null; }
     for (const v of this.veh) if (v.job && (v.job.src === id || v.job.dst === id)) this.dropJob(v);
     this.veh = this.veh.filter(v => v.home !== id);
@@ -312,6 +317,18 @@ export class Sim {
   trained(t) { return t.train >= 100; }
 
   // ---------------------------------------------------------------- goods: who stores what, who needs what
+  // a building's stat with its design and parts. k: prop, mor, sales, watch, guns, odds, lab, pw, pride
+  stat(b, k) {
+    let v = B[b.type][k] || 0; if (typeof v !== 'number') return v;
+    const pf = PARTS_FOR[b.type]; if (pf && b.parts) for (const p of b.parts) v += pf[p]?.[k] || 0;
+    const dz = DESIGNS[b.design || 0]; if (dz[k]) v += dz[k];
+    return v;
+  }
+  designable(type) { return !!PARTS_FOR[type]; }
+  costOf(type, spec) {
+    const d = B[type]; if (!spec || !this.designable(type)) return d.cost;
+    return Math.round(d.cost * DESIGNS[spec.design || 0].cost + (spec.parts || []).reduce((a, p) => a + (PARTS[p]?.cost || 0), 0));
+  }
   storeCap(b, g) { return b.done && B[b.type].store ? Math.floor((B[b.type].store[g] || 0) * (this.hasTech('shelving') ? 1.25 : 1)) : 0; }
   needCap(b, g) { return b.done && !b.off && B[b.type].need ? B[b.type].need[g] || 0 : 0; }
   stored(g) { return this.b.reduce((a, b) => a + (this.storeCap(b, g) ? b.stock[g] : 0), 0); }
@@ -337,7 +354,7 @@ export class Sim {
       const d = B[b.type];
       if (d.beds) beds += d.beds;
       if (b.off) continue;
-      if (d.pw < 0) used -= d.pw;
+      const pw = this.stat(b, 'pw'); if (pw < 0) used -= pw;
     }
     // crew: keep troops where they are if they're still needed, then fill in priority order, trained troopers first,
     // so recruits stay free to train
@@ -364,9 +381,11 @@ export class Sim {
     this.guards = taken.size;
     // power after crew, since a generator needs its crew and its fuel
     for (const b of done) {
-      const d = B[b.type]; if (b.off || !(d.pw > 0)) continue;
+      const d = B[b.type], pw = this.stat(b, 'pw'); if (b.off) continue;
+      if (pw > 0 && d.pw <= 0) { made += pw; continue; }   // parts that add power to a building that otherwise draws it
+      if (!(d.pw > 0)) continue;
       if (b.type === 'gen') made += d.pw * this.crewFrac(b) * (b.stock.fuel > 0.01 ? 1 : 0) * this.condF(b);
-      else made += d.pw + (b.type === 'solar' && this.hasTech('solar') ? 2 : 0);
+      else made += pw + (b.type === 'solar' && this.hasTech('solar') ? 2 : 0);
     }
     this.power = { made: Math.round(made), used, ratio: used > 0 ? Math.min(1, made / used) : 1 };
     this.slowF = done.some(o => B[o.type].sluggish) ? 1 - B.chicken.sluggish : 1;
@@ -379,8 +398,9 @@ export class Sim {
     for (const b of done) {
       const d = B[b.type], n = (seen[b.type] = (seen[b.type] || 0) + 1), dim = Math.pow(0.7, n - 1), cf = this.condF(b);
       const run = d.crew ? this.crewFrac(b) * (b.off ? 0 : 1) : 1;
-      if (d.prop) prop += d.prop * dim * cf * (d.crew ? 0.4 + 0.6 * run : 1) * (d.pw < 0 ? 0.5 + 0.5 * this.power.ratio : 1);
-      if (d.mor) comfort += d.mor * dim * cf * run * (d.potty ? (b.clean ?? 100) / 100 : 1) * (d.eat && b.stock.rations <= 0 ? 0.3 : 1);
+      const dp = this.stat(b, 'prop'), dm = this.stat(b, 'mor');
+      if (dp) prop += dp * dim * cf * (d.crew ? 0.4 + 0.6 * run : 1) * (d.pw < 0 ? 0.5 + 0.5 * this.power.ratio : 1);
+      if (dm) comfort += dm * dim * cf * run * (d.potty ? (b.clean ?? 100) / 100 : 1) * (d.eat && b.stock.rations <= 0 ? 0.3 : 1);
     }
     this.prop = Math.round(100 * (1 - Math.exp(-prop / 55)));
     const worn = done.length ? done.filter(b => b.cond < 40).length / done.length : 0;
@@ -457,7 +477,7 @@ export class Sim {
     if (h === C.PATROL_AT) this.standingPatrols();
     if (h === C.DEPLOY_AT) this.deployRun();
     if (h === 0) this.checkOrders();
-    if (h === 20) { let cr = 0; for (const b of this.b) if (b.done && !b.off && C.SALES[b.type]) cr += C.SALES[b.type]; if (cr) this.earn('sales', 0, cr); }
+    if (h === 20) { let cr = 0; for (const b of this.b) if (b.done && !b.off) cr += (C.SALES[b.type] || 0) + this.stat(b, 'sales'); if (cr) this.earn('sales', 0, cr); }
     this.mood *= 0.985;
     this.deskHour(h);
     this.fort = this.fortify();
@@ -751,7 +771,8 @@ export class Sim {
   newOffers() {
     this.offers = [];
     const used = new Set();
-    for (let i = 0; i < 3; i++) {
+    const nOff = 3 + this.b.filter(b => b.done && !b.off && B[b.type].offers).reduce((a, b) => a + B[b.type].offers, 0);
+    for (let i = 0; i < nOff; i++) {
       const pool = MISSIONS.filter(m => !m.heavy || this.has('vbay'));
       let m; do { m = this.rng.pick(pool); } while (used.has(m.kind)); used.add(m.kind);
       const diff = m.diff[0] + this.rng.int(m.diff[1] - m.diff[0] + 1) + (this.week > 6 && this.rng.chance(0.3) ? 1 : 0);
@@ -765,13 +786,14 @@ export class Sim {
     const order = t => (this.trained(t) ? 200 : 0) + (t.job ? 10 - CREW_ORDER.indexOf(this.byId(t.job)?.type) : t.gate != null ? 50 : 100);
     return home.sort((a, b) => order(b) - order(a) || b.missions - a.missions).slice(0, size);
   }
+  oddsBonus() { return this.b.filter(b => b.done && !b.off && (!B[b.type].crew || b.crew > 0)).reduce((a, b) => a + this.stat(b, 'odds'), 0); }
   chance(o, squad = this.squadFor(o.size), kinds = o.veh || []) {
     if (squad.length < o.size) return 0;
     const armour = kinds.reduce((a, k) => a + VEHICLES[k].bonus, 0);
     const vet = squad.reduce((a, t) => a + Math.min(1, t.missions / 6), 0) / squad.length;
     const drill = squad.reduce((a, t) => a + t.drill, 0) / squad.length;
     const raw = squad.reduce((a, t) => a + (this.trained(t) ? 0 : 0.15), 0) / squad.length;
-    const arm = this.b.some(b => b.type === 'armory' && b.done && b.crew > 0 && !b.off) ? 0.1 : 0;
+    const arm = (this.b.some(b => b.type === 'armory' && b.done && b.crew > 0 && !b.off) ? 0.1 : 0) + this.oddsBonus();
     return clamp(0.66 + 0.15 * vet + 0.1 * drill + 0.2 * (this.morale - 50) / 50 + arm + armour + 0.03 * (o.size - 2) - 0.1 * o.diff - raw, 0.05, 0.97);
   }
   // armour parked in a staffed Vehicle Bay with fuel for the trip
@@ -881,7 +903,7 @@ export class Sim {
   // ---------------------------------------------------------------- Ministry of Truth: inspections
   inspect() {
     this.inspected = true; this.recalc();
-    const score = Math.round(0.35 * this.morale + 0.45 * this.prop + 0.2 * this.avgCond);
+    const score = Math.min(100, Math.round(0.35 * this.morale + 0.45 * this.prop + 0.2 * this.avgCond) + this.b.filter(b => b.done && B[b.type].inspect).reduce((a, b) => a + B[b.type].inspect, 0));
     const before = this.stand.tru;
     this.stand.tru = clamp(this.stand.tru + (score - this.stand.tru) * 0.6, 0, 100);
     const notes = [];
@@ -935,15 +957,25 @@ export class Sim {
     for (const b of this.b) if (b.done && B[b.type].cryo && !b.off && b.crew > 0 && this.power.ratio >= 1) { this.gain('def', 3); this.say('def', 'Helldivers thawed, briefed and shipped to the front. +3 Defence standing.'); }
     { const f = this.fort = this.fortify(), g = Math.round((f.score - 45) / 9);
       if (g && (this.week >= 3 || g > 0)) { this.gain('def', g); this.say('def', g > 0 ? `Perimeter review: the base scores ${f.score} for defensibility. +${g} Defence standing.` : `Perimeter review: the base scores ${f.score} for defensibility${f.closed ? '' : ' (there is no closed wall)'}. ${g} Defence standing. Watch the wall and man the gates.`); } }
+    // standing earned by the buildings themselves: the bunker, the brig, fortified designs, monumental pride
+    { const add = {}; let pr = 0;
+      for (const b of this.b) if (b.done && !b.off) {
+        for (const [m, v] of Object.entries({ ...(B[b.type].weekly || {}) })) add[m] = (add[m] || 0) + v;
+        for (const [m, v] of Object.entries(DESIGNS[b.design || 0].weekly || {})) add[m] = (add[m] || 0) + v;
+        pr += this.stat(b, 'pride');
+      }
+      for (const [m, v] of Object.entries(add)) if (v) this.gain(m, v);
+      if (pr) this.pride += pr; }
     for (const b of this.b) if (b.done && B[b.type].kickback) { this.supplies += B[b.type].kickback; this.say('bur', `Bureau Cola & Fries remits a consulting fee of ${B[b.type].kickback} supplies. Please do not ask what was consulted.`); }
     this.events.push({ t: 'alloc', amt });
     // upkeep: what you can't pay for wears out
     const built = this.b.filter(b => b.done), bill = built.reduce((a, b) => a + B[b.type].up, 0);
     let unpaid = 0;
-    if (this.supplies >= bill) { this.supplies -= bill; for (const b of built) b.cond = Math.min(100, b.cond + C.MAINT - C.WEAR); }
+    const wear = b => C.WEAR * (DESIGNS[b.design || 0].wear || 1);
+    if (this.supplies >= bill) { this.supplies -= bill; for (const b of built) b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); }
     else {
       for (const b of this.rng.shuffle(built.slice())) {
-        if (this.supplies >= B[b.type].up) { this.supplies -= B[b.type].up; b.cond = Math.min(100, b.cond + C.MAINT - C.WEAR); }
+        if (this.supplies >= B[b.type].up) { this.supplies -= B[b.type].up; b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); }
         else { b.cond = Math.max(5, b.cond - C.UNPAID); unpaid++; }
       }
     }
@@ -966,16 +998,18 @@ export class Sim {
   // how defensible the base is, 0 to 100: watched wall, manned gates, few entrances, and the HQ and fuel kept away from the wall
   fortify() {
     const N = this.N, gs = this.gates || [], posts = [];
-    for (const b of this.b) if (b.done && B[b.type].watch && !b.off && b.crew > 0) posts.push([b.x + 0.5, b.z + 0.5, B[b.type].watch]);
+    for (const b of this.b) { const w = this.stat(b, 'watch'); if (b.done && w && !b.off && (!B[b.type].crew || b.crew > 0)) posts.push([b.x + b.w / 2, b.z + b.d / 2, w]); }
+    const guns = []; for (const b of this.b) { const g = this.stat(b, 'guns'); if (b.done && g && !b.off && (!B[b.type].need?.ammo || b.stock.ammo > 0)) guns.push([b.x + b.w / 2, b.z + b.d / 2, g]); }
     let manned = 0;
     gs.forEach((g, i) => { if (this.troops.some(t => t.gate === i && t.state === 'guard')) { manned++; posts.push([g.x, g.z, 5]); } });
-    let wall = 0, seen = 0; const wt = [];
-    for (let i = 0; i < N * N; i++) if (this.walls[i] === 1) { wall++; const x = i % N + 0.5, z = ((i / N) | 0) + 0.5; wt.push(x, z); if (posts.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) seen++; }
+    let wall = 0, seen = 0, armed = 0; const wt = [];
+    for (let i = 0; i < N * N; i++) if (this.walls[i] === 1) { wall++; const x = i % N + 0.5, z = ((i / N) | 0) + 0.5; wt.push(x, z); if (posts.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) seen++; if (guns.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) armed++; }
     const key = this.b.filter(b => b.done && (b.type === 'hq' || b.type === 'fueldepot'));
     let depth = 0;
     for (const b of key) { let m = 99; for (let k = 0; k < wt.length; k += 2) m = Math.min(m, Math.hypot(wt[k] - b.x - b.w / 2, wt[k + 1] - b.z - b.d / 2)); depth += Math.min(1, m / 7); }
-    const f = { closed: !this.open, cover: wall ? seen / wall : 0, gates: gs.length, manned, entr: gs.length <= 2 ? 1 : Math.max(0, 1 - (gs.length - 2) * 0.35), depth: key.length ? depth / key.length : 1 };
-    f.score = f.closed ? Math.round(45 * f.cover + 25 * (gs.length ? manned / gs.length : 1) + 15 * f.entr + 15 * f.depth) : 0;
+    const f = { closed: !this.open, cover: wall ? seen / wall : 0, armed: wall ? armed / wall : 0, gates: gs.length, manned, entr: gs.length <= 2 ? 1 : Math.max(0, 1 - (gs.length - 2) * 0.35), depth: key.length ? depth / key.length : 1 };
+    // turrets are a bonus on top: a watched, manned wall scores well; an armed one scores more
+    f.score = f.closed ? Math.min(100, Math.round(45 * f.cover + 25 * (gs.length ? manned / gs.length : 1) + 15 * f.entr + 15 * f.depth + 15 * f.armed)) : 0;
     return f;
   }
   // ---------------------------------------------------------------- supplies and credits: every income goes through here

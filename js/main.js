@@ -1,5 +1,5 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
-import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES } from './config.js';
+import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR } from './config.js';
 import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
 import { REQUESTS, GRADES, fileOf } from './desk.js';
 import { Life } from './life.js';
@@ -155,7 +155,7 @@ function buildBar() {
     + lines.map(k => { const d = RTOOLS[k]; return `<button class="btn bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d], i) => {
     const lk = sim.locked(k), poor = sim.supplies < d.cost;
-    return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${d.cost} SUP</span></button>`;
+    return `<button class="btn bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><b>${d.name}</b><span class="cost">${sim.designable(k) ? "FROM " : ""}${d.cost} SUP</span></button>`;
   }).join('');
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (b) { group = b.dataset.g; buildBar(); } };
@@ -169,11 +169,32 @@ $('b-items').addEventListener('pointermove', e => {
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
 });
 $('b-items').addEventListener('pointerleave', hideTip);
+// ---------------------------------------------------------------- the design desk: large buildings are designed before placing
+const specs = {};   // the last design chosen for each building type
+const specOf = k => sim.designable(k) ? (specs[k] ||= { design: 0, parts: [] }) : null;
+const PARTFX = { prop: v => `+${v} propaganda`, mor: v => `+${v} morale`, sales: v => `+${v} CR a day`, watch: v => `watches ${v} tiles`, guns: v => `arms ${v} tiles of wall`, odds: v => `+${Math.round(v * 100)}% operation odds`, lab: v => `+${Math.round(v * 100)}% research`, pw: v => `+${v} power`, pride: () => 'pride' };
+function designPanel() {
+  const el = $('design'), k = tool, sp = k && specOf(k);
+  if (!sp) { el.classList.add('hidden'); return; }
+  const pf = PARTS_FOR[k];
+  el.innerHTML = `<div class="dz-h"><b>DESIGN · ${esc(B[k].name.toUpperCase())}</b><span>${fmt(sim.costOf(k, sp))} SUP</span></div>`
+    + `<div class="dz-row">` + DESIGNS.map((d, i) => `<button class="btn dz ${sp.design === i ? 'on' : ''}" data-dz="${i}" type="button"><b>${d.name}</b><span>${d.cost === 1 ? 'base price' : '×' + d.cost}</span><i>${esc(d.desc)}</i></button>`).join('') + `</div>`
+    + `<div class="dz-row parts">` + Object.entries(pf).map(([p, fx]) => `<button class="btn dp ${sp.parts.includes(p) ? 'on' : ''}" data-dp="${p}" type="button"><b>${sp.parts.includes(p) ? '✓ ' : '+ '}${PARTS[p].name}</b><span>${PARTS[p].cost} SUP · ${Object.entries(fx).map(([q, v]) => PARTFX[q](v)).join(', ')}</span></button>`).join('') + `</div>`
+    + `<p class="fine left">Every design keeps the building's required shape. Parts add to it. Your choice is kept for the next one you place.</p>`;
+  el.classList.remove('hidden');
+}
+$('design').onclick = e => {
+  const sp = specOf(tool); if (!sp) return;
+  const d = e.target.closest('[data-dz]'), p = e.target.closest('[data-dp]');
+  if (d) sp.design = +d.dataset.dz;
+  if (p) { const q = p.dataset.dp; sp.parts = sp.parts.includes(q) ? sp.parts.filter(x => x !== q) : [...sp.parts, q]; }
+  if (d || p) { audio.play('click'); designPanel(); if (hover) view.setGhost(tool, hover.tx, hover.tz, hover.rot, sim.canPlace(tool, hover.tx, hover.tz, hover.rot, sp).ok, sp); }
+};
 function pickTool(k) {
   if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
-  tool = tool === k ? null : k; select(null); buildBar();
+  tool = tool === k ? null : k; select(null); buildBar(); designPanel();
   if (!tool) view.setGhost(null);
   view.showPlots(tool && !LOOSE.has(tool) ? sim.plotTiles() : null);
 }
@@ -339,7 +360,7 @@ function renderMins(force) {
     const offices = s.b.filter(b => b.type === 'patrol' && b.done);
     { const f = s.fort || s.fortify(), pc = v => Math.round(v * 100) + '%';
       h += `<h3>BASE DEFENCE</h3><div class="kv"><span>DEFENSIBILITY</span><b class="${f.score >= 60 ? 'up' : f.score < 40 ? 'down' : 'warn'}">${f.score} / 100</b></div>`
-        + `<div class="kv"><span>WALL WATCHED</span><b>${pc(f.cover)}</b></div><div class="kv"><span>GATES MANNED</span><b>${f.manned} of ${f.gates}</b></div><div class="kv"><span>HQ AND FUEL FROM THE WALL</span><b>${pc(f.depth)}</b></div>`
+        + `<div class="kv"><span>WALL WATCHED</span><b>${pc(f.cover)}</b></div><div class="kv"><span>WALL ARMED</span><b>${pc(f.armed || 0)}</b></div><div class="kv"><span>GATES MANNED</span><b>${f.manned} of ${f.gates}</b></div><div class="kv"><span>HQ AND FUEL FROM THE WALL</span><b>${pc(f.depth)}</b></div>`
         + `<p class="fine left">${f.closed ? '' : '<span class="down">No closed wall yet. </span>'}Reviewed every week: above 45 earns Defence standing, below loses it. Lookout Towers watch the wall, every gate takes one trained trooper, and more than two gates is asking for trouble.</p>`; }
     h += `<h3>STANDING PATROLS</h3>` + (offices.length ? offices.map(b => `<div class="kv"><span>Patrol Office</span><b>${s.patrols.filter(p => p.office === b.id).length} of ${b.squads} squads out · ammo ${Math.floor(b.stock.ammo)}</b></div>`).join('') : `<p>Build a Patrol Office and it sends squads of three trained troopers out every morning at ${C.PATROL_AT}:00, on its own.</p>`);
     h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3>`;
@@ -441,7 +462,7 @@ $('or-x').onclick = () => $('orders').classList.toggle('min');
 // ---------------------------------------------------------------- photo mode: a free camera, no interface
 let photo = false, photoFrozen = false;
 function setPhoto(on) {
-  photo = on; view.setPhoto(on); tool = null; view.setGhost(null); view.showRoadGhost(null); view.showPlots(null); select(null); hideTip();
+  photo = on; view.setPhoto(on); tool = null; $('design').classList.add('hidden'); view.setGhost(null); view.showRoadGhost(null); view.showPlots(null); select(null); hideTip();
   $('hud').classList.toggle('hidden', on); $('photobar').classList.toggle('hidden', !on);
   if (!on && photoFrozen) { photoFrozen = false; setPause(false); $('ph-pause').textContent = 'FREEZE TIME'; }
   if (!on) buildBar();
@@ -548,7 +569,7 @@ cv.addEventListener('pointermove', e => {
   if (photo) return;
   if (isRoad(tool)) roadPreview(e);
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
-  else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, t.rot); view.setGhost(tool, t.tx, t.tz, t.rot, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, t.rot, specOf(tool)); view.setGhost(tool, t.tx, t.tz, t.rot, ok.ok, specOf(tool)); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
     const p = view.pick(e.clientX, e.clientY);
     if (p.bid) { const b = sim.byId(p.bid); tip(`<b>${B[b.type].name}</b>${b.done ? '' : ` · ${Math.round(b.prog * 100)}% built`}`, e.clientX, e.clientY); cv.style.cursor = 'pointer'; }
@@ -571,18 +592,18 @@ function up(e) {
   const d = drag; drag = null;
   if (photo) return;
   if (d.moved) return;
-  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); } else select(null); return; }
+  if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else select(null); return; }
   if (tool === 'moveflag') {
     const t = tileAt(e), r = sim.moveFlag(t.tx, t.tz);
     if (!r.ok) { flash(r.why); audio.play('deny'); return; }
     tool = null; view.setGhost(null); view.showPlaza(null); audio.play('place'); return;
   }
   if (tool) {
-    const t = tileAt(e), ok = sim.canPlace(tool, t.tx, t.tz, t.rot);
+    const t = tileAt(e), sp = specOf(tool), ok = sim.canPlace(tool, t.tx, t.tz, t.rot, sp);
     if (!ok.ok) { flash(ok.why); audio.play('deny'); return; }
-    sim.place(tool, t.tx, t.tz, t.rot); buildBar(); audio.playAt('place', t.tx + 1, t.tz + 1);
-    if (!e.shiftKey && !LOOSE.has(tool)) { tool = null; view.setGhost(null); view.showPlots(null); buildBar(); }
-    else { const n = tileAt(e); view.setGhost(tool, n.tx, n.tz, n.rot, sim.canPlace(tool, n.tx, n.tz, n.rot).ok); if (!LOOSE.has(tool)) view.showPlots(sim.plotTiles()); }
+    sim.place(tool, t.tx, t.tz, t.rot, false, sp); buildBar(); audio.playAt('place', t.tx + 1, t.tz + 1);
+    if (!e.shiftKey && !LOOSE.has(tool)) { tool = null; view.setGhost(null); view.showPlots(null); buildBar(); designPanel(); }
+    else { const n = tileAt(e); view.setGhost(tool, n.tx, n.tz, n.rot, sim.canPlace(tool, n.tx, n.tz, n.rot, sp).ok, sp); if (!LOOSE.has(tool)) view.showPlots(sim.plotTiles()); }
     return;
   }
   const p = view.pick(e.clientX, e.clientY); select(p.bid);
@@ -610,7 +631,7 @@ addEventListener('keydown', e => {
   else if (k === 'e') view.rotate(1);
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
   else if (k === ' ') { e.preventDefault(); setPause(!paused); }
-  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
+  else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
   else if (k === 'm') toggleMins();
   else if (k === 'h') $('hud').classList.toggle('bare');
   else if (k === 'tab') { e.preventDefault(); const i = GROUPS.findIndex(g => g[0] === group); group = GROUPS[(i + (e.shiftKey ? GROUPS.length - 1 : 1)) % GROUPS.length][0]; buildBar(); }
