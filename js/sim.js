@@ -26,13 +26,13 @@ export function dims(type, rot) { const d = B[type]; return rot % 2 ? [d.d, d.w]
 const zero = () => ({ rations: 0, fuel: 0, ammo: 0 });
 const fmt = n => Math.round(n).toLocaleString('en-US');
 // the most open, best-covered spot near the middle of the region map, for a base founded without picking one
-export function bestSite(seed, biome, N) {
-  let best = null;
+export function bestSite(seed, biome, N, all = false) {
+  let best = null; const list = [];
   for (let v = RH * 0.3; v <= RH * 0.7; v += 9) for (let u = RW * 0.3; u <= RW * 0.7; u += 9) {
     const s = survey(seed, biome, u, v, Math.min(N, 56)), score = s.open * 0.7 + s.cover * 0.4 + (s.seeps ? 0.05 : 0) + (s.ore ? 0.05 : 0) - (s.open < 0.6 ? 1 : 0);
-    if (!best || score > best.score) best = { u, v, score };
+    list.push({ u, v, score }); if (!best || score > best.score) best = { u, v, score };
   }
-  return best;
+  return all ? list.sort((a, b) => b.score - a.score) : best;
 }
 // small things that go anywhere inside the wall; everything else is built on a roadside plot, door to the street
 export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar', 'lookout']);
@@ -48,8 +48,8 @@ export class Sim {
     this.diff = DIFF[opts.diff || this.faction.diff] ? opts.diff || this.faction.diff : 'veteran';
     this.planet = this.faction.planet || this.rng.pick(PLANETS);
     // the landing site: chosen on the planet map, or the best open spot near the middle if none was chosen
-    const biome = biomeOf(this.planet), site = opts.site || bestSite(this.seed, biome, this.N);
-    this.site = { seed: this.seed, biome, u: site.u, v: site.v }; this.stage = 0;
+    const biome = biomeOf(this.planet), site = opts.flat ? null : opts.site || bestSite(this.seed, biome, this.N);
+    this.site = site ? { seed: this.seed, biome, u: site.u, v: site.v } : null; this.stage = opts.flat ? 2 : 0;
     this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null, today: this.newDay(), days: [] };
     this.loans = [{ k: 'charter', bal: this.D.charter }]; this.calls = []; this.supplies = this.D.sup;
     this.morale = C.START.morale; this.grief = 0; this.pride = 0; this.hunger = 0;
@@ -187,9 +187,9 @@ export class Sim {
   linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : 1); }   // per tile of length; paved is two wide
   snapLine(p, mode, k, from) { return snap(this.net, p, mode, KINDS[k].w, from); }
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
-  checkLine(a, b, k) {
+  checkLine(a, b, k, dry) {
     const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
-    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return { ok: false, why: 'Walls stop at the water: the shore defends itself', cost: 0 }; wet++; } }
+    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); wet++; } }
     const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
     const [lo, hi] = this.box(); if ([a, b].some(p => p.x < lo - 1 || p.z < lo - 1 || p.x > hi + 1 || p.z > hi + 1)) return { ok: false, why: 'Outside the charter: the Bureau has not granted that ground yet', cost };
     if (len < 0.9) return { ok: false, why: 'Too short', cost };
@@ -198,8 +198,27 @@ export class Sim {
     if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
     return { ok: true, cost };
   }
+  // a wall drawn across water stops at each shore and picks up on the far side: the water closes the gap
+  wallRuns(a, b) {
+    const len = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(2, Math.ceil(len * 4)), W = (x, z) => x >= 0 && z >= 0 && x < this.N && z < this.N && this.terr?.[z * this.N + x] === GROUND.WATER,
+      wet = t => { const x = Math.floor(a.x + (b.x - a.x) * t), z = Math.floor(a.z + (b.z - a.z) * t); return W(x, z) || W(x + 1, z) || W(x - 1, z) || W(x, z + 1) || W(x, z - 1); };
+    const runs = []; let s = null;
+    for (let i = 0; i <= n; i++) { const t = i / n, w = wet(t); if (!w && s === null) s = t; if ((w || i === n) && s !== null) { const e = w ? (i - 1) / n : 1; if ((e - s) * len >= 0.9) runs.push([s, e]); s = null; } }
+    const at = (t, end) => t === 0 ? a : t === 1 ? b : { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+    return runs.map(([s, e]) => [at(s), at(e)]);
+  }
+  shoreWall(a, b) {
+    const runs = this.wallRuns(a, b);
+    if (!runs.length) return { ok: false, why: 'All water: the shore defends itself', cost: 0 };
+    let cost = 0; const ok = [];
+    for (const [p, q] of runs) { const c = this.checkLine(p, q, 'wall', true); if (c.ok) { cost += c.cost; ok.push([p, q]); } else if (c.why !== 'Water' && c.why !== 'Too short') return c; }
+    if (!ok.length) return { ok: false, why: 'Walls stop at the water: the shore defends itself', cost: 0 };
+    if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
+    return { ok: true, cost, runs: ok, why: 'The wall stops at the shore; the water closes the gap' };
+  }
   drawLine(a, b, k) {
     const c = this.checkLine(a, b, k); if (!c.ok) return null;
+    if (c.runs) { let first = null; for (const [p, q] of c.runs) { const s = addLine(this.net, p, q, k); if (s) { first ??= s; } } if (first) { this.spend('build', c.cost); this.rebuildNet(); } return first; }
     const s = addLine(this.net, a, b, k); if (!s) return null;
     this.spend('build', c.cost); this.rebuildNet(); return s;
   }

@@ -161,7 +161,8 @@ function pickSite(u, v) {
     + `<ul>${s.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
 }
 $('ld-mark').addEventListener('click', e => { const r = e.target.getBoundingClientRect(); pickSite((e.clientX - r.left) / r.width * RW, (e.clientY - r.top) / r.height * RH); audio.play('click'); });
-$('ld-best').onclick = () => { const b = bestSite(land.seed, land.biome, C.N); pickSite(b.u, b.v); };
+let suggestN = 0;
+$('ld-best').onclick = () => { const l = bestSite(land.seed, land.biome, C.N, true), b = l[++suggestN % Math.min(6, l.length)]; pickSite(b.u, b.v); };
 $('ld-back').onclick = () => show('s-faction');
 $('ld-go').onclick = () => start(new Sim({ faction: draft, diff: draft.diff, seed: land.seed, site: { u: land.u, v: land.v } })).then(store);
 
@@ -604,7 +605,7 @@ function roadPreview(e) {
   if (!roadDrag) { view.showLine(end, end, k === 'paved' ? 2 : 1, true, k === 'wall'); if (e.pointerType === 'mouse' && flashT <= 0) hideTip(); return; }
   const c = sim.checkLine(roadDrag, end, k);
   view.showLine(roadDrag, end, k === 'paved' ? 2 : 1, c.ok, k === 'wall');
-  if (e.pointerType === 'mouse') tip(`${RTOOLS[tool].name}: ${c.cost} SUP${c.ok ? '' : ` · ${esc(c.why)}`}`, e.clientX, e.clientY);
+  if (e.pointerType === 'mouse') tip(`${RTOOLS[tool].name}: ${c.cost} SUP${c.ok && !c.runs ? '' : ` · ${esc(c.why)}`}`, e.clientX, e.clientY);
 }
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);

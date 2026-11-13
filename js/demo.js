@@ -3,7 +3,7 @@ import { Sim } from './sim.js';
 import { B } from './config.js';
 
 export function demoSim() {
-  const s = new Sim({ seed: 20261110 }), N = s.N, m = N / 2;
+  const s = new Sim({ seed: 20261110, flat: true }), N = s.N, m = N / 2;
   s.supplies = 1e6;
   const put = (type, x, z, rot = 0) => { for (const r of [rot, (rot + 1) % 4, (rot + 2) % 4]) { const b = s.place(type, x, z, r, true); if (b) { b.prog = 1; b.done = true; return b; } } return null; };
   [['depot', m + 3, m + 2], ['fueldepot', m + 6, m + 2], ['motorpool', m + 3, m + 5], ['mess', m - 4, m - 7], ['barracks', m - 9, m - 7], ['barracks', m - 13, m - 7],
