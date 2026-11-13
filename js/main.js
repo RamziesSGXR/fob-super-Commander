@@ -208,21 +208,37 @@ $('b-items').addEventListener('pointerleave', hideTip);
 const specs = {};   // the last design chosen for each building type
 const specOf = k => sim.designable(k) ? (specs[k] ||= { design: 0, parts: [] }) : null;
 const PARTFX = { make: v => `+${v} supplies a day`, prop: v => `+${v} propaganda`, mor: v => `+${v} morale`, sales: v => `+${v} CR a day`, watch: v => `watches ${v} tiles`, guns: v => `arms ${v} tiles of wall`, odds: v => `+${Math.round(v * 100)}% operation odds`, lab: v => `+${Math.round(v * 100)}% research`, pw: v => `+${v} power`, pride: () => 'pride' };
+let refit = null;   // { id, sp }: refitting a building that is already up
+function refitShow() {
+  const b = refit && sim.byId(refit.id);
+  if (!b) { refit = null; view.setGhost(null); designPanel(); return; }
+  const c = sim.refit(b, refit.sp);
+  view.setGhost(b.type, c.x ?? b.x, c.z ?? b.z, b.rot, c.ok, refit.sp);
+  designPanel();
+}
 function designPanel() {
-  const el = $('design'), k = tool, sp = k && specOf(k);
+  const el = $('design'), rb = refit && sim.byId(refit.id), k = rb ? rb.type : tool, sp = rb ? refit.sp : k && specOf(k);
   if (!sp) { el.classList.add('hidden'); return; }
-  const pf = PARTS_FOR[k];
-  el.innerHTML = `<div class="dz-h"><b>DESIGN · ${esc(B[k].name.toUpperCase())}</b><span>${fmt(sim.costOf(k, sp))} SUP</span></div>`
+  const pf = PARTS_FOR[k], rc = rb && sim.refit(rb, sp);
+  el.innerHTML = (rb ? `<div class="dz-h"><b>REFIT · ${esc(B[k].name.toUpperCase())}</b><span>${rc.cost ? fmt(rc.cost) + ' SUP' : ''}</span></div>`
+      : `<div class="dz-h"><b>DESIGN · ${esc(B[k].name.toUpperCase())}</b><span>${fmt(sim.costOf(k, sp))} SUP</span></div>`)
     + `<div class="dz-row">` + DESIGNS.map((d, i) => `<button class="btn dz ${sp.design === i ? 'on' : ''}" data-dz="${i}" type="button"><b>${d.name}</b><span>${d.cost === 1 ? 'base price' : '×' + d.cost}</span><i>${esc(d.desc)}</i></button>`).join('') + `</div>`
     + `<div class="dz-row parts">` + Object.entries(pf).map(([p, fx]) => `<button class="btn dp ${sp.parts.includes(p) ? 'on' : ''}" data-dp="${p}" type="button"><b>${sp.parts.includes(p) ? '✓ ' : '+ '}${PARTS[p].name}</b><span>${PARTS[p].cost} SUP · ${Object.entries(fx).map(([q, v]) => PARTFX[q](v)).join(', ')}</span></button>`).join('') + `</div>`
-    + `<p class="fine left">Every design keeps the building's required shape. Parts add to it. Your choice is kept for the next one you place.</p>`;
+    + (rb ? `<div class="dz-go"><span class="${rc.ok ? 'c-ok' : 'c-bad'}">${esc(rc.ok ? 'It fits. The building closes for the refit, about half a day.' : rc.why)}</span><button class="btn" id="dz-cancel" type="button">CANCEL</button><button class="btn primary" id="dz-apply" type="button" ${rc.ok ? '' : 'disabled'}>REFIT ${rc.cost ? fmt(rc.cost) : ''}</button></div>`
+      + `<p class="fine left">A refit pays the difference in price and a fee. Fortified and Monumental need a clear tile each side for their wings.</p>`
+      : `<p class="fine left">Fortified and Monumental take a tile more each side for their wings. Parts sit on the building. Your choice is kept for the next one you place. Refit a building later from its panel.</p>`);
   el.classList.remove('hidden');
 }
 $('design').onclick = e => {
-  const sp = specOf(tool); if (!sp) return;
+  if (refit) {
+    if (e.target.closest('#dz-cancel')) { refit = null; view.setGhost(null); designPanel(); selPanel(); return; }
+    if (e.target.closest('#dz-apply')) { const c = sim.redesign(refit.id, refit.sp); if (c.ok) { audio.play('place'); const id = refit.id; refit = null; view.setGhost(null); designPanel(); select(id); } else flash(c.why); return; }
+  }
+  const sp = refit ? refit.sp : specOf(tool); if (!sp) return;
   const d = e.target.closest('[data-dz]'), p = e.target.closest('[data-dp]');
   if (d) sp.design = +d.dataset.dz;
   if (p) { const q = p.dataset.dp; sp.parts = sp.parts.includes(q) ? sp.parts.filter(x => x !== q) : [...sp.parts, q]; }
+  if ((d || p) && refit) { audio.play('click'); refitShow(); return; }
   if (d || p) { audio.play('click'); designPanel(); if (hover) view.setGhost(tool, hover.tx, hover.tz, hover.rot, sim.canPlace(tool, hover.tx, hover.tz, hover.rot, sp).ok, sp); }
 };
 function pickTool(k) {
@@ -240,7 +256,7 @@ function flash(text) { tip(`<span class="warn">${esc(text)}</span>`, innerWidth 
 
 // ---------------------------------------------------------------- selection
 let selId = null;
-function select(id) { selId = id; const b = id ? sim.byId(id) : null; view.select(b); view.showPlaza(b && b.type === 'seflag' ? sim.plaza().tiles : null); selPanel(); }
+function select(id) { if (refit && refit.id !== id) { refit = null; view.setGhost(null); designPanel(); } selId = id; const b = id ? sim.byId(id) : null; view.select(b); view.showPlaza(b && b.type === 'seflag' ? sim.plaza().tiles : null); selPanel(); }
 function selPanel() {
   const b = selId && sim.byId(selId), p = $('selp');
   if (!b) { p.classList.add('hidden'); p._html = ''; return; }
@@ -275,7 +291,7 @@ function selPanel() {
   }
   const crew = sim.troops.filter(t => t.job === b.id).map(t => `${rankOf(t.missions)} ${esc(t.name)}`).join(', ');
   const html = `<div class="ph"><span>${d.name.toUpperCase()}</span><button class="x" id="sp-x" type="button">×</button></div><div class="sp-body">${bits.join('')}<p>${d.desc}</p>${crew ? `<p>On duty: ${crew}</p>` : ''}</div>
-    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
+    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
   p.classList.remove('hidden');
   if (p._html === html) return;
   p.innerHTML = p._html = html;
@@ -285,6 +301,7 @@ function selPanel() {
   if ($('sq-up')) $('sq-up').onclick = () => { sim.setSquads(b.id, b.squads + 1); selPanel(); };
   if ($('sq-dn')) $('sq-dn').onclick = () => { sim.setSquads(b.id, b.squads - 1); selPanel(); };
   if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.playAt('demolish', b.x + b.w / 2, b.z + b.d / 2); };
+  if ($('sp-refit')) $('sp-refit').onclick = () => { refit = refit?.id === b.id ? null : { id: b.id, sp: { design: b.design || 0, parts: [...(b.parts || [])] } }; refitShow(); selPanel(); };
   if ($('sp-move')) $('sp-move').onclick = () => { tool = 'moveflag'; view.showPlaza(sim.plazaAt(b.x, b.z, b.id)); flash('Pick a new spot for the flag. It needs open ground round it for the plaza.'); };
 }
 
@@ -452,7 +469,7 @@ function renderMins(force) {
     if (lastGrade) h += `<p class="${lastGrade.off ? 'warn' : 'up'}">${esc(lastGrade.text)}</p>`;
     if (!files.length) h += `<p class="fine left">No files waiting. A file comes up when a trooper finishes training, and again every ${C.REVIEW} days.</p>`;
     for (const t of files.slice(0, left > 0 ? 3 : 0)) { const f = fileOf(t);
-      h += `<div class="file"><div><b>${rankOf(t.missions)} ${esc(t.name)}</b>${t.grade ? ` <span>last graded ${t.grade}</span>` : ''}<br><span>RANGE</span> ${f.range} · <span>COURSE</span> ${f.course} · <span>MISSIONS</span> ${f.missions}${f.medals ? ` · <span>MEDALS</span> ${f.medals}` : ''}<br><span>CONDUCT</span> ${esc(f.conduct)}</div>`
+      h += `<div class="file"><div><b>${rankOf(t.missions)} ${esc(t.name)}</b>${t.grade ? ` <span>last graded ${t.grade}</span>` : ''}<br><span>RANGE</span> ${f.range} · <span>COURSE</span> ${f.course} · <span>MISSIONS</span> ${f.missions}${f.medals ? ` · <span>MEDALS</span> ${f.medals}` : ''}<br><span>CONDUCT</span> ${esc(f.conduct)}<br><span>NEXT OF KIN</span> <i>${esc(f.kin)}</i></div>`
         + `<div class="g">${GRADES.map(g => `<button class="btn" data-grade="${t.id}:${g}" type="button">${g}</button>`).join('')}</div></div>`; }
     // debt first: it is the frame of the whole game
     const debt = s.debt();
@@ -611,10 +628,10 @@ function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
   if (tool !== 'moveflag' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
-    const pl = sim.plotFor(tool, p.x, p.z);
+    const pl = sim.plotFor(tool, p.x, p.z, specOf(tool)?.design);
     if (pl) return { ...p, tx: pl.tx, tz: pl.tz, rot: pl.rot };
   }
-  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
+  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool, rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -746,6 +763,7 @@ function soundscape() {
       list.push({ key: 'b' + b.id, kind: k, x: b.x + b.w / 2, z: b.z + b.d / 2, on: !b.done || ((!b.off || k === 'flag') && (!WHEN[k] || WHEN[k](h, ph))), vol: B[b.type].w * B[b.type].d > 4 ? 1.3 : 1 });
     }
     for (const v of sim.veh) if (!v.away) list.push({ key: 'v' + v.id, kind: v.kind, x: v.x, z: v.z, moving: v.path.length > 0, on: v.path.length > 0 || v.kind !== 'lift' });
+    for (const f of life.flights) list.push({ key: 'p' + f.padKey, kind: 'pelican', x: f.x, z: f.z, moving: f.ph !== 'land', on: f.y < 15.5, vol: 2.2 - Math.min(1.4, f.y / 10) });
     audio.emitters(list);
   }
   if (paused) return;
@@ -818,7 +836,7 @@ function loopBody(now) {
         if (ev.t === 'desk') deskPop(ev.id);
         if (ev.t === 'call') callPop(ev.id);
       }
-      for (const f of life.flights) if (!f.heard) { f.heard = true; audio.playAt('pelican', f.lx, f.lz); }
+
       life.update(dt * gameSpeed());
     }
     hudT -= dt; if (hudT <= 0) { hudT = 0.25; hud(); renderComms(); }

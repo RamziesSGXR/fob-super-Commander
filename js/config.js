@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.9';
+export const VERSION = '0.10';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -22,6 +22,7 @@ export const C = {
   START: { supplies: 3600, credits: 600, troops: 6, morale: 55 },
   WAGE: 2,                 // credits a day for every citizen on the staff
   OVERDRAFT: 800,          // how far credits may go below zero before the Bureau stops lending
+  REFIT: 0.15,             // a refit costs the difference in price plus this share of the base price
   ODFEE: 0.03,             // a week's fee on any overdraft
   DEPLOY_CR: 20,           // credits per trooper shipped, on top of the supplies
   BUY: { cr: 60, sup: 100 },
@@ -278,8 +279,8 @@ export const FACTION_DEFAULT = {
 // Every large building keeps its required shape. Pick one of three designs, then add parts: each costs more and does more.
 export const DESIGNS = [
   { key: 'std', name: 'Standard Issue', cost: 1, desc: 'The approved pattern. Cheapest.' },
-  { key: 'fort', name: 'Fortified', cost: 1.25, wear: 0.5, desc: 'Blast walls and armour plate. Wears half as fast and adds 1 Defence standing a week.', weekly: { def: 1 } },
-  { key: 'mon', name: 'Monumental', cost: 1.4, prop: 6, pride: 1, desc: 'Columns, gold trim and banners. +6 propaganda and pride; people stand up straighter walking past.' },
+  { key: 'fort', name: 'Fortified', cost: 1.25, wear: 0.5, wings: 1, desc: 'Blast walls, armour plate and a walled yard a tile wide each side. Wears half as fast and adds 1 Defence standing a week.', weekly: { def: 1 } },
+  { key: 'mon', name: 'Monumental', cost: 1.4, prop: 6, pride: 1, wings: 1, desc: 'Columns, gold trim, banners and a colonnaded wing a tile wide each side. +6 propaganda and pride; people stand up straighter walking past.' },
 ];
 // the part library: what each part looks like is drawn in models.js; what it does depends on the building (PARTS_FOR)
 export const PARTS = {

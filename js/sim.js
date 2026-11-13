@@ -21,7 +21,9 @@ const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed];
 export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of RANKS) if (missions >= n) r = name; return r; }
 
 // footprint after rotation, and which way the front faces (0 +z, 1 +x, 2 -z, 3 -x)
-export function dims(type, rot) { const d = B[type]; return rot % 2 ? [d.d, d.w] : [d.w, d.d]; }
+export function dims(type, rot, design = 0) { const d = B[type], w = d.w + (PARTS_FOR[type] ? (DESIGNS[design || 0]?.wings || 0) * 2 : 0); return rot % 2 ? [d.d, w] : [w, d.d]; }
+// how many tiles of wing a building has each side (old saves keep the size they were built at)
+export function wingOf(b) { return Math.max(0, ((b.rot % 2 ? b.d : b.w) - B[b.type].w) / 2); }
 
 const zero = () => ({ rations: 0, fuel: 0, ammo: 0 });
 const fmt = n => Math.round(n).toLocaleString('en-US');
@@ -279,23 +281,23 @@ export class Sim {
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.join(' and ') };
     if (this.supplies < this.costOf(type, spec)) return { ok: false, why: 'Not enough supplies' };
     if (d.atGate && !(this.gates || []).some(g => Math.hypot(g.x - x - 1, g.z - z - 0.5) < 4.5)) return { ok: false, why: 'Stands at a gate: within four tiles of one' };
-    const f = this.fits(type, x, z, rot); if (!f.ok) return f;
-    if (d.deposit) { const [w, dd] = dims(type, rot); let on = 0; for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) if (this.terr?.[(z + j) * this.N + x + i] === d.deposit) on++; if (on < 2) return { ok: false, why: d.deposit === 3 ? 'Must stand on an E-710 seep' : 'Must stand on an ore field' }; }
+    const dz = spec?.design || 0, f = this.fits(type, x, z, rot, dz); if (!f.ok) return f;
+    if (d.deposit) { const [w, dd] = dims(type, rot, dz); let on = 0; for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) if (this.terr?.[(z + j) * this.N + x + i] === d.deposit) on++; if (on < 2) return { ok: false, why: d.deposit === 3 ? 'Must stand on an E-710 seep' : 'Must stand on an ore field' }; }
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
-    if (!LOOSE.has(type) && !this.frontage(type, x, z, rot)) return { ok: false, why: 'Needs a road out front: build along a road' };
+    if (!LOOSE.has(type) && !this.frontage(type, x, z, rot, dz)) return { ok: false, why: 'Needs a road out front: build along a road' };
     return f;
   }
   // a building's door has to open onto a road
-  frontage(type, x, z, rot) { const [w, d] = dims(type, rot), [tx, tz] = this.door({ x, z, w, d, rot }); return this.road(tx, tz); }
+  frontage(type, x, z, rot, dz = 0) { const [w, d] = dims(type, rot, dz), [tx, tz] = this.door({ x, z, w, d, rot }); return this.road(tx, tz); }
   // the roadside plot nearest the pointer that this building fits: it faces the road with its door on the street
-  plotFor(type, px, pz) {
+  plotFor(type, px, pz, dz = 0) {
     let best = null;
     const cx = Math.floor(px), cz = Math.floor(pz);
     for (let rot = 0; rot < 4; rot++) {
-      const [w, d] = dims(type, rot);
+      const [w, d] = dims(type, rot, dz);
       for (let z = cz - 7; z <= cz + 7; z++) for (let x = cx - 7; x <= cx + 7; x++) {
         const dist = Math.hypot(x + w / 2 - px, z + d / 2 - pz); if (best && dist >= best.dist) continue;
-        if (!this.fits(type, x, z, rot).ok || !this.frontage(type, x, z, rot)) continue;
+        if (!this.fits(type, x, z, rot, dz).ok || !this.frontage(type, x, z, rot, dz)) continue;
         best = { tx: x, tz: z, rot, dist };
       }
     }
@@ -311,12 +313,12 @@ export class Sim {
     }
     const out = []; for (let i = 0; i < N * N; i++) if (dist[i] > 0) out.push([i % N, (i / N) | 0, dist[i]]); return out;
   }
-  fits(type, x, z, rot) {
-    const [w, dd] = dims(type, rot);
+  fits(type, x, z, rot, dz = 0, self = 0) {
+    const [w, dd] = dims(type, rot, dz);
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) {
       const tx = x + i, tz = z + j;
       if (!this.inside(tx, tz)) return { ok: false, why: this.open ? 'Off the map' : 'Outside the wall' };
-      if (this.occ[tz * this.N + tx]) return { ok: false, why: 'Something is in the way' };
+      if (this.occ[tz * this.N + tx] && this.occ[tz * this.N + tx] !== self) return { ok: false, why: 'Something is in the way' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
       const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
     }
@@ -325,7 +327,7 @@ export class Sim {
   place(type, x, z, rot = 0, free = false, spec = null) {
     const d = B[type], cost = this.costOf(type, spec);
     if (!free) { const c = this.canPlace(type, x, z, rot, spec); if (!c.ok) return null; this.spend('build', cost); }
-    const [w, dd] = dims(type, rot);
+    const [w, dd] = dims(type, rot, spec?.design);
     const b = { id: this.nid++, type, x, z, rot, w, d: dd, cond: 100, prog: free ? 1 : 0, done: free, off: false, crew: 0, time: 6 + cost / 25, stock: zero() };
     if (d.squads) b.squads = d.squads;
     if (this.designable(type)) { b.design = spec?.design || 0; b.parts = (spec?.parts || []).filter(p => PARTS_FOR[type][p]); b.cost = cost; }
@@ -386,6 +388,29 @@ export class Sim {
     return v;
   }
   designable(type) { return !!PARTS_FOR[type]; }
+  // refitting a building to another design or other parts: it pays the difference and a refit fee, closes while the work
+  // is done, and the new design has to fit on the ground round it (the wings of Fortified and Monumental need a tile each side)
+  refit(b, spec) {
+    if (!b || !this.designable(b.type) || !spec) return { ok: false, why: 'This building has one design' };
+    if (!b.done) return { ok: false, why: 'Finish building it first' };
+    const same = (b.design || 0) === (spec.design || 0) && [...(b.parts || [])].sort().join() === [...(spec.parts || [])].sort().join();
+    const now = this.costOf(b.type, spec), was = b.cost ?? this.costOf(b.type, { design: b.design || 0, parts: b.parts || [] });
+    const cost = Math.max(0, now - was) + Math.ceil(B[b.type].cost * C.REFIT);
+    if (same) return { ok: false, why: 'That is the design it has', cost: 0 };
+    const [w, d] = dims(b.type, b.rot, spec.design), x = Math.round(b.x + b.w / 2 - w / 2), z = Math.round(b.z + b.d / 2 - d / 2);
+    const f = this.fits(b.type, x, z, b.rot, spec.design, b.id); if (!f.ok) return { ...f, why: f.why === 'Something is in the way' ? 'No room: the wings need a clear tile each side' : f.why, cost, x, z, w, d };
+    if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost, x, z, w, d };
+    return { ok: true, cost, x, z, w, d };
+  }
+  redesign(id, spec) {
+    const b = this.byId(id), c = this.refit(b, spec); if (!c.ok) return c;
+    for (let i = 0; i < this.occ.length; i++) if (this.occ[i] === b.id) this.occ[i] = 0;
+    Object.assign(b, { x: c.x, z: c.z, w: c.w, d: c.d, design: spec.design || 0, parts: (spec.parts || []).filter(p => PARTS_FOR[b.type][p]), cost: this.costOf(b.type, spec) });
+    for (let j = 0; j < c.d; j++) for (let i = 0; i < c.w; i++) this.occ[(c.z + j) * this.N + c.x + i] = b.id;
+    this.spend('build', c.cost); b.done = false; b.prog = 0.5; b.time = 3 + c.cost / 25; b.refit = true;
+    this.events.push({ t: 'placed', id: b.id }); this.roadsV = (this.roadsV || 0) + 1;
+    return c;
+  }
   costOf(type, spec) {
     const d = B[type]; if (!spec || !this.designable(type)) return d.cost;
     return Math.round(d.cost * DESIGNS[spec.design || 0].cost + (spec.parts || []).reduce((a, p) => a + (PARTS[p]?.cost || 0), 0));
@@ -504,7 +529,7 @@ export class Sim {
     for (const b of this.b) if (!b.done) {
       const helpers = Math.min(3, this.idle);
       b.prog += dt / (b.time * C.BUILD) * (0.4 + 0.2 * helpers);
-      if (b.prog >= 1) { b.prog = 1; b.done = true; this.events.push({ t: 'built', id: b.id }); this.roadsV++; this.say('base', `${B[b.type].name} complete.`); }
+      if (b.prog >= 1) { b.prog = 1; b.done = true; this.events.push({ t: 'built', id: b.id }); this.roadsV++; this.say('base', b.refit ? `${B[b.type].name} refitted: ${DESIGNS[b.design || 0].name}.` : `${B[b.type].name} complete.`); b.refit = false; }
     }
     this.consume(day);
     this.train(dt); this.study(dt);

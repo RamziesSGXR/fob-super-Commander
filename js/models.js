@@ -673,7 +673,29 @@ export function buildModel(type, m, merge = false, spec = null) {
 function decorate(g, m, spec) {
   const bb = new THREE.Box3().setFromObject(g), x0 = bb.min.x + 0.1, x1 = bb.max.x - 0.1, z0 = bb.min.z + 0.1, z1 = bb.max.z - 0.1;
   const top = Math.max(0.6, Math.min(bb.max.y, 2.4)), W = x1 - x0, D = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-  const roofZ = cz - D * 0.15;
+  const roofZ = cz - D * 0.15, wg = spec.wing || 0;
+  if (wg && spec.design === 1) {   // Fortified wings: a walled yard each side with an ammo crate stack and a sandbagged post
+    for (const s of [-1, 1]) {
+      const wx = cx + s * (W / 2 + 0.1 + wg / 2), ox = cx + s * (W / 2 + 0.1 + wg - 0.08);
+      box(g, 0.16, 0.5, D + 0.1, m.concrete, ox, 0.25, cz);                  // outer blast wall
+      box(g, wg - 0.05, 0.5, 0.16, m.concrete, wx, 0.25, z0 - 0.02);          // back
+      box(g, wg * 0.45, 0.5, 0.16, m.concrete, wx + s * wg * 0.22, 0.25, z1 + 0.02);   // front, with a gap by the building
+      box(g, wg - 0.2, 0.03, D - 0.1, m.dirt || m.concrete, wx, 0.015, cz);   // the yard
+      for (let i = 0; i < 3; i++) box(g, 0.22, 0.16, 0.16, m.oliveDark || m.dark, wx - s * 0.1, 0.08 + i * 0.165, cz - D * 0.25);
+      sandbags(g, m, wx, cz + D * 0.15, wg * 0.5);
+      box(g, wg * 0.5, 0.04, 0.05, m.hazard, wx + s * wg * 0.22, 0.52, z1 + 0.02);
+    }
+  } else if (wg && spec.design === 2) {   // Monumental wings: a lower colonnaded pavilion each side, gold-roofed
+    const h = top * 0.65;
+    for (const s of [-1, 1]) {
+      const wx = cx + s * (W / 2 + 0.1 + wg / 2), ww = wg - 0.12;
+      box(g, ww * 0.7, h, D * 0.7, m.white, wx, h / 2, cz - D * 0.1);
+      box(g, ww + 0.04, 0.08, D * 0.95, m.gold, wx, h + 0.04, cz);
+      box(g, ww * 0.9, 0.1, D * 0.9, m.white, wx, h + 0.13, cz);
+      for (let i = 0; i < 3; i++) cyl(g, 0.045, 0.055, h, m.white, wx - ww * 0.4 + i * ww * 0.4, h / 2, z1 - 0.02, { seg: 8 });
+      box(g, ww, 0.05, 0.3, m.white, wx, 0.025, z1 + 0.1);
+    }
+  }
   if (spec.design === 1) {   // Fortified: blast walls along the sides and back, sandbags at the door, armour plate on the corners
     for (const s of [-1, 1]) box(g, 0.14, 0.42, D * 0.85, m.concrete, cx + s * (W / 2 + 0.02), 0.21, cz - D * 0.05);
     box(g, W * 0.9, 0.42, 0.14, m.concrete, cx, 0.21, z0 - 0.02);
@@ -685,7 +707,8 @@ function decorate(g, m, spec) {
     for (let i = 0; i < n; i++) cyl(g, 0.055, 0.065, top * 0.85, m.white, x0 + 0.1 + i * (W - 0.2) / (n - 1), top * 0.425 + 0.06, z1 + 0.05, { seg: 8 });
     box(g, W + 0.1, 0.08, 0.3, m.gold, cx, top * 0.85 + 0.1, z1 + 0.05);
     box(g, W * 0.7, 0.06, 0.4, m.white, cx, 0.03, z1 + 0.25); box(g, W * 0.6, 0.06, 0.25, m.white, cx, 0.09, z1 + 0.18);
-    for (const s of [-1, 1]) { cyl(g, 0.02, 0.025, top + 1.1, m.gold, cx + s * (W / 2 + 0.15), (top + 1.1) / 2, z1 + 0.15); flagCloth(g, m.prim, 0.3, 0.6, cx + s * (W / 2 + 0.15), top + 0.7, z1 + 0.16); }
+    const fo = wg ? W / 2 + wg : W / 2 + 0.15;
+    for (const s of [-1, 1]) { cyl(g, 0.02, 0.025, top + 1.1, m.gold, cx + s * fo, (top + 1.1) / 2, z1 + 0.15); flagCloth(g, m.prim, 0.3, 0.6, cx + s * fo, top + 0.7, z1 + 0.16); }
   }
   for (const p of spec.parts || []) {
     if (p === 'antenna') { for (const [dx, h] of [[-0.3, 1.2], [0.25, 0.8]]) { cyl(g, 0.015, 0.02, h, m.metal, cx + dx * W * 0.5, top + h / 2, roofZ); } add(g, new THREE.SphereGeometry(0.22, 12, 6, 0, Math.PI * 2, 0, 1.0), m.white, cx + W * 0.3, top + 0.2, roofZ + 0.2, { rx: -0.8 }); (g.userData.blink ||= []).push(ball(g, 0.04, m.glowR, cx - 0.15 * W, top + 1.22, roofZ)); }

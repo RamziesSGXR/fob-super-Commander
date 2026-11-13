@@ -61,6 +61,15 @@ export const REQUESTS = [
     opts: [{ label: 'PAY OVERTIME (40 CR)', fx: { cr: -40, sup: 90, pro: 1 }, say: 'The depot ran all night. Ninety supplies were found behind other supplies.' },
            { label: 'NOT THIS WEEK', fx: {}, say: 'Overtime declined. The sandwiches were eaten on the clock.' }],
     when: s => s.has('depot') },
+  { from: 'Citizen', title: 'Form C-01: permission to procreate', text: 'NAME of the motor pool and a spouse in the Liberty Habitat submit Form C-01. The Ministry of Humanity needs the base Commander\'s countersignature. The form is eleven pages and has a section on genetic loyalty.',
+    opts: [{ label: 'COUNTERSIGN', fx: { mood: 3 }, say: 'C-01 countersigned. A future citizen has been pencilled in.' },
+           { label: 'RETURN FOR CORRECTIONS', fx: { pro: 1 }, say: 'C-01 returned. Section 4b was in the wrong shade of blue ink.' }] },
+  { from: 'Citizen', title: 'A family visit', text: 'NAME\'s family has a travel permit to visit the base for one afternoon. They would like to see the flag and eat in the mess. Their child has drawn a picture of a Hellbomb.',
+    opts: [{ label: 'WELCOME THEM', fx: { mood: 3, sup: -10 }, say: 'The family toured the base. The child saluted everything, including a forklift.' },
+           { label: 'NOT DURING DUTY', fx: { pro: 1 }, say: 'Visit postponed. The Hellbomb drawing has been pinned up in the canteen anyway.' }] },
+  { from: 'Ministry of Humanity', title: 'Census of dependants', text: 'The Ministry of Humanity is counting the families of base personnel. Every citizen must list their dependants on Form C-07. NAME has listed a cat.',
+    opts: [{ label: 'FILE THE CENSUS', fx: { pro: 1 }, say: 'Census filed. The cat has been issued a citizen number provisionally.' },
+           { label: 'ACCEPT THE CAT', fx: { mood: 2 }, say: 'The cat is now the base mascot, on paper.' }] },
 ];
 
 // ---------------------------------------------------------------- roster files
@@ -72,9 +81,17 @@ const CONDUCT = [
   ['Lost a rifle. Found a different one. Cannot explain either.', 'Asked what the Bureau is for.', 'Traded a helmet for a sandwich.'],
 ];
 // what the Commander reads: range card, course time, a conduct note. Conduct is words, so it takes judgement
+// next of kin, for the file: flavour only, picked from the trooper's id so it never changes
+const KIN = ['Mother on Super Earth, works in a munitions plant. Writes weekly; the censor reads monthly.',
+  'No family listed. Super Earth is family enough.', 'Wife and two children in a Liberty Habitat. C-01 permits on file, all approved.',
+  'Father served on Malevelon Creek. Does not discuss it.', 'Older sister in the Ministry of Truth. Sends posters.',
+  'Husband, a hydroponics technician on Mars. C-01 application pending: 14 months and counting.',
+  'Grandmother on Super Earth, 103, still voting.', 'Twin brother, also SEAF, on another planet. Each insists he is the better shot.',
+  'Parents run a canteen in Democracy Sector 9. Their meatloaf was commended.', 'Fiancée on Super Earth. Wedding approved for after the war.',
+  'Three cousins in the Helldivers. Only one still answers letters, for obvious reasons.', 'Adopted by the state. Very well adjusted. Very.'];
 export function fileOf(t) {
   const q = t.q, band = q.con >= 80 ? 0 : q.con >= 62 ? 1 : q.con >= 45 ? 2 : 3, secs = Math.round(260 - q.fit * 1.5);
-  return { range: `${Math.round(q.aim / 10)} of 10 targets`, course: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, conduct: CONDUCT[band][t.id % 3], missions: t.missions, medals: t.medals };
+  return { range: `${Math.round(q.aim / 10)} of 10 targets`, course: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, conduct: CONDUCT[band][t.id % 3], missions: t.missions, medals: t.medals, kin: KIN[(t.id * 7 + 3) % KIN.length] };
 }
 export function merit(t) { return (t.q.aim + t.q.fit + t.q.con) / 3 + Math.min(12, t.missions * 3) + t.medals * 6; }
 export function trueGrade(t) { const m = merit(t); return m >= 80 ? 'A' : m >= 66 ? 'B' : m >= 52 ? 'C' : 'D'; }

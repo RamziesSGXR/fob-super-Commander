@@ -1,7 +1,7 @@
 // The 3D view: a near-isometric camera you can rotate, the ground, the wire, every building and everyone walking about.
 import * as THREE from './vendor/three.js';
 import { B } from './config.js';
-import { dims } from './sim.js';
+import { dims, wingOf } from './sim.js';
 import { BIOMES } from './site.js';
 import { makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
@@ -405,12 +405,12 @@ export class View {
     const key = type + rot + JSON.stringify(spec);
     if (key !== this.ghostKey) {
       if (this.ghostG) this.world.remove(this.ghostG);
-      this.ghostG = buildModel(type, this.m, false, spec); this.ghostKey = key;
+      this.ghostG = buildModel(type, this.m, false, spec && { ...spec, wing: spec.wing ?? (dims(type, 0, spec.design)[0] - B[type].w) / 2 }); this.ghostKey = key;
       this.ghostMat = new THREE.MeshStandardMaterial({ color: '#59ff8a', transparent: true, opacity: 0.55, depthWrite: false });
       this.ghostG.traverse(o => { if (o.isMesh) { o.material = this.ghostMat; o.castShadow = false; } });
       this.ghostG.rotation.y = rot * Math.PI / 2; this.world.add(this.ghostG);
     }
-    const [w, d] = dims(type, rot);
+    const [w, d] = dims(type, rot, spec?.design);
     this.ghostG.visible = true; this.ghostG.position.set(this.wx(x + w / 2), 0, this.wx(z + d / 2));
     this.ghostMat.color.set(ok ? '#59ff8a' : '#ff4a4a');
     this.foot.visible = true; this.foot.scale.set(w, d, 1); this.foot.position.set(this.wx(x + w / 2), 0.04, this.wx(z + d / 2)); this.foot.material.color.set(ok ? '#59ff8a' : '#ff4a4a');
@@ -471,9 +471,11 @@ export class View {
     const s = this.sim, t = this.t;
     for (const b of s.b) {
       let g = this.bm.get(b.id);
+      const key = `${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}`;
+      if (g && g.userData.key !== key) { this.world.remove(g); this.bm.delete(b.id); g = null; }   // refitted: build it again
       if (!g) {
-        g = new THREE.Group(); g.userData.b = b.id;
-        const model = buildModel(b.type, this.m, true, b.design || b.parts?.length ? { design: b.design, parts: b.parts } : null); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
+        g = new THREE.Group(); g.userData.b = b.id; g.userData.key = key;
+        const model = buildModel(b.type, this.m, true, b.design || b.parts?.length ? { design: b.design, parts: b.parts, wing: wingOf(b) } : null); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
         g.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2));
         g.traverse(o => { o.userData.bid = b.id; });
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;

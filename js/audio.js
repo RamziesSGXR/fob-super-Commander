@@ -166,9 +166,11 @@ const KINDS = {
   whistle:{ loop: o => { hiss(o, 380, 0.015, 0.6, 'lowpass'); }, tick: (o, t) => { if (Math.random() < 0.12) tone(2600, t, 0.4, { vol: 0.05, glide: 120, dest: o }); } },
   build:  { loop: o => { hiss(o, 200, 0.03, 0.6, 'lowpass'); }, every: 0.45, tick: (o, t) => { if (Math.random() < 0.7) { noise(t, 0.04, { vol: 0.35, freq: 1600 + Math.random() * 800, q: 4, attack: 0.05, dest: o }); tone(180, t, 0.08, { type: 'square', vol: 0.05, dest: o }); } } },
   // vehicles: engines whose note rises when they move
-  truck:  { loop: o => { o.eng = osc(o, 'sawtooth', 42, 0.06, 260); hiss(o, 140, 0.06, 0.7, 'lowpass'); } },
+  truck:  { loop: o => { o.eng = osc(o, 'sawtooth', 42, 0.06, 260); hiss(o, 140, 0.06, 0.7, 'lowpass'); }, every: 0.3, tick: (o, t, s) => { brakes(o, t, s, 0.18); } },
   lift:   { loop: o => { o.eng = osc(o, 'triangle', 300, 0.012); }, tick: (o, t, s) => { if (s.moving) tone(1250, t, 0.25, { type: 'square', vol: 0.025, dest: o }); }, every: 0.6 },
-  frv:    { loop: o => { o.eng = osc(o, 'sawtooth', 60, 0.05, 420); hiss(o, 200, 0.04, 0.7, 'lowpass'); } },
+  frv:    { loop: o => { o.eng = osc(o, 'sawtooth', 60, 0.05, 420); hiss(o, 200, 0.04, 0.7, 'lowpass'); }, every: 0.3, tick: (o, t, s) => { if (s.moving && !o.was) tone(110, t, 0.5, { type: 'sawtooth', vol: 0.06, glide: 90, dest: o }); o.was = s.moving; } },
+  // the pelican as it flies: a turbine whine over a heavy thrum, loudest low over the pad
+  pelican:{ loop: o => { o.eng = osc(o, 'sawtooth', 55, 0.07, 300); osc(o, 'triangle', 1900, 0.006); hiss(o, 420, 0.09, 0.5, 'lowpass'); }, every: 0.12, tick: (o, t) => { noise(t, 0.08, { vol: 0.05, freq: 160, q: 1, attack: 0.03, dest: o }); } },
   tank:   { loop: o => { o.eng = osc(o, 'sawtooth', 30, 0.09, 160); hiss(o, 90, 0.12, 0.7, 'lowpass'); }, tick: (o, t, s) => { if (s.moving) for (let i = 0; i < 4; i++) noise(t + i * 0.1, 0.03, { vol: 0.12, freq: 1300, q: 3, attack: 0.05, dest: o }); }, every: 0.4 },
 };
 function osc(o, type, f, vol, lp) {
@@ -183,7 +185,9 @@ function hiss(o, f, vol, q = 1, type = 'bandpass') {
 }
 function lfo(param, rate, depth) { const l = ctx.createOscillator(), g = ctx.createGain(); l.frequency.value = rate; g.gain.value = depth; l.connect(g).connect(param); l.start(); return l; }
 
-const MAXV = 9, voices = new Map(), ENGINE = { truck: 42, lift: 300, frv: 60, tank: 30 };
+const MAXV = 9, voices = new Map(), ENGINE = { truck: 42, lift: 300, frv: 60, tank: 30, pelican: 55 };
+// a lorry pulling up: the air brakes sigh as it stops, and a door shuts a moment later
+function brakes(o, t, s, vol) { if (o.was && !s.moving) { noise(t, 0.7, { vol, freq: 3800, q: 0.8, type: 'highpass', attack: 0.02, dest: o }); if (Math.random() < 0.5) noise(t + 1.1, 0.08, { vol: vol * 1.4, freq: 300, q: 2, attack: 0.01, dest: o }); } o.was = s.moving; }
 // list: [{ key, kind, x, z, on, moving, vol }]. Called a few times a second; keeps the nearest few playing
 export function emitters(list) {
   if (!ctx || muted || ctx.state !== 'running') return;

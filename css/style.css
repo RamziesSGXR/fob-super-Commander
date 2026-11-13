@@ -338,3 +338,5 @@ body.ui-scifi #tip { border-color: var(--am-d); background: rgba(10, 13, 12, 0.9
 body.ui-scifi table.st th { color: var(--cy); } body.ui-scifi table.st tr.me td { color: var(--yellow); }
 body.ui-scifi .up { color: #8df0a0; } body.ui-scifi .cm em { font-family: var(--hd); }
 body.ui-scifi .c-sci { color: #c9a8ff; }
+.dz-go { display: flex; align-items: center; gap: 8px; margin-top: 8px; } .dz-go span { flex: 1; font-size: 12px; }
+.dz-go .c-ok { color: #59ff8a; } .dz-go .c-bad { color: #ff6a5a; } .dz-go button[disabled] { opacity: 0.4; pointer-events: none; }
