@@ -2,7 +2,7 @@
 // vending machine, train on the range, march out on patrol and come home, and board transports to the front;
 // pelicans bring supplies and recruits; inspectors poke at things. Trucks and forklifts live in the simulation.
 // It reads the simulation and never changes it. Positions are in tiles (a tile's centre is i + 0.5).
-import { B, ROADS } from './config.js';
+import { B, ROADS, LAND } from './config.js';
 
 const WALK = 1.5, DRIVE = 2.4;
 // these run round the clock, so their crews skip the routine: a base never fully sleeps
@@ -25,7 +25,7 @@ export class Life {
     this.ceremony = null; this.nextFake = -1; this.t = 0;
     this.gridKey = '';
     // a new base: the first pelican brings everyone down onto the landing zone beside the HQ
-    if (sim.sweep && !sim.sweep.done && sim.sweep.t < 1) {
+    if (sim.t < 1 && sim.b.some(b => b.type === 'hq')) {
       // onto the Command Post's own pad, if it has one; otherwise beside the HQ
       const ids = sim.troops.map(t => t.id), hq = sim.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
       const pad = sim.b.filter(b => b.type === 'pad').sort((p, q) => Math.hypot(...this.centre(p).map((v, i) => v - [cx, cz][i])) - Math.hypot(...this.centre(q).map((v, i) => v - [cx, cz][i])))[0];
@@ -412,9 +412,9 @@ export class Life {
     if (a.act === 'plan') return;
     if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } return; }
     a.wait -= dt; if (a.wait > 0) { if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z); return; }
-    const hq = s.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
+    const hq = s.b.find(b => b.type === 'hq'), P = LAND.PARCEL, [cx, cz] = sw.px != null ? [sw.px * P + P / 2, sw.pz * P + P / 2] : hq ? this.centre(hq) : [this.N / 2, this.N / 2];
     const k = Math.max(0, sw.team.indexOf(t.id)), n = Math.max(1, sw.team.length), u = Math.min(1, sw.t / sw.dur);
-    const r = 5 + 13 * Math.sin(u * Math.PI), ang = (k / n) * Math.PI * 2 + a.sw * 0.5; a.sw++;
+    const r = sw.px != null ? 8 + (P / 2 - 10) * Math.sin(u * Math.PI) : 5 + 13 * Math.sin(u * Math.PI), ang = (k / n) * Math.PI * 2 + a.sw * 0.5; a.sw++;
     const [x, z] = this.near(cx + Math.cos(ang) * r, cz + Math.sin(ang) * r);
     this.go(a, x + 0.5, z + 0.5, () => { a.act = Math.random() < 0.6 ? 'aim' : 'look'; a.face = [cx + Math.cos(ang) * (r + 6), cz + Math.sin(ang) * (r + 6)]; a.wait = rnd(1.5, 3.5); });
   }

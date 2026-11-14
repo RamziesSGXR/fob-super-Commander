@@ -185,45 +185,60 @@ function beginCallIn() {
   tool = 'callin'; select(null); paused = false; rot = 0;
   view.zoomT = view.zoom = view.zMax() * 0.92; view.lookAt(sim.N / 2, sim.N / 2);
   $('callin').classList.remove('hidden'); $('hud').classList.add('calling');
-  ciCard(); ciRead(null);
+  ciStep();
 }
-// the card at the top: what this step is
+// the card at the top: what this step is. The landing: pick the landing zone, scrape a dirt track, set the Command Post
+// down on it, raise the flag
+const TRACK_MIN = 6;
 function ciCard() {
-  const flag = sim.callIn === 'flag';
-  $('ci-h').textContent = flag ? 'STEP 1 OF 2 · RAISE THE FLAG' : 'STEP 2 OF 2 · SET DOWN THE COMMAND POST';
-  $('ci-p').textContent = flag
-    ? 'Pick where the first pelican comes down. The troopers raise the Super Earth flag there, and the 3 × 3 parcels round it (1.8 km on a side) are granted to you, cleared of scrub.'
-    : 'Now place the Command Post anywhere on your ground: the HQ and its own landing pad, with the HQ\'s stores. It is the nexus of the base; the first pelican lands on its pad. R turns it.';
-  $('ci-best').textContent = flag ? 'SUGGEST A SPOT' : 'NEXT TO THE FLAG';
+  const st = sim.callIn, n = { flag: 1, road: 2, hq: 3, flagpost: 4 }[st];
+  $('ci-h').textContent = `STEP ${n} OF 4 · ` + { flag: 'PICK THE LANDING ZONE', road: 'SCRAPE A DIRT TRACK', hq: 'SET DOWN THE COMMAND POST', flagpost: 'RAISE THE FLAG' }[st];
+  $('ci-p').textContent = {
+    flag: 'Pick where the first pelican comes down with your troopers and supplies. The 3 × 3 parcels round it (1.8 km on a side) are granted to you, clear of scrub.',
+    road: `Drag on the ground to scrape a dirt track from the landing zone: one rough lane, at least ${TRACK_MIN * LAND.TILE_M} m of it. It follows the ground and costs more the steeper it climbs. Everything else is built along it.`,
+    hq: 'Set the Command Post down beside the track: the HQ and its own landing pad, with the HQ\'s stores. It is the nexus of the base. R turns it.',
+    flagpost: 'Last, the colours. Pick where the Super Earth flag goes up: the base forms up on it at Reveille and Retreat.',
+  }[st];
+  $('ci-best').textContent = st === 'flag' ? 'SUGGEST A SPOT' : 'NEAR THE LANDING'; $('ci-best').classList.toggle('hidden', st === 'road' || st === 'flagpost');
 }
 function ciRead(at) {
+  const st = sim.callIn;
+  if (st === 'road') { const L = sim.trackLen(); $('ci-read').innerHTML = `<div class="kv"><span>TRACK LAID</span><b class="${L >= TRACK_MIN ? 'up' : ''}">${Math.round(L * LAND.TILE_M)} m of ${TRACK_MIN * LAND.TILE_M} m</b></div><div class="kv"><span>SUPPLIES</span><b>${fmt(sim.supplies)}</b></div>`; return; }
   if (!at) { $('ci-read').innerHTML = '<p class="fine left">Move over the map to survey a spot.</p>'; return; }
-  if (sim.callIn === 'hq') { const c = sim.canStarter(at[0], at[1], rot); $('ci-read').innerHTML = `<div class="kv"><span>HERE</span><b class="${c.ok ? 'up' : 'warn'}">${c.ok ? 'CLEAR TO SET DOWN' : esc(c.why).toUpperCase()}</b></div>`; return; }
+  if (st === 'hq' || st === 'flagpost') { const c = st === 'hq' ? sim.canStarter(at[0], at[1], rot) : sim.canFlagPost(at[0], at[1]); $('ci-read').innerHTML = `<div class="kv"><span>HERE</span><b class="${c.ok ? 'up' : 'warn'}">${c.ok ? 'CLEAR' : esc(c.why).toUpperCase()}</b></div>`; return; }
   const c = sim.canFlag(at[0], at[1]), ps = sim.startParcels(at[0], at[1]), f = ps.map(([px, pz]) => sim.parcelInfo(px, pz)), sum = k => f.reduce((a, b) => a + b[k], 0);
-  $('ci-read').innerHTML = `<div class="kv"><span>BUILDABLE</span><b>${sum('buildKm2').toFixed(2)} km² of ${sum('km2').toFixed(2)}</b></div><div class="kv"><span>WATER · ROCK</span><b>${sum('water')} · ${sum('rock')} tiles</b></div><div class="kv"><span>E-710 · ORE</span><b>${sum('seeps')} · ${sum('ore')} tiles</b></div>`
+  $('ci-read').innerHTML = `<div class="kv"><span>BUILDABLE</span><b>${sum('buildKm2').toFixed(2)} km² of ${sum('km2').toFixed(2)}</b></div><div class="kv"><span>WATER · ROCK</span><b>${sum('water')} · ${sum('rock')} cells</b></div><div class="kv"><span>E-710 · ORE</span><b>${sum('seeps')} · ${sum('ore')} cells</b></div>`
     + `<div class="kv"><span>HERE</span><b class="${c.ok ? 'up' : 'warn'}">${c.ok ? 'CLEAR TO LAND' : esc(c.why).toUpperCase()}</b></div>`;
 }
-function callIn(x, z) {
-  if (sim.callIn === 'flag') {
-    const r = sim.plantFlag(x, z); if (!r.ok) { flash(r.why); audio.play('deny'); return; }
-    tool = 'starter'; ciStart = null; view.setGhost(null); view.lookAt(x + 0.5, z + 0.5); view.zoomT = 40;
-    audio.play('place'); ciCard(); ciRead(null); drawMinimap();
-    flash('The flag is up. Now set down the Command Post.');
-    return;
-  }
-  const r = sim.placeStarter(x, z, rot); if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+function ciStep() {   // set the tool and the card for the step the landing is on
+  const st = sim.callIn; tool = { flag: 'callin', road: 'road1', hq: 'starter', flagpost: 'flagpost' }[st] || null;
+  ciStart = null; view.setGhost(null); view.showRoadGhost(null); view.showBrush(st === 'road' ? sim.lzAt[0] + 0.5 : null, st === 'road' ? sim.lzAt[1] + 0.5 : null, 2.5);
+  ciCard(); ciRead(null);
+}
+function ciDone() {
   sim.begin(); life = new Life(sim); view.life = life;
-  tool = null; ciStart = null; view.setGhost(null); view.showParcels(null); $('callin').classList.add('hidden'); $('hud').classList.remove('calling');
+  tool = null; ciStart = null; view.setGhost(null); view.showParcels(null); view.showBrush(null); $('callin').classList.add('hidden'); $('hud').classList.remove('calling');
   const hq = sim.b.find(b => b.type === 'hq'); view.lookAt(hq.x + 1.5, hq.z + 1.5); view.zoomT = 24;
   audio.play('place'); buildBar(); hud(); drawMinimap(); store();
-  flash('The pelican is inbound to the pad. Draw your first road from the HQ.');
+  flash('The colours are up. Zone along your track, and the base will grow.');
 }
+function callIn(x, z) {
+  const st = sim.callIn, r = st === 'flag' ? sim.plantFlag(x, z) : st === 'hq' ? sim.placeStarter(x, z, rot) : st === 'flagpost' ? sim.placeFlag(x, z) : { ok: false, why: 'Drag to lay the track' };
+  if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+  audio.play('place'); drawMinimap();
+  if (!sim.callIn) return ciDone();
+  if (st === 'flag') { view.lookAt(x + 0.5, z + 0.5); view.zoomT = 26; flash('Landing zone marked. Now scrape a dirt track from it: drag on the ground.'); }
+  else if (st === 'hq') flash('The Command Post is down. Now raise the flag.');
+  ciStep();
+}
+// a stretch of track went down during the landing
+function ciTrack() { ciRead(null); if (sim.trackLen() >= TRACK_MIN) { sim.callIn = 'hq'; ciStep(); flash('That will do for a start. Now set the Command Post down beside it.'); } else flash('A little more track.'); }
 // test hook: the whole landing in one call, at the suggested spot
-function callInAuto() { const [x, z] = sim.autoSpot(); if (sim.callIn === 'flag') sim.plantFlag(x - 2, z + 1, { force: true }); tool = 'starter'; rot = 0; callIn(x, z); }
+function callInAuto() { const [x, z] = sim.autoSpot(); if (sim.callIn === 'flag') sim.plantFlag(x - 2, z + 1, { force: true }); rot = 0; sim.placeStarter(x, z, 0, { force: true }); sim.placeFlag(x - 2, z + 1, { force: true }); ciDone(); }
 $('ci-best').onclick = () => {
   let x, z;
   if (sim.callIn === 'flag') { [x, z] = sim.autoSpot(); x -= 2; z += 1; ciStart = { parcels: sim.startParcels(x, z), ok: true }; view.setGhost('seflag', x, z, 0, true); }
-  else { const [fx, fz] = sim.flagAt; let best = null; for (let r = 2; r < 14 && !best; r++) for (let dz = -r; dz <= r && !best; dz++) for (let dx = -r; dx <= r && !best; dx++) for (let k = 0; k < 4 && !best; k++) if (Math.max(Math.abs(dx), Math.abs(dz)) === r && sim.canStarter(fx + dx, fz + dz, k).ok) best = [fx + dx, fz + dz, k]; if (!best) { flash('No room near the flag: pick a spot'); return; } [x, z, rot] = best; view.setGhost('starter', x, z, rot, true); }
+  else { const [fx, fz] = sim.lzAt; let best = null; for (let r = 2; r < 20 && !best; r++) for (let dz = -r; dz <= r && !best; dz++) for (let dx = -r; dx <= r && !best; dx++) for (let k = 0; k < 4 && !best; k++) if (Math.max(Math.abs(dx), Math.abs(dz)) === r && sim.canStarter(fx + dx, fz + dz, k).ok) best = [fx + dx, fz + dz, k]; if (!best) { flash('No room near the landing: pick a spot'); return; } [x, z, rot] = best; view.setGhost('starter', x, z, rot, true); }
   view.lookAt(x + 1, z + 1); view.zoomT = Math.min(view.zoomT, 50); hover = { tx: x, tz: z, rot }; ciRead([x, z]);
   flash(sim.callIn === 'flag' ? 'A good spot: click there to bring the pelican down.' : 'Room here: click it to set the Command Post down.');
 };
@@ -256,6 +271,7 @@ $('ht-x').onclick = () => show(playing ? null : 's-title');
 // 45 degrees or nowhere (SNAP, or G), and always onto existing roads and walls so they join up
 const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', why: 'One tile wide, cheap, a bit faster', desc: 'Drag to draw. One tile wide and cheap. Vehicles go 1.6 times as fast as off-road, people a little faster.' },
   bridge: { name: 'Bridge', k: 'bridge', why: 'Spans water and gullies, on piers', desc: 'Drag from firm ground to firm ground. A paved deck on concrete piers that crosses water, ravines and rough ground at an even grade. It costs several times a road and cannot cut through a hill. Roads join it at its ends.' },
+  path: { name: 'Footpath', k: 'path', why: 'A paved walk for people', desc: 'Drag to draw. One cell wide, paved for boots: people walk it as fast as a paved road, vehicles get nothing from it. Cheap, and it climbs steeper ground than a road. Buildings can front onto it.' },
   road2: { name: 'Paved Road', k: 'paved', why: 'Two tiles wide, vehicles 2.4× faster', desc: 'Drag to draw. Two tiles wide, with a centre line. Vehicles go 2.4 times as fast, so supplies reach their buildings sooner.' },
   wall: { name: 'Wall', k: 'wall', why: 'Encloses the base; a road through it is a gate', desc: 'Drag to draw perimeter wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
   unroad: { name: 'Bulldoze', k: null, why: 'Take out a road or a wall', desc: 'Click a road or a wall to take it out. Half the cost back.' },
@@ -266,7 +282,7 @@ let snapMode = 'grid';
 const lineCost = k => k ? sim.linePrice(k) : 0;
 // thin line icons (24 x 24, drawn with the current colour)
 const ICON = {
-  landscape: 'M2 20 8 11l4 5 3-4 7 8zM15 6a2 2 0 1 0 0.01 0',
+  landscape: 'M2 20 8 11l4 5 3-4 7 8zM15 6a2 2 0 1 0 0.01 0', elev: 'M2 20 8 11l4 5 3-4 7 8zM4 8h6M4 5h9',
   roads: 'M8 21 11 3M16 21 13 3M12 6v2M12 11v2M12 16v2', logistics: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8',
   training: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8M12 11.5v1', living: 'M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5',
   income: 'M4 20h16M7 17v-4M12 17V9M17 17V5', power: 'M13 2 5 14h6l-1 8 8-12h-6z', defence: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
@@ -311,7 +327,7 @@ function buildBar() {
   $('b-items').classList.toggle('hidden', !buildOpen);
   if (!buildOpen) return;
   const items = groupItems(group), G = GROUPS.find(x => x[0] === group);
-  const lines = group === 'roads' ? ['road1', 'road2', 'bridge', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
+  const lines = group === 'roads' ? ['road1', 'road2', 'path', 'bridge', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
   if (group === 'landscape') { landBar(G); return; }
@@ -329,11 +345,14 @@ function buildBar() {
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); zoneViewFor(); audio.play('click'); };
 // the ZONES tab flips the map to the zones view (and back when you leave it); where zoning can go is shown while a brush is up
-let ivBeforeZones = null;
+let ivBeforeZones = null, ivAuto = null;
 function zoneViewFor() {
-  const z = buildOpen && group === 'zones';
-  if (z && iview !== 'zone') { ivBeforeZones = iview; setIview('zone'); }
-  else if (!z && ivBeforeZones !== null && iview === 'zone') { setIview(ivBeforeZones); ivBeforeZones = null; }
+  // ZONES opens the zones view and LANDSCAPE the elevation view; leaving the tab puts back what was there, unless you
+  // picked another view yourself in the meantime
+  const want = buildOpen ? { zones: 'zone', landscape: 'elev' }[group] : null;
+  if (ivAuto && iview === ivAuto && want !== ivAuto) { setIview(want || ivBeforeZones || 'none'); if (!want) ivBeforeZones = null; ivAuto = want || null; }
+  else if (want && iview !== want) { if (!ivAuto) ivBeforeZones = iview; ivAuto = want; setIview(want); }
+  else if (!want) ivAuto = null;
 }
 // every free roadside tile on your land: where a zone can be painted
 function zoneable() { return sim.plotTiles().filter(([x, z]) => { const t = sim.terr?.[z * sim.N + x]; return t !== 1 && t !== 2 && sim.ownedTile(x, z); }); }
@@ -537,7 +556,6 @@ function logoImg(logo) {
 }
 function startMoveHQ() { select(null); tool = 'movehq'; flash('Pick where the HQ stands, inside your land. The flag goes beside it.'); }
 const ORDERS = [
-  ['Wait for the security detachment to sweep the landing zone: the engineers start building once it is secure', s => s.secure()],
   ['Draw a road from your HQ (ROADS, drag). Stay inside your land: the dashed yellow line', s => s.net.segs.some(q => q.k !== 'wall')],
   ['Paint a Life Support zone and a Logistics zone along the road (ZONES: click beside a road to fill a block): barracks, a mess, latrines and a depot grow there', s => s.zoneCount('life') > 0 && s.zoneCount('logi') > 0],
   ['Lay the foundation: place a Firing Range; the zones grow the Supply Depot, Barracks and Mess Hall (the Command Post brought the pad)', s => s.founded()],
@@ -578,6 +596,7 @@ const IVIEWS = [
   ['cond', 'CONDITION', 'Repair: green is sound, red is falling apart. Upkeep keeps it up.'],
   ['crew', 'CREW', 'Crew at their posts: green full, amber short, red none. Grey needs no crew.'],
   ['util', 'UTILITIES', 'Coverage: power (yellow), water (blue), sewage (brown) and fuel pipes (violet). Buildings are green when served, amber missing water or sewage, red dark (outside power).'],
+  ['elev', 'ELEVATION', 'The height of the ground: green low, yellow and brown higher, white the tops, blue under water. A contour every 5 m, a heavy one every 25 m.'],
   ['zone', 'ZONING', 'Zones painted on the ground, and buildings in the colour of the zone they grew in or stand in. Red outline: bunks next to noise or fuel.'],
 ];
 let iview = 'none', ivT = 0, ivT2 = 0;
@@ -613,6 +632,7 @@ function ivLegend() {
   let keys = '';
   if (iview === 'res') keys = [['#aa50ff', 'E-710 SEEP'], ['#e6783c', 'ORE'], ['#4696ff', 'WATER'], ['#3a3a40', 'ROCK']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
   if (iview === 'util') { const u = sim.util || sim.utilities(); keys = [['#ffd23a', 'POWER'], ['#4fb4ff', 'WATER'], ['#b08a4a', 'SEWAGE'], ['#c98bff', 'FUEL']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('') + `<p>Water ${u.water.made} made, ${u.water.use} used a watch${u.water.bad > 0.05 ? ` (${Math.round(u.water.bad * 100)}% from wells by a lagoon)` : ''}. Sewage ${u.sewer.cap} taken, ${u.sewer.use} made. ${u.dark ? `${u.dark} building${u.dark > 1 ? 's' : ''} dark. ` : ''}${sim.graceOn() ? `The inspectorate arrives in ${days(sim.utilGrace * C.DAY)}.` : `Outbreak risk ${Math.round((sim.risk || 0) * 100)}% a watch.`}</p>`; }
+  if (iview === 'elev') keys = [['#296b4d', 'LOW'], ['#739e40', ''], ['#d9bf4d', ''], ['#b86133', ''], ['#f2f2f2', 'HIGH'], ['#1f4073', 'UNDER WATER']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
   if (iview === 'zone') keys = ZKEYS.map(k => `<span><i style="background:${ZONES[k].col}"></i>${ZONES[k].short}</span>`).join('') + `<span><i style="background:#ff4d3a"></i>NOISY OR HAZARDOUS BUNKS</span><p>Demand: ${esc(sim.demandText())}.</p>`;
   if (iview === 'routes') keys = GKEYS.map(g => `<span><i style="background:${GOODS[g].color}"></i>${GOODS[g].name.toUpperCase()}</span>`).join('');
   if (iview === 'role') keys = GROUPS.filter(g => g[0] !== 'roads').map(g => `<span><i style="background:${ROLE_COL[g[0]]}"></i>${g[1]}</span>`).join('');
@@ -642,8 +662,8 @@ function coverList() {
 }
 function ivApply() {
   const ghost = iview === 'res' || iview === 'routes';
-  view.setInfo(iview === 'none' ? null : new Map(sim.b.map(b => [b.id, ghost ? '#c8d0cc' : ivColor(b, iview)])), ghost);
-  view.showResources(iview === 'res');
+  view.setInfo(iview === 'none' || iview === 'elev' ? null : new Map(sim.b.map(b => [b.id, ghost ? '#c8d0cc' : ivColor(b, iview)])), ghost);
+  view.showResources(iview === 'res'); view.setElev(iview === 'elev');
   view.setCover(iview === 'util' ? coverList() : null);
   view.setRoutes(iview === 'routes' ? routesNow() : null);
 }
@@ -669,12 +689,12 @@ function drawMinimap() {
     mmKey = key; mmStatic ||= Object.assign(document.createElement('canvas'), { width: N, height: N });
     const c = mmStatic.getContext('2d'), im = c.createImageData(N, N), bio = BIOMES[sim.site?.biome || 'steppe'];
     for (let i = 0; i < N * N; i++) {
-      const t = sim.terr?.[i] || 0, col = sim.walls[i] === 1 ? [235, 228, 200] : sim.walls[i] === 2 ? [245, 213, 71] : sim.roads[i] ? (sim.roads[i] === 2 ? [150, 152, 150] : [120, 104, 82])
+      const t = sim.terr?.[i] || 0, col = sim.walls[i] === 1 ? [235, 228, 200] : sim.walls[i] === 2 ? [245, 213, 71] : sim.roads[i] ? (sim.roads[i] === 2 ? [150, 152, 150] : sim.roads[i] === 3 ? [190, 188, 178] : [120, 104, 82])
         : t === 1 ? bio.sea : t === 2 ? bio.high.map(v => v * 0.8) : t === 3 ? [150, 90, 200] : t === 4 ? [170, 96, 60] : bio.ground.map(v => v * (sim.inMask[i] ? 0.62 : 0.42));
       im.data.set([col[0], col[1], col[2], 255], i * 4);
     }
     c.putImageData(im, 0, 0);
-    for (const b of sim.b) { c.fillStyle = (iview === 'none' ? ROLE_COL[roleOf(b.type)] : ivColor(b, iview)) || '#888'; c.globalAlpha = b.done ? 1 : 0.5; c.fillRect(b.x, b.z, b.w, b.d); }
+    for (const b of sim.b) { c.fillStyle = (iview === 'none' || iview === 'elev' ? ROLE_COL[roleOf(b.type)] : ivColor(b, iview)) || '#888'; c.globalAlpha = b.done ? 1 : 0.5; c.fillRect(b.x, b.z, b.w, b.d); }
     c.globalAlpha = 1;
   }
   const T = mmTransform();
@@ -1270,11 +1290,11 @@ function roadPreview(e) {
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
-  if (tool !== 'moveflag' && tool !== 'movehq' && tool !== 'callin' && tool !== 'starter' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
+  if (tool !== 'moveflag' && tool !== 'movehq' && tool !== 'callin' && tool !== 'starter' && tool !== 'flagpost' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
     const pl = sim.plotFor(tool, p.x, p.z, specOf(tool)?.design);
     if (pl) return { ...p, tx: pl.tx, tz: pl.tz, rot: pl.rot };
   }
-  const [w, d] = dims(tool === 'moveflag' || tool === 'callin' ? 'seflag' : tool === 'movehq' ? 'hq' : tool, tool === 'movehq' || tool === 'callin' ? 0 : rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
+  const [w, d] = dims(tool === 'moveflag' || tool === 'callin' || tool === 'flagpost' ? 'seflag' : tool === 'movehq' ? 'hq' : tool, tool === 'movehq' || tool === 'callin' ? 0 : rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -1317,6 +1337,7 @@ cv.addEventListener('pointermove', e => {
     if (e.pointerType === 'mouse') tip(o ? `Ordered: ${o.tiles.length} tiles. Click to cancel` : sim.scrub?.[i] ? `Clear this patch of ${sim.scrubName()}` : 'Nothing to clear here', e.clientX, e.clientY); return; }
   if (isRoad(tool)) roadPreview(e);
   else if (tool?.startsWith('tf:')) { const p = view.pick(e.clientX, e.clientY); tfAt = [p.x, p.z]; view.showBrush(p.x, p.z, tool.startsWith('tf:paint') ? tfR : tfR, tool === 'tf:slope' && tfA ? tfA : null); if (e.pointerType === 'mouse') tip(`${Math.round(sim.hAt(p.x, p.z) * LAND.TILE_M)} m`, e.clientX, e.clientY); }
+  else if (tool === 'flagpost') { const t = tileAt(e); hover = t; const ok = sim.canFlagPost(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'starter') { const t = tileAt(e); hover = t; const ok = sim.canStarter(t.tx, t.tz, rot); view.setGhost('starter', t.tx, t.tz, rot, ok.ok); ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'callin') { const t = tileAt(e); hover = t; const ok = sim.canFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); ciStart = { parcels: sim.startParcels(t.tx, t.tz), ok: ok.ok }; ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'land') { const p = view.pick(e.clientX, e.clientY), q = sim.parcelAt(p.x, p.z); landHover = q; if (e.pointerType === 'mouse') { const st = sim.parcelState(...q), c = sim.parcelCost(...q); tip(`<b>Parcel ${sim.parcelName(...q)}</b> · ${{ owned: 'yours', buy: `${c.sup} SUP · ${c.cr} CR · click to see`, next: esc(sim.canBuy(...q).why), far: 'must touch your ground', edge: 'never granted' }[st]}`, e.clientX, e.clientY); } }
@@ -1345,7 +1366,7 @@ function up(e) {
     if (tool === 'unroad') { const p = view.pick(e.clientX, e.clientY); ok = sim.removeLine(p.x, p.z); if (!ok) flash('No road or wall there.'); }
     else { const end = lineEnd(e), c = sim.checkLine(roadDrag, end, RTOOLS[tool].k); ok = c.ok && sim.drawLine(roadDrag, end, RTOOLS[tool].k); if (!ok && c.why !== 'Too short') flash(c.why || 'Cannot draw that here.'); }
     roadDrag = null; view.showLine(null); if (flashT <= 0) hideTip();
-    if (ok) { audio.play(tool === 'unroad' ? 'demolish' : 'place'); buildBar(); } else audio.play('deny');
+    if (ok) { audio.play(tool === 'unroad' ? 'demolish' : 'place'); if (sim.callIn === 'road') ciTrack(); else buildBar(); } else audio.play('deny');
     return;
   }
   if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; return; }
@@ -1353,7 +1374,7 @@ function up(e) {
   const d = drag; drag = null;
   if (photo) return;
   if (d.moved) return;
-  if (d.btn === 2 && (tool === 'callin' || tool === 'starter')) return;
+  if (sim.callIn) { if (d.btn === 0 && (tool === 'callin' || tool === 'starter' || tool === 'flagpost')) { const t = tileAt(e); callIn(t.tx, t.tz); } return; }
   if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else select(null); return; }
   if (tool === 'clear') {
     const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), o = sim.clearOrderAt(tz * sim.N + tx);
@@ -1361,7 +1382,6 @@ function up(e) {
     const r = sim.orderClear(tx, tz); if (!r.ok) { flash(r.why + '.'); audio.play('deny'); return; }
     flash(`${r.n} tiles ordered cleared. ${sim.crews.some(c => c.job == null && !c.wait) ? 'A crew is on its way.' : 'The next free crew will take it.'}`); audio.play('place'); return;
   }
-  if (tool === 'callin' || tool === 'starter') { const t = tileAt(e); callIn(t.tx, t.tz); return; }
   if (tool === 'land') { const p = view.pick(e.clientX, e.clientY), q = sim.parcelAt(p.x, p.z); if (sim.grantable(...q)) { landCard(q); audio.play('click'); } return; }
   if (tool === 'movehq') {
     const t = tileAt(e), r = sim.moveHQ(t.tx, t.tz);
@@ -1546,7 +1566,7 @@ function loopBody(now) {
   }
   if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
   if (playing && sim && tfDrag) tfStroke(Math.min(0.05, dt));
-  if (playing && view.brush?.visible && !tool?.startsWith('tf:')) view.showBrush(null);
+  if (playing && view.brush?.visible && !tool?.startsWith('tf:') && !sim?.callIn) view.showBrush(null);
   if (playing && sim) { view.showParcels(tool === 'land' ? 'land' : tool === 'callin' ? 'callin' : null, tool === 'land' ? landHover : null, tool === 'callin' ? ciStart : null); if (tool !== 'land' && landSel) landCard(null); else if (landSel) landCard(landSel); }
   if (!view.lost) { const t0 = performance.now(); view.frame(dt); frameMs = frameMs * 0.9 + (performance.now() - t0) * 0.1; }
   if (debugOn) debugPanel(dt);

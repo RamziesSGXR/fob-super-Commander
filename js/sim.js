@@ -19,13 +19,13 @@ import { Utilities } from './utils.js';
 import { Land, GRID } from './land.js';
 import { Terrain, TERRA } from './terrain.js';
 import { Market, bindMarket } from './market.js';
-import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
+import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS, absorb } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const FAST = [1, ROADS[1].speed, ROADS[2].speed];
+const FAST = [1, ROADS[1].speed, ROADS[2].speed, ROADS[3].speed];
 // wheels belong on roads: off them a vehicle crawls, so routes follow the road network wherever there is one
-const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed];
+const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed, 0.3];
 
 export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of RANKS) if (missions >= n) r = name; return r; }
 
@@ -95,7 +95,6 @@ export class Sim {
     this.newOffers(); this.newOrder();
     this.ranking(); this.tick(); this.marketInit();
     this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base. You have open ground, a command post and ${C.START.supplies} supplies: draw a road, then build along it.`);
-    if (!opts.flat) this.startSweep();
     this.say('def', 'The Ministry of Defence expects trained troopers. Train your recruits; transports leave from the landing pad every afternoon.');
     this.recalc();
   }
@@ -198,7 +197,8 @@ export class Sim {
 
   // ---------------------------------------------------------------- roads and walls: one line tool
   roadPrice(type) { return type === 2 && this.hasTech('asphalt') ? Math.ceil(ROADS[2].cost / 2) : ROADS[type].cost; }
-  linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : k === 'bridge' ? 2 * C.BRIDGE : 1); }   // per tile of length; paved is two wide
+  linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : k === 'bridge' ? 2 * C.BRIDGE : 1); }
+  tilePrice(surf) { return surf ? this.roadPrice(surf) : 0; }   // what one cell of a road is worth   // per tile of length; paved is two wide
   snapLine(p, mode, k, from) { return snap(this.net, p, mode, KINDS[k].w, from); }
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
   checkLine(a, b, k, dry) {
@@ -206,15 +206,23 @@ export class Sim {
     if (k === 'bridge') return this.checkBridge(a, b, len, tiles);
     // nothing joins a bridge partway across: roads meet it at its ends, where it stands on the ground
     for (const p of [a, b]) { const d = this.deckAt(p.x, p.z); if (d != null && Math.abs(d - this.hAt(p.x, p.z)) > 0.25) return { ok: false, why: 'Roads join a bridge at its ends, not across the span', cost: 0 }; }
-    // a road climbs only so steeply from one tile to the next (walls go where they must)
-    if (k !== 'wall' && this.hgt) { let ph = null; for (const [x, z] of tiles) { const h = this.hAt(x + 0.5, z + 0.5); if (ph !== null && Math.abs(h - ph) > TERRA.roadGrade) return { ok: false, why: `Too steep for a road here (${Math.round(Math.abs(h - ph) * 100)}% grade): ease the slope (LANDSCAPE)`, cost: 0 }; ph = h; } }
-    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: nothing is built on it', cost: 0 }; } }
-    const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
+    for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: lay a bridge across it', cost: 0 }; } }
+    let cost = Math.ceil(len) * this.linePrice(k);
+    if (k !== 'wall') {
+      // a road is graded as it is laid: it follows the ground, eased into an even climb, and costs more the steeper it is
+      const pr = this.roadProfile(a, b), lim = k === 'path' ? TERRA.pathMax : TERRA.roadMax;
+      if (pr.max > lim) return { ok: false, why: `Too steep even graded (${Math.round(pr.max * 100)}%, the most is ${Math.round(lim * 100)}%): ease the slope (LANDSCAPE) or go round`, cost: 0 };
+      // laid over roads already there, you pay only the difference: nothing for the same again, a refund for a lesser one
+      const np = this.tilePrice(KINDS[k].surf); let sum = 0, fresh = 0;
+      for (const [x, z] of tiles) { const old = this.roads[z * this.N + x]; sum += np - this.tilePrice(old); if (!old) fresh++; }
+      cost = fresh ? Math.round(sum * (sum > 0 ? 1 + pr.mean * TERRA.gradeCost : 1)) : Math.round(sum);
+      if (!fresh && sum === 0 && !tiles.some(([x, z]) => this.roads[z * this.N + x] !== KINDS[k].surf)) return { ok: false, why: 'That road is already here', cost: 0 };
+    }
     if (tiles.some(([x, z]) => !this.ownedTile(x, z))) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)', cost };
     if (len < 0.9) return { ok: false, why: 'Too short', cost };
     if (a.x < 0 || a.z < 0 || b.x < 0 || b.z < 0 || a.x > this.N || a.z > this.N || b.x > this.N || b.z > this.N) return { ok: false, why: 'Off the map', cost };
     for (const [x, z] of lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w)) if (this.occ[z * this.N + x]) return { ok: false, why: 'A building is in the way', cost };
-    if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
+    if (cost > 0 && this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
     return { ok: true, cost };
   }
   // a wall drawn across water stops at each shore and picks up on the far side: the water closes the gap
@@ -271,8 +279,35 @@ export class Sim {
     const c = this.checkLine(a, b, k); if (!c.ok) return null;
     if (c.runs) { let first = null; for (const [p, q] of c.runs) { const s = addLine(this.net, p, q, k); if (s) { first ??= s; } } if (first) { this.spend('build', c.cost); this.rebuildNet(); } return first; }
     const s = addLine(this.net, a, b, k); if (!s) return null;
+    if (k !== 'wall' && k !== 'bridge') { absorb(this.net, s); this.gradeRoad(s); }
     if (k === 'bridge') for (const id of [s.a, s.b]) { const n = this.net.nodes.find(n => n.id === id); n.h ??= this.hAt(n.x, n.z); }   // the deck's ends stay where they were laid
-    this.spend('build', c.cost); this.rebuildNet(); return s;
+    if (c.cost >= 0) this.spend('build', c.cost); else this.earn('refund', -c.cost);
+    this.rebuildNet(); return s;
+  }
+  // the climb along a road from a to b: the ground under its centreline, cell by cell, eased toward an even grade with the
+  // two ends left where they are. max and mean are the grade (rise over run) of the eased line
+  roadProfile(a, b) {
+    const L = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(L)), h = [];
+    for (let i = 0; i <= n; i++) h.push(this.hAt(a.x + (b.x - a.x) * i / n, a.z + (b.z - a.z) * i / n));
+    for (let pass = 0; pass < 10; pass++) for (let i = 1; i < n; i++) h[i] = (h[i - 1] + h[i] * 2 + h[i + 1]) / 4;
+    let max = 0, sum = 0; const st = L / n;
+    for (let i = 0; i < n; i++) { const g = Math.abs(h[i + 1] - h[i]) / st; if (g > max) max = g; sum += g; }
+    return { h, n, max, mean: sum / n };
+  }
+  // cut and fill: the ground under a new road takes the road's eased line, level across its width, with the verges
+  // eased in. Corners under buildings and other roads stay put
+  gradeRoad(sg) {
+    if (!this.hgt) return;
+    const a = this.net.nodes.find(n => n.id === sg.a), b = this.net.nodes.find(n => n.id === sg.b), pr = this.roadProfile(a, b), M = this.N + 1;
+    const L2 = (b.x - a.x) ** 2 + (b.z - a.z) ** 2 || 1, r0 = sg.w / 2 + 0.75, r1 = r0 + 1.5;
+    const x0 = Math.floor(Math.min(a.x, b.x) - r1), x1 = Math.ceil(Math.max(a.x, b.x) + r1), z0 = Math.floor(Math.min(a.z, b.z) - r1), z1 = Math.ceil(Math.max(a.z, b.z) + r1);
+    for (let j = Math.max(0, z0); j <= Math.min(M - 1, z1); j++) for (let i = Math.max(0, x0); i <= Math.min(M - 1, x1); i++) {
+      const t = Math.max(0, Math.min(1, ((i - a.x) * (b.x - a.x) + (j - a.z) * (b.z - a.z)) / L2)), d = Math.hypot(i - a.x - t * (b.x - a.x), j - a.z - t * (b.z - a.z));
+      if (d > r1 || this.lockedCorner(i, j)) continue;
+      const f = t * pr.n, k0 = Math.min(pr.n - 1, Math.floor(f)), target = Math.max(0.06, pr.h[k0] + (pr.h[k0 + 1] - pr.h[k0]) * (f - k0)), k = j * M + i;
+      this.hgt[k] += (target - this.hgt[k]) * (d <= r0 ? 1 : (r1 - d) / (r1 - r0) * 0.7);
+    }
+    this.reclassify(x0 - 1, z0 - 1, x1 + 1, z1 + 1);
   }
   removeLine(x, z) {
     const s = nearestSeg(this.net, x, z); if (!s) return null;
@@ -377,6 +412,7 @@ export class Sim {
       const tx = x + i, tz = z + j;
       if (!this.inside(tx, tz)) return { ok: false, why: !this.ownedTile(tx, tz) ? 'Outside your land: buy the parcel first (LAND)' : this.walls[tz * this.N + tx] ? 'A wall is in the way' : 'Off the map' };
       if (this.occ[tz * this.N + tx] && this.occ[tz * this.N + tx] !== self) return { ok: false, why: 'Something is in the way' };
+      if (this.sweeping(tx, tz)) return { ok: false, why: 'This parcel is still being swept: build here once it is declared secure' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
       const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
     }

@@ -8,9 +8,11 @@
 export const KINDS = {
   dirt:  { name: 'Dirt Road', w: 1, surf: 1 },
   paved: { name: 'Paved Road', w: 2, surf: 2 },
-  bridge: { name: 'Bridge', w: 2, surf: 2 },   // a paved deck on piers: spans water, ravines and rough ground
+  bridge: { name: 'Bridge', w: 2, surf: 2 },
+  path: { name: 'Footpath', w: 1, surf: 3 },   // a paved walk, one cell: people move as on a paved road, vehicles ignore it   // a paved deck on piers: spans water, ravines and rough ground
   wall:  { name: 'Wall', w: 1, surf: 0 },
 };
+const RANK = [0, 2, 3, 1];   // where two cross, the better surface shows: paved, then dirt, then a footpath
 const REACH = 0.22;   // tiles within half the width plus this of the centreline belong to a segment (keeps diagonals 4-connected)
 
 export function emptyNet() { return { nodes: [], segs: [], nid: 1 }; }
@@ -36,7 +38,7 @@ export function lineTiles(N, ax, az, bx, bz, w) {
 // 45: the direction from the start is held to multiples of 45 degrees and the length to whole tiles; free: no snapping.
 // Existing nodes and segments always pull the end onto them, so roads join up.
 export function snap(net, p, mode, w, from) {
-  const near = net.nodes.map(n => [n, Math.hypot(n.x - p.x, n.z - p.z)]).filter(([, d]) => d < 0.8).sort((a, b) => a[1] - b[1])[0];
+  const near = net.nodes.map(n => [n, Math.hypot(n.x - p.x, n.z - p.z)]).filter(([, d]) => d < 1.3).sort((a, b) => a[1] - b[1])[0];
   if (near) return { x: near[0].x, z: near[0].z, node: near[0].id };
   let x = p.x, z = p.z;
   const g = v => w % 2 ? Math.floor(v) + 0.5 : Math.round(v);
@@ -51,7 +53,8 @@ export function snap(net, p, mode, w, from) {
   let best = null;
   for (const s of net.segs) {
     const a = node(net, s.a), b = node(net, s.b), r = distSeg(x, z, a.x, a.z, b.x, b.z);
-    if (r.d < 0.6 && r.t > 0.02 && r.t < 0.98 && (!best || r.d < best.d)) best = { d: r.d, seg: s.id, x: a.x + (b.x - a.x) * r.t, z: a.z + (b.z - a.z) * r.t };
+    // a line ending beside a road (close enough to touch it) joins its centreline, so the two become one junction
+    if (r.d < (s.k === 'wall' ? 0.6 : s.w / 2 + w / 2 + 0.35) && r.t > 0.02 && r.t < 0.98 && (!best || r.d < best.d)) best = { d: r.d, seg: s.id, x: a.x + (b.x - a.x) * r.t, z: a.z + (b.z - a.z) * r.t };
   }
   if (best) return { x: best.x, z: best.z, seg: best.seg };
   return { x, z };
@@ -76,6 +79,17 @@ export function addLine(net, p, q, k, w = KINDS[k].w) {
   if (a === b) return null;
   const s = { id: net.nid++, a, b, k, w }; net.segs.push(s); return s;
 }
+// a new road laid along old ones takes their place: any road whose two ends both lie on the new one is removed
+export function absorb(net, s) {
+  const a = node(net, s.a), b = node(net, s.b), gone = [];
+  for (const o of net.segs) {
+    if (o === s || o.k === 'wall' || o.k === 'bridge' || s.k === 'bridge') continue;
+    const p = node(net, o.a), q = node(net, o.b);
+    if (distSeg(p.x, p.z, a.x, a.z, b.x, b.z).d < 0.3 && distSeg(q.x, q.z, a.x, a.z, b.x, b.z).d < 0.3) gone.push(o.id);
+  }
+  if (gone.length) { net.segs = net.segs.filter(o => !gone.includes(o.id)); const used = new Set(net.segs.flatMap(o => [o.a, o.b])); net.nodes = net.nodes.filter(n => used.has(n.id)); }
+  return gone.length;
+}
 export function nearestSeg(net, x, z, max = 0.9) {
   let best = null;
   for (const s of net.segs) { const a = node(net, s.a), b = node(net, s.b), r = distSeg(x, z, a.x, a.z, b.x, b.z); if (r.d < Math.max(max, s.w / 2 + 0.3) && (!best || r.d < best.d)) best = { d: r.d, s }; }
@@ -95,7 +109,7 @@ export function raster(net, N, block = null, win = null) {
     const a = node(net, s.a), b = node(net, s.b);
     for (const [x, z] of lineTiles(N, a.x, a.z, b.x, b.z, s.w)) {
       const i = z * N + x;
-      if (s.k === 'wall') walls[i] = 1; else roads[i] = Math.max(roads[i], KINDS[s.k].surf);
+      if (s.k === 'wall') walls[i] = 1; else if (RANK[KINDS[s.k].surf] > RANK[roads[i]]) roads[i] = KINDS[s.k].surf;
     }
   }
   each(i => { if (walls[i] && roads[i]) walls[i] = 2; });   // a road through a wall is a gate

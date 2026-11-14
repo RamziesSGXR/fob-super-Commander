@@ -52,8 +52,9 @@ export class View {
     this.scene = new THREE.Scene();
     this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 6000);
     this.persp = new THREE.PerspectiveCamera(50, 1, 0.05, 700);   // photo mode: a free camera you can tilt down to ground level
-    this.cam = this.ortho; this.photo = false; this.dist = 18; this.distT = 18; this.tilt = 0.6; this.tiltT = 0.6;
-    this.yaw = Math.PI / 4; this.yawT = this.yaw; this.pitch = 0.68; this.zoom = 9; this.zoomT = 9;
+    this.gcam = new THREE.PerspectiveCamera(30, 1, 0.5, 9000);   // the game's own camera
+    this.cam = this.gcam; this.photo = false; this.dist = 18; this.distT = 18; this.tilt = 0.6; this.tiltT = 0.6;
+    this.yaw = Math.PI / 4; this.yawT = this.yaw; this.pitch = 0.82; this.zoom = 9; this.zoomT = 9;
     this.target = new THREE.Vector3(0, 0, 2); this.ray = new THREE.Raycaster(); this.t = 0;
     const hemi = this.hemi = new THREE.HemisphereLight('#dfe9ff', '#6b5638', 1.1); this.scene.add(hemi);
     const sun = this.sun = new THREE.DirectionalLight('#fff1d6', 2.4);
@@ -143,6 +144,7 @@ export class View {
     im.material.opacity = ghost ? 0.22 : 1; im.material.depthWrite = !ghost; im.castShadow = !ghost;
     this.r.shadowMap.needsUpdate = true;
   }
+  setElev(on) { (this.uElev ||= { value: 0 }).value = on ? 1 : 0; }
   // the RESOURCES view: E-710 seeps (violet), ore (rust), water and rock marked on the ground, crystals showing
   showResources(on) {
     if (on && !this.resG) {
@@ -243,7 +245,7 @@ export class View {
     for (const o of this.terrObjs || []) { this.world.remove(o); o.geometry?.dispose(); }
     this.terrObjs = []; const add = o => { this.terrObjs.push(o); this.world.add(o); };
     if (!T || !bio) return;
-    const wm = this.waterMat ||= new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86, defines: { NO_HGT: '' } });
+    const wm = this.waterMat ||= new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86, defines: { STANDARD: '', NO_HGT: '' } });
     const wg = new THREE.PlaneGeometry(N, N); wg.rotateX(-Math.PI / 2); const wi = new THREE.Mesh(wg, wm); wi.position.y = WL + 0.03; wi.receiveShadow = true; add(wi);
     const W = s.win ? s.win(LAND.PARCEL) : [0, 0, N, N], dp = [];
     for (let z = W[1]; z < W[3]; z++) for (let x = W[0]; x < W[2]; x++) { const i = z * N + x; if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
@@ -264,32 +266,51 @@ export class View {
     this.paintTiles(0, 0, N, N);
     HG.load(s);
     const lin = c => new THREE.Color().setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace);
-    const U = { uGA: { value: this.gndA }, uGB: { value: this.gndB }, uN: { value: N }, uHue: { value: lin(hue) }, uBed: { value: lin((bio?.sea || [70, 110, 150]).map(v => v * 0.7)) } };
-    const gm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }); gm.defines = { NO_HGT: '' };
+    const U = { uGA: { value: this.gndA }, uGB: { value: this.gndB }, uN: { value: N }, uHue: { value: lin(hue) }, uBed: { value: lin((bio?.sea || [70, 110, 150]).map(v => v * 0.7)) }, uElev: this.uElev ||= { value: 0 }, uGrid: this.uGrid ||= { value: 0 } };
+    const gm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }); gm.defines = { STANDARD: '', NO_HGT: '' };
     gm.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTpW; varying vec3 vTpN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTpW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTpN = normalize(mat3(modelMatrix) * objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 varying vec3 vTpW; varying vec3 vTpN;
-uniform sampler2D uGA; uniform sampler2D uGB; uniform float uN; uniform vec3 uHue; uniform vec3 uBed;
+uniform sampler2D uGA; uniform sampler2D uGB; uniform float uN; uniform vec3 uHue; uniform vec3 uBed; uniform float uElev; uniform float uGrid;
 float tpH(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5); float b = fract(sin(dot(i + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5); float c = fract(sin(dot(i + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5); float d = fract(sin(dot(i + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
 float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z); return tpH(p.zy * 3.1) * w.x + tpH(p.xz * 3.1) * w.y + tpH(p.xy * 3.1) * w.z; }`)
         .replace('#include <map_fragment>', `#include <map_fragment>
-{ vec2 cuv = (vTpW.xz + uN * 0.5) / uN; vec4 A = texture2D(uGA, cuv), P = texture2D(uGB, cuv);
-  vec2 w = vTpW.xz; float n1 = tpH(w * 0.035) * 0.55 + tpH(w * 0.11) * 0.3 + tpH(w * 0.5) * 0.15, n2 = tpH(w * 1.9), gr = tpGrain(vTpW, vTpN) * 0.6 + tpGrain(vTpW * 3.7, vTpN) * 0.4;
+{ vec2 w = vTpW.xz, cuv = (w + uN * 0.5) / uN; float px = max(fwidth(w).x, fwidth(w).y);   // world units to a pixel: fine detail fades out before it can shimmer
+  // the per-cell data is read warped by noise and blurred over a cell and a half, so nothing shows the grid
+  cuv += (vec2(tpH(w * 0.8), tpH(w * 0.8 + 31.7)) - 0.5) * 1.8 / uN; float o = 0.75 / uN;
+  vec4 A = (texture2D(uGA, cuv) * 2.0 + texture2D(uGA, cuv + vec2(o, 0)) + texture2D(uGA, cuv - vec2(o, 0)) + texture2D(uGA, cuv + vec2(0, o)) + texture2D(uGA, cuv - vec2(0, o))) / 6.0;
+  vec4 P = (texture2D(uGB, cuv) * 2.0 + texture2D(uGB, cuv + vec2(o, 0)) + texture2D(uGB, cuv - vec2(o, 0)) + texture2D(uGB, cuv + vec2(0, o)) + texture2D(uGB, cuv - vec2(0, o))) / 6.0; float n1 = tpH(w * 0.035) * 0.55 + tpH(w * 0.11) * 0.3 + tpH(w * 0.5) * 0.15, n2 = mix(tpH(w * 1.9), 0.5, smoothstep(0.2, 0.5, px)), gr = mix(tpGrain(vTpW, vTpN) * 0.6 + tpGrain(vTpW * 3.7, vTpN) * 0.4, 0.5, smoothstep(0.08, 0.25, px));
   vec3 col = uHue * (0.78 + n1 * 0.44) * (0.96 + n2 * 0.08);
+  // variety: warm bare patches, darker growth, grey gravel, and a fine speckle, each on its own scale
+  col = mix(col, col * vec3(1.14, 1.04, 0.88), smoothstep(0.45, 0.72, tpH(w * 0.011 + 3.0)) * 0.55);
+  col = mix(col, col * vec3(0.74, 0.86, 0.7), smoothstep(0.5, 0.78, tpH(w * 0.027 + 11.0)) * 0.6);
+  col = mix(col, vec3(dot(col, vec3(0.333))) * 0.84, smoothstep(0.6, 0.8, tpH(w * 0.06 + 40.0)) * 0.5);
+  col *= 0.92 + 0.16 * mix(tpH(w * 5.0), 0.5, smoothstep(0.07, 0.18, px));
   col *= 0.95 + clamp(vTpW.y * 0.006, -0.1, 0.18);                                             // drier and paler higher up
   col = mix(col, uHue * vec3(0.52, 0.5, 0.42), A.b * 0.45);                                       // mud by the water
-  col = mix(col, col * vec3(0.86, 0.8, 0.94), step(0.7, A.a) * 0.6);                              // E-710 seeps stain it
-  col = mix(col, col * vec3(0.98, 0.84, 0.74), step(0.3, A.a) * (1.0 - step(0.7, A.a)) * 0.6);   // ore rusts it
+  col = mix(col, col * vec3(0.86, 0.8, 0.94), smoothstep(0.6, 0.85, A.a) * 0.6);                              // E-710 seeps stain it
+  col = mix(col, col * vec3(0.98, 0.84, 0.74), smoothstep(0.2, 0.4, A.a) * (1.0 - smoothstep(0.6, 0.85, A.a)) * 0.6);   // ore rusts it
   col = mix(col, vec3(0.83, 0.74, 0.55) * (0.85 + n1 * 0.3), P.r * 0.85);                          // sand
   col = mix(col, vec3(0.66, 0.57, 0.42) * (0.85 + n1 * 0.3), P.g * 0.85);                          // dry ground
   col = mix(col, vec3(0.32, 0.46, 0.2) * (0.8 + n1 * 0.4 + n2 * 0.1), P.b * 0.85);                 // lush grass
   col = mix(col, vec3(0.42, 0.32, 0.23) * (0.85 + n1 * 0.3), P.a * 0.85);                          // dirt
   float steep = 1.0 - clamp(vTpN.y, 0.0, 1.0), rk = max(A.g * 0.8, smoothstep(0.3, 0.62, steep));
   col = mix(col, uHue * 0.5 * (0.6 + gr * 0.7), rk);                                               // bare rock: cliffs and high rock
-  col = mix(col, uBed * (0.9 + n2 * 0.2), A.r);                                                     // the bed under the water
+  col = mix(col, uBed * (0.9 + n2 * 0.2), smoothstep(0.03, -0.3, vTpW.y));                          // the bed under the water, by depth
+  col *= 1.0 + clamp(dot(vTpN.xz, vec2(-0.6, -0.8)) * 2.2, -0.22, 0.2);                             // hillshade: slopes read even on snow
+  if (uElev > 0.5) {                                                                                // the ELEVATION view: a height ramp and contours
+    float t = clamp((vTpW.y + 1.0) / 26.0, 0.0, 1.0);
+    vec3 ramp = t < 0.25 ? mix(vec3(0.16, 0.42, 0.3), vec3(0.45, 0.62, 0.25), t * 4.0) : t < 0.5 ? mix(vec3(0.45, 0.62, 0.25), vec3(0.85, 0.75, 0.3), t * 4.0 - 1.0) : t < 0.75 ? mix(vec3(0.85, 0.75, 0.3), vec3(0.72, 0.38, 0.2), t * 4.0 - 2.0) : mix(vec3(0.72, 0.38, 0.2), vec3(0.95, 0.95, 0.95), t * 4.0 - 3.0);
+    if (vTpW.y < 0.0) ramp = vec3(0.12, 0.25, 0.45);
+    col = mix(col, ramp, 0.72);
+    float v1 = vTpW.y / 0.625, v2 = vTpW.y / 3.125;                                                 // a line every 5 m, a heavy one every 25 m
+    float l1 = 1.0 - smoothstep(0.0, 1.4 * fwidth(v1), abs(fract(v1 - 0.5) - 0.5)), l2 = 1.0 - smoothstep(0.0, 2.2 * fwidth(v2), abs(fract(v2 - 0.5) - 0.5));
+    col = mix(col, vec3(0.05), max(l1 * 0.3 * (1.0 - smoothstep(0.3, 0.6, fwidth(v1))), l2 * 0.6));
+  }
+  if (uGrid > 0.5) { vec2 gd = abs(fract(w + uN * 0.5 - 0.5) - 0.5) / max(fwidth(w), vec2(1e-5)); col = mix(col, vec3(0.62, 1.0, 0.72), (1.0 - min(min(gd.x, gd.y), 1.0)) * 0.3 * (1.0 - smoothstep(0.12, 0.4, px))); }
   diffuseColor.rgb *= col; }`);
     };
     this.gmat = gm;
@@ -301,7 +322,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     const oc = document.createElement('canvas'); oc.width = oc.height = 256; const og = oc.getContext('2d'), oi = og.createImageData(256, 256);
     for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = nz.fbm(x / 30 + 50, y / 30, 4), i = (y * 256 + x) * 4; oi.data[i] = hue[0] * (0.62 + n * 0.35); oi.data[i + 1] = hue[1] * (0.62 + n * 0.35); oi.data[i + 2] = hue[2] * (0.62 + n * 0.35); oi.data[i + 3] = 255; }
     og.putImageData(oi, 0, 0); const ot = new THREE.CanvasTexture(oc); ot.wrapS = ot.wrapT = THREE.RepeatWrapping; ot.repeat.set(N / 40 + 6, N / 40 + 6); ot.colorSpace = THREE.SRGBColorSpace;
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(N * 4 + 200, N * 4 + 200), new THREE.MeshStandardMaterial({ map: ot, roughness: 1, defines: { NO_HGT: '' } }));
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(N * 4 + 200, N * 4 + 200), new THREE.MeshStandardMaterial({ map: ot, roughness: 1, defines: { STANDARD: '', NO_HGT: '' } }));
     outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; outer.receiveShadow = true; this.world.add(outer);
     const sky = new THREE.Color(hue[0] / 255 * 0.35 + 0.36, hue[1] / 255 * 0.35 + 0.43, hue[2] / 255 * 0.35 + 0.56);   // a pale blue haze, warmed by the planet's dust
     this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 140, 300 + N);
@@ -339,7 +360,8 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       return t;
     };
     // grid shown while building
-    this.grid = new THREE.GridHelper(N - 2, N - 2, '#9dffb8', '#9dffb8'); this.grid.material.transparent = true; this.grid.material.opacity = 0.16; this.grid.position.y = 0.02; this.grid.visible = false; this.world.add(this.grid);
+    // the build grid is drawn by the ground itself (so it lies on the hills and fades out with distance)
+    { const u = this.uGrid ||= { value: 0 }; this.grid = { get visible() { return u.value > 0.5; }, set visible(v) { u.value = v ? 1 : 0; } }; }
     // selection and range markers
     this.sel = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: '#ffe600' }));
     this.sel.visible = false; this.world.add(this.sel);
@@ -369,8 +391,8 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   // and a steel rail along each side. Drawn at the deck's own height, not lifted by the shader
   bridgeFrame(a, b, w) {
     const s = this.sim, L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, ha = a.h ?? s.hAt(a.x, a.z), hb = b.h ?? s.hAt(b.x, b.z);
-    const conc = this.bridgeMat ||= new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.85, defines: { NO_HGT: '' } });
-    const rail = this.railMat ||= new THREE.MeshStandardMaterial({ color: '#5d6266', roughness: 0.5, metalness: 0.5, defines: { NO_HGT: '' } });
+    const conc = this.bridgeMat ||= new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.85, defines: { STANDARD: '', NO_HGT: '' } });
+    const rail = this.railMat ||= new THREE.MeshStandardMaterial({ color: '#5d6266', roughness: 0.5, metalness: 0.5, defines: { STANDARD: '', NO_HGT: '' } });
     const g = new THREE.Group(), ang = -Math.atan2(b.z - a.z, b.x - a.x), mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, pitch = Math.atan2(hb - ha, L);
     const slab = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(L, hb - ha), 0.35, w + 0.3), conc);
     slab.position.set(this.wx(mid.x), (ha + hb) / 2 - 0.18, this.wx(mid.z)); slab.rotation.set(0, ang, pitch, 'YZX'); slab.castShadow = slab.receiveShadow = true; g.add(slab);
@@ -394,19 +416,70 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       const L = Math.hypot(b.x - a.x, b.z - a.z) + ext, geo = new THREE.PlaneGeometry(L, w, Math.max(1, Math.ceil(L)), 1); geo.rotateX(-Math.PI / 2);   // a vertex every cell, to follow the ground
       const m = new THREE.Mesh(geo, mat); m.position.set(this.wx((a.x + b.x) / 2), y, this.wx((a.z + b.z) / 2)); m.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x); m.receiveShadow = true; g.add(m); return m;
     };
-    const dash = this.dashMat ||= new THREE.MeshBasicMaterial({ color: '#d8c35a' });
-    for (const sg of net.segs) {
-      if (sg.k === 'wall') continue;
-      const a = nd(sg.a), b = nd(sg.b), surfK = sg.k === 'paved' || sg.k === 'bridge' ? 2 : 1, y = 0.012 + surfK * 0.002;
-      if (sg.k === 'bridge') this.bridgeFrame(a, b, sg.w);
-      strip(surf, a, b, sg.w, y, this.roadMats[surfK]);
-      for (const n of [a, b]) { const c = new THREE.Mesh(new THREE.CircleGeometry(sg.w / 2, 16), this.roadMats[surfK]); c.rotation.x = -Math.PI / 2; c.position.set(this.wx(n.x), y - 0.001, this.wx(n.z)); c.receiveShadow = true; surf.add(c); }
-      if ((sg.k === 'paved' || sg.k === 'bridge') && sg.w >= 2) {   // a dashed centre line, and a raised concrete sidewalk down each side
-        const L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11;
-        for (const sd of [-1, 1]) strip(surf, { x: a.x - uz * off * sd, z: a.z + ux * off * sd }, { x: b.x - uz * off * sd, z: b.z + ux * off * sd }, 0.22, y + 0.012, this.walkMat ||= new THREE.MeshStandardMaterial({ color: '#a7a69c', roughness: 0.9 }));
-        for (let t = 0.6; t < L - 0.6; t += 0.9) { const p = { x: a.x + (b.x - a.x) * t / L, z: a.z + (b.z - a.z) * t / L }, q = { x: a.x + (b.x - a.x) * (t + 0.35) / L, z: a.z + (b.z - a.z) * (t + 0.35) / L }; strip(surf, p, q, 0.06, 0.02, dash); }
+    // Roads are built the way road tools build them: each stretch is cut back from its junctions, and every junction is
+    // its own piece of asphalt whose edge runs from one road's kerb to the next (meeting at the corner on the inside of
+    // a turn, sweeping round in an arc on the outside and at dead ends). Kerbs, centre lines and crossings belong to
+    // the stretches, so nothing is ever painted across a junction.
+    const dash = this.dashMat ||= new THREE.MeshBasicMaterial({ color: '#d8c35a' }), white = this.zebraMat ||= new THREE.MeshBasicMaterial({ color: '#d9d9d2' });
+    const walk = this.walkMat ||= new THREE.MeshStandardMaterial({ color: '#a7a69c', roughness: 0.9 });
+    this.roadMats[3] ||= new THREE.MeshStandardMaterial({ color: '#b3b1a6', roughness: 0.9 });
+    const surfOf = k => k === 'dirt' ? 1 : k === 'path' ? 3 : 2, hwOf = sg => sg.k === 'path' ? 0.36 : sg.k === 'dirt' ? 0.44 : sg.w / 2, rut = this.rutMat ||= new THREE.MeshStandardMaterial({ color: '#5d4a33', roughness: 1 }), kerbed = sg => sg.k === 'paved' || sg.k === 'bridge', KW = 0.22;
+    const yOf = sf => 0.012 + (sf === 2 ? 0.004 : sf === 1 ? 0.002 : 0.003);
+    const roads = net.segs.filter(g => g.k !== 'wall'), inc = new Map(), cut = new Map();
+    for (const sg of roads) for (const [me, ot] of [[sg.a, sg.b], [sg.b, sg.a]]) { const n = nd(me), o = nd(ot), L = Math.hypot(o.x - n.x, o.z - n.z) || 1; (inc.get(me) || inc.set(me, []).get(me)).push({ sg, ang: Math.atan2(o.z - n.z, o.x - n.x), ux: (o.x - n.x) / L, uz: (o.z - n.z) / L, hw: hwOf(sg), L }); }
+    const poly = (pts, c, y, mat) => {   // a fan from c round pts, facing up
+      const pos = [], idx = []; pos.push(this.wx(c.x), y, this.wx(c.z)); for (const p of pts) pos.push(this.wx(p.x), y, this.wx(p.z));
+      for (let k = 1; k < pts.length; k++) { const p = pts[k - 1], q = pts[k], up = (p.z - c.z) * (q.x - c.x) - (p.x - c.x) * (q.z - c.z) > 0; idx.push(0, k, k + 1, 0, k + 1, k); void up; }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => i % 3 === 1 ? 1 : 0), 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(pos.length / 3 * 2).fill(0), 2)); g.setIndex(idx);
+      const m = new THREE.Mesh(g, mat); m.receiveShadow = true; surf.add(m);
+    };
+    for (const [id, list] of inc) {
+      const N0 = nd(id); list.sort((p, q) => p.ang - q.ang);
+      const d = list.length, through = d === 2 && Math.abs(Math.abs(list[1].ang - list[0].ang) - Math.PI) < 0.1 && list[0].sg.k === list[1].sg.k;
+      if (through) { for (const e of list) cut.set(e.sg.id + ':' + id, 0); continue; }
+      // between each road and the next one round: where their near edges cross (an inside corner), or an arc (outside)
+      const gaps = list.map((e, i) => {
+        const f = list[(i + 1) % d]; let phi = f.ang - e.ang; if (phi <= 1e-6) phi += Math.PI * 2;
+        if (phi < Math.PI - 0.08) { const sn = Math.sin(phi), cs = Math.cos(phi), lim = 4 * Math.max(e.hw, f.hw); return { ce: Math.min(lim, Math.max(0, (f.hw + e.hw * cs) / sn)), cf: Math.min(lim, Math.max(0, (e.hw + f.hw * cs) / sn)) }; }
+        return { ce: 0, cf: 0, arc: phi };
+      });
+      list.forEach((e, i) => { e.cut = Math.min(e.L * 0.45, Math.max(gaps[i].ce, gaps[(i + d - 1) % d].cf)); cut.set(e.sg.id + ':' + id, e.cut); });
+      const at = (e, along, side) => ({ x: N0.x + e.ux * along - e.uz * side, z: N0.z + e.uz * along + e.ux * side });
+      const ring = [], best = list.reduce((p, q) => surfOf(q.sg.k) === 2 ? q : p, list[0]), sf = surfOf(best.sg.k), y = yOf(sf);
+      list.forEach((e, i) => {
+        const f = list[(i + 1) % d], g = gaps[i];
+        ring.push(at(e, e.cut, -e.hw), at(e, e.cut, e.hw));
+        if (g.arc) {   // sweep from this road's left kerb round to the next road's right kerb
+          const n = Math.max(2, Math.ceil(g.arc / 0.3)), a0 = e.ang + Math.PI / 2, a1 = e.ang + g.arc - Math.PI / 2, arcP = [];
+          for (let k = 0; k <= n; k++) { const t = k / n, aa = a0 + (a1 - a0) * t, r = e.hw + (f.hw - e.hw) * t; arcP.push({ x: N0.x + Math.cos(aa) * r, z: N0.z + Math.sin(aa) * r, aa, r }); }
+          ring.push(...arcP);
+          if (kerbed(e.sg) && kerbed(f.sg)) for (let k = 0; k < n; k++) { const p = arcP[k], q = arcP[k + 1], in1 = (p.r - KW / 2) / p.r, in2 = (q.r - KW / 2) / q.r; strip(surf, { x: N0.x + (p.x - N0.x) * in1, z: N0.z + (p.z - N0.z) * in1 }, { x: N0.x + (q.x - N0.x) * in2, z: N0.z + (q.z - N0.z) * in2 }, KW, y + 0.012, walk, 0.06); }
+          if (kerbed(e.sg) && e.cut > 0.01) strip(surf, at(e, e.cut, e.hw - KW / 2), at(e, 0, e.hw - KW / 2), KW, y + 0.012, walk);
+          if (kerbed(f.sg) && f.cut > 0.01) strip(surf, at(f, f.cut, -f.hw + KW / 2), at(f, 0, -f.hw + KW / 2), KW, y + 0.012, walk);
+        } else {
+          ring.push(at(e, g.ce, e.hw));
+          if (kerbed(e.sg) && e.cut - g.ce > 0.02) strip(surf, at(e, e.cut, e.hw - KW / 2), at(e, g.ce - KW / 2, e.hw - KW / 2), KW, y + 0.012, walk);
+          if (kerbed(f.sg) && f.cut - g.cf > 0.02) strip(surf, at(f, f.cut, -f.hw + KW / 2), at(f, g.cf - KW / 2, -f.hw + KW / 2), KW, y + 0.012, walk);
+        }
+      });
+      ring.push(ring[0]); poly(ring, N0, y - 0.001, this.roadMats[sf]);
+      // a crossing on each kerbed road into a junction of three or more
+      if (d >= 3) for (const e of list) if (kerbed(e.sg) && e.L > e.cut * 2 + 2) for (let o = -e.hw + KW + 0.2; o <= e.hw - KW - 0.2 + 1e-6; o += 0.3) strip(surf, at(e, e.cut + 0.15, o), at(e, e.cut + 0.6, o), 0.13, yOf(2) + 0.006, white);
+    }
+    for (const sg of roads) {
+      const a0 = nd(sg.a), b0 = nd(sg.b), L0 = Math.hypot(b0.x - a0.x, b0.z - a0.z) || 1, ux = (b0.x - a0.x) / L0, uz = (b0.z - a0.z) / L0, ca = cut.get(sg.id + ':' + sg.a) || 0, cb = cut.get(sg.id + ':' + sg.b) || 0;
+      const a = { x: a0.x + ux * ca, z: a0.z + uz * ca }, b = { x: b0.x - ux * cb, z: b0.z - uz * cb }, L = L0 - ca - cb, sf = surfOf(sg.k), y = yOf(sf), hw = hwOf(sg);
+      if (sg.k === 'bridge') this.bridgeFrame(a0, b0, sg.w);
+      if (L <= 0.01) continue;
+      strip(surf, a, b, hw * 2, y, this.roadMats[sf]);
+      if (sf === 1) for (const sd of [-1, 1]) strip(surf, { x: a.x - uz * 0.2 * sd, z: a.z + ux * 0.2 * sd }, { x: b.x - uz * 0.2 * sd, z: b.z + ux * 0.2 * sd }, 0.11, y + 0.003, rut);   // one rough lane: two wheel ruts
+      if (kerbed(sg)) {
+        const off = hw - KW / 2;
+        for (const sd of [-1, 1]) strip(surf, { x: a.x - uz * off * sd, z: a.z + ux * off * sd }, { x: b.x - uz * off * sd, z: b.z + ux * off * sd }, KW, y + 0.012, walk);
+        for (let t = 0.5; t < L - 0.6; t += 0.9) strip(surf, { x: a.x + ux * t, z: a.z + uz * t }, { x: a.x + ux * (t + 0.35), z: a.z + uz * (t + 0.35) }, 0.05, y + 0.005, dash);
       }
     }
+    this.roadCut = cut;
     mergeStatic(surf); this.roadG.add(surf);
     // walls: HESCO lines with gaps where roads run through, posts at the joints, towers on the corners
     const wallG = new THREE.Group(), gateAt = (x, z) => { const tx = Math.floor(x), tz = Math.floor(z); return tx >= 0 && tz >= 0 && tx < N && tz < N && s.walls[tz * N + tx] === 2; };
@@ -493,7 +566,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     if (this.parcelG) { this.world.remove(this.parcelG); this.parcelG.traverse(o => { o.geometry?.dispose(); if (o.material && o.material !== this.parcelMat) o.material.dispose?.(); }); this.parcelG = null; }
     if (!mode) return;
     const g = this.parcelG = new THREE.Group(); g.renderOrder = 4;
-    const fillGeo = new THREE.PlaneGeometry(P - 0.3, P - 0.3); fillGeo.rotateX(-Math.PI / 2);
+    const fillGeo = new THREE.PlaneGeometry(P - 0.3, P - 0.3, 15, 15); fillGeo.rotateX(-Math.PI / 2);   // enough vertices to drape over the hills
     const fill = new THREE.InstancedMesh(fillGeo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 1, depthWrite: false }), G * G);
     const col = new THREE.Color(), mx = new THREE.Matrix4(); let n = 0;
     const startSet = new Set((start?.parcels || []).map(p => p.join(',')));
@@ -516,12 +589,13 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     dark.count = k; dark.frustumCulled = false; dark.renderOrder = 4;
     g.add(dark, fill);
     // the grid: a faint line on every parcel edge, a bright one round the parcel under the pointer
-    const pts = [];
-    for (let i = 0; i <= G; i++) pts.push(new THREE.Vector3(this.wx(0), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(G * P), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(0)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(G * P)));
-    const grid = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.22, depthWrite: false })); grid.renderOrder = 5; g.add(grid);
+    const pts = [], S = 5, nS = G * P / S;
+    for (let i = 0; i <= G; i++) for (let k = 0; k < nS; k++) pts.push(new THREE.Vector3(this.wx(k * S), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(k * S + S), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(k * S)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(k * S + S)));
+    const grid = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.22, depthWrite: false })); grid.renderOrder = 5; grid.frustumCulled = false; g.add(grid);
     if (hover && s.grantable(hover[0], hover[1])) {
-      const [px, pz] = hover, a = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([i, j]) => new THREE.Vector3(this.wx((px + i) * P), 0.09, this.wx((pz + j) * P)));
-      const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false })); ring.renderOrder = 6; g.add(ring);
+      const [px, pz] = hover, a = [];
+      for (const [x0, z0, x1, z1] of [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]]) for (let k = 0; k < 15; k++) a.push(new THREE.Vector3(this.wx((px + x0 + (x1 - x0) * k / 15) * P), 0.09, this.wx((pz + z0 + (z1 - z0) * k / 15) * P)));
+      const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false })); ring.renderOrder = 6; ring.frustumCulled = false; g.add(ring);
     }
     this.world.add(g);
   }
@@ -539,8 +613,8 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     for (const sg of net.segs) {
       if (sg.k !== 'paved') continue;   // lamps stand on the sidewalk of paved roads: part of the road, laid with it
       const a = nd(sg.a), b = nd(sg.b), L = Math.hypot(b.x - a.x, b.z - a.z); if (L < 1) continue;
-      const ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11;
-      for (let t = 1.5, k = 0; t < L - 0.5; t += 3.2, k++) {
+      const ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11, ca = this.roadCut?.get(sg.id + ':' + sg.a) || 0, cb = this.roadCut?.get(sg.id + ':' + sg.b) || 0;
+      for (let t = ca + 1.2, k = 0; t < L - cb - 0.5; t += 3.2, k++) {
         const sd = k % 2 ? 1 : -1, x = a.x + ux * t - uz * off * sd, z = a.z + uz * t + ux * off * sd;
         spots.push([x, z, a.x + ux * t, a.z + uz * t]);
       }
@@ -638,19 +712,22 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       c.position.set(look.x + Math.sin(this.yaw) * cp * d, look.y + Math.sin(this.tilt) * d, look.z + Math.cos(this.yaw) * cp * d);
       c.lookAt(look); this.sun.target.position.copy(this.target); this.scene.fog.near = d * 0.5 + 12; this.scene.fog.far = d + 170; return;
     }
-    const c = this.cam, z = this.zoom;
-    const off = (this.shift || 0) * z * this.aspect;   // the title screen pushes the base to the right of the card
-    c.left = -z * this.aspect + off; c.right = z * this.aspect + off; c.top = z; c.bottom = -z; c.updateProjectionMatrix();
-    const d = 160, cp = Math.cos(this.pitch);
-    c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
-    c.lookAt(this.target); this.scene.fog.near = d - 34 + z * 1.2; this.scene.fog.far = d + 150 + z * 2.6;
+    // the game camera: true perspective (0.19), a long lens looking down at the ground under the target. zoom is still
+    // half the height of what you see at the target, so everything that goes by zoom works as before
+    const c = this.gcam, z = this.zoom, half = c.fov * Math.PI / 360, d = z / Math.tan(half), cp = Math.cos(this.pitch);
+    const gy = this.sim?.hAt ? Math.max(0, this.sim.hAt(this.target.x + this.N / 2, this.target.z + this.N / 2)) : 0;
+    c.aspect = this.aspect; c.near = Math.max(0.3, d * 0.5 - 45); c.far = d * 1.7 + 700;   // tight round the ground in view, for depth precision
+    if (this.shift) c.setViewOffset(this.w, this.h, this.shift * this.w / 2, 0, this.w, this.h); else if (c.view) c.clearViewOffset();
+    c.updateProjectionMatrix();
+    c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, gy + Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
+    c.lookAt(this.target.x, gy, this.target.z); this.scene.fog.near = d * 1.1 + 40; this.scene.fog.far = d * 3.2 + 500;
     this.shadowFit(z);
     this.sun.target.position.copy(this.target);
   }
   rotate(steps) { this.yawT += steps * Math.PI / 4; }
   // photo mode: a perspective camera that orbits, tilts from overhead down to eye level, and closes in
   setPhoto(on) {
-    this.photo = on; this.cam = on ? this.persp : this.ortho;
+    this.photo = on; this.cam = on ? this.persp : this.gcam;
     if (on) { this.distT = this.dist = this.zoom * 1.6; this.tiltT = this.tilt = this.pitch; }
   }
   tiltBy(d) { this.tiltT = Math.max(0.03, Math.min(1.5, this.tiltT + d)); }

@@ -185,30 +185,40 @@ export const Build = {
   clearOrderAt(i) { return (this.clr || []).find(o => o.tiles.includes(i)) || null; },
 
   // ---------------------------------------------------------------- the landing sweep
-  startSweep() {
-    const team = this.troops.filter(t => this.trained(t)).slice(0, 4); if (!team.length) return;
+  // The landing ground is clear from the start. Land bought later is swept first: a security detachment walks the new
+  // parcel, and nothing is built or grown on it until they declare it secure (the rest of the base carries on)
+  startSweep(px, pz) {
+    if (this.sweep && !this.sweep.done) { (this.sweep.more ||= []).push([px, pz]); return; }   // one detachment: the next parcel waits its turn
+    const team = this.troops.filter(t => this.trained(t) && t.state === 'idle').slice(0, 4);
     for (const t of team) { t.state = 'sweep'; t.job = null; t.at = null; t.gate = null; }
-    this.sweep = { t: 0, dur: SWEEP.dur, team: team.map(t => t.id), done: false };
-    this.say('def', `${rankOf(team[0].missions)} ${team[0].name}'s security detachment fans out to sweep the landing zone. The engineers start work once it is declared secure, by early afternoon.`);
+    this.sweep = { t: 0, dur: SWEEP.dur * (team.length ? 1 : 1.5), team: team.map(t => t.id), done: false, px, pz };
+    this.say('def', team.length ? `${rankOf(team[0].missions)} ${team[0].name}'s security detachment moves out to sweep parcel ${this.parcelName(px, pz)}. Building there starts once it is declared secure.` : `No trained troopers to spare: the engineers will walk parcel ${this.parcelName(px, pz)} themselves before building on it.`);
   },
-  secure() { return !this.sweep || this.sweep.done; },
+  secure() { return true; },   // the base itself is never held up
+  // is this cell on a parcel still being swept?
+  sweeping(x, z) {
+    const sw = this.sweep; if (!sw || sw.done || sw.px == null) return false;
+    const P = LAND.PARCEL, px = Math.floor(x / P), pz = Math.floor(z / P);
+    return (px === sw.px && pz === sw.pz) || (sw.more || []).some(([a, b]) => a === px && b === pz);
+  },
   sweepStep(dt) {
     const sw = this.sweep; sw.t += dt; if (sw.t < sw.dur) return;
-    sw.done = true;
+    sw.done = true; const name = sw.px != null ? 'Parcel ' + this.parcelName(sw.px, sw.pz) : 'The landing zone', more = sw.more || [];
     const team = sw.team.map(id => this.troop(id)).filter(Boolean);
     for (const t of team) if (t.state === 'sweep') t.state = 'idle';
     const r = () => this.rng.next(), [lo, hi] = SWEEP.salvage, sal = Math.round(lo + r() * (hi - lo));
     this.earn('salvage', sal);
     const f = SWEEP_FIND[this.site?.biome] || SWEEP_FIND.steppe, pk = a => a[Math.floor(r() * a.length)];
     const lead = team[0], lines = [
-      'The security detachment swept a ring round the landing zone in pairs, from the HQ out to the charter line.',
+      `The security detachment swept ${name.toLowerCase()} in pairs, from the old boundary out to the new stakes.`,
       pk(f[0]), pk(f[1]) + ` ${sal} supplies were brought in.`,
-      `The ground beyond the landing zone is thick with ${this.scrubName()}; the engineers will have to clear it as they build.`,
-      'The landing zone is declared secure. Everyone came home.'];
-    const rep = { id: this.nid++, day: this.time?.day || 1, week: this.week, op: 'Landing zone sweep', kind: 'Security sweep', place: null, win: true,
+      `The new ground is thick with ${this.scrubName()}; the engineers will have to clear it as they build.`,
+      `${name} is declared secure. Everyone came home.`];
+    const rep = { id: this.nid++, day: this.time?.day || 1, week: this.week, op: `${name} sweep`, kind: 'Security sweep', place: null, win: true,
       leader: lead?.name, n: team.length, veh: [], lines, def: 0, sup: sal };
     (this.reports ||= []).push(rep);
     this.events.push({ t: 'report', id: rep.id }, { t: 'secure' });
-    this.say('def', `Landing zone secure. ${sal} supplies salvaged. Engineers, you may begin.`);
+    this.say('def', `${name} secure. ${sal} supplies salvaged. Engineers, you may begin.`);
+    if (more.length) { const [px, pz] = more.shift(); this.startSweep(px, pz); if (this.sweep && !this.sweep.done) this.sweep.more = more; }
   },
 };

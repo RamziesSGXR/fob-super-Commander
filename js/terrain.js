@@ -8,7 +8,9 @@ import { GROUND, makeHeights, WL } from './site.js';
 // heights are in cells (8 m); a cell-unit of earth is 8 x 8 x 8 m
 export const TERRA = {
   maxGrade: 0.75,    // 6 m: the most a building's footprint may rise across it before it has to be levelled first
-  roadGrade: 0.13,   // about 1 m in 8: the steepest a road climbs from one cell to the next
+  roadGrade: 0.13,   // the steepest a bridge deck runs (x 1.5)
+  roadMax: 0.2, pathMax: 0.35,   // the steepest a graded road, or a footpath, may climb
+  gradeCost: 3,      // a road on a 10% grade costs 30% more
   rockGrade: 1,      // worked ground steeper than 45 degrees across a cell is bare rock
   cost: 2,           // supplies for each cell-unit of ground moved
   min: -8, max: 30,

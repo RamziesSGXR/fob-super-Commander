@@ -68,7 +68,7 @@ export const Land = {
   },
   buyParcel(px, pz) {
     const c = this.canBuy(px, pz); if (!c.ok) return c;
-    this.spend('land', c.sup, c.cr); this.own[pz * G + px] = 1; this.ownV = (this.ownV || 0) + 1; this.scrubParcel(px, pz);
+    this.spend('land', c.sup, c.cr); this.own[pz * G + px] = 1; this.ownV = (this.ownV || 0) + 1; this.scrubParcel(px, pz); this.startSweep(px, pz);
     this.stats.parcels = (this.stats.parcels || 0) + 1;
     this.rebuildNet(); this.events.push({ t: 'land', px, pz });
     const f = this.parcelInfo(px, pz);
@@ -105,9 +105,7 @@ export const Land = {
     // the starting ground is always clear: scrub only grows on the land you buy later
     if (this.scrub) for (const [px, pz] of c.parcels) for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) this.scrub[(pz * P + j) * N + px * P + i] = 0;
     this.scrubV = (this.scrubV || 0) + 1;
-    this.rebuildNet();
-    this.place('seflag', x, z, 0, true);
-    this.flagAt = [x, z]; this.callIn = 'hq';
+    this.lzAt = [x, z]; this.flagAt = [x, z]; this.callIn = 'road';   // next: a dirt track, then the Command Post, then the flag
     this.rebuildNet();
     return { ok: true };
   },
@@ -125,10 +123,19 @@ export const Land = {
     const hq = this.place('hq', hx, hz, rot, true, { std: this.std });
     this.place('pad', px, pz, rot, true);
     hq.stock = { ...B.hq.store }; for (const g in hq.stock) hq.stock[g] = this.storeCap(hq, g);
-    this.callIn = false; this.hqSet = true;
+    this.callIn = 'flagpost'; this.hqSet = true;
     this.rebuildNet();
     return { ok: true };
   },
+  // last, the colours: the Super Earth flag goes up wherever the Commander wants it on the new ground
+  canFlagPost(x, z) { return this.fits('seflag', x, z, 0); },
+  placeFlag(x, z, opts = {}) {
+    const c = opts.force ? { ok: true } : this.canFlagPost(x, z); if (!c.ok) return c;
+    this.place('seflag', x, z, 0, true); this.callIn = false; this.rebuildNet();
+    return { ok: true };
+  },
+  // how much dirt track has been laid (the landing wants a few cells before the Command Post comes down)
+  trackLen() { let L = 0; for (const g of this.net.segs) if (g.k !== 'wall') { const a = this.net.nodes.find(n => n.id === g.a), b = this.net.nodes.find(n => n.id === g.b); L += Math.hypot(b.x - a.x, b.z - a.z); } return L; },
   // both at once, for tests, the bot and the title demo: the Command Post at (x, z) facing south, the flag beside it
   canFound(x, z) {
     const N = this.N;
@@ -142,7 +149,8 @@ export const Land = {
   found(x, z, opts = {}) {
     const c = opts.force ? { ok: true } : this.canFound(x, z); if (!c.ok) return c;
     this.plantFlag(x - 2, z + 1, { force: true });
-    return this.placeStarter(x, z, 0, { force: true });
+    this.placeStarter(x, z, 0, { force: true });
+    return this.placeFlag(x - 2, z + 1, { force: true });
   },
   // somewhere sensible to put the HQ when nobody is choosing (tests, the bot, the suggestion on the call-in screen): the
   // start whose 3 x 3 parcels have the most open ground, nearer the middle on a tie

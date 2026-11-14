@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.18.0';
+export const VERSION = '0.19.0';
 
 export const C = {
   N: 1725,                  // the map is N x N cells of 8 m: a 13.8 km section of the planet, GRID x GRID parcels of PARCEL cells each
@@ -92,7 +92,8 @@ export const GOODS = {
 };
 export const GKEYS = Object.keys(GOODS);
 // Roads: tiles laid on the grid. People and vehicles move this many times faster on them.
-export const ROADS = { 1: { name: 'Dirt Road', cost: 3, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 8, speed: 2.4, walk: 1.4 } };
+export const ROADS = { 1: { name: 'Dirt Road', cost: 3, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 8, speed: 2.4, walk: 1.4 },
+  3: { name: 'Footpath', cost: 4, speed: 1, walk: 1.4 } };   // paved for boots: vehicles get nothing from it
 // Vehicles: speed in tiles per game second off-road, and what they carry.
 export const VEHICLES = {
   lift: { name: 'Forklift', speed: 0.7, load: 12 }, truck: { name: 'Supply Truck', speed: 1.0, load: 30 },
