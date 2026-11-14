@@ -25,7 +25,7 @@ export class Life {
     this.ceremony = null; this.nextFake = -1; this.t = 0;
     this.gridKey = '';
     // a new base: the first pelican brings everyone down onto the landing zone beside the HQ
-    if (sim.t < 1 && sim.b.some(b => b.type === 'hq')) {
+    if (sim.t < 1 && sim.b.some(b => b.type === 'hq') && !sim.lzLanded) {
       // onto the Command Post's own pad, if it has one; otherwise beside the HQ
       const ids = sim.troops.map(t => t.id), hq = sim.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
       const pad = sim.b.filter(b => b.type === 'pad').sort((p, q) => Math.hypot(...this.centre(p).map((v, i) => v - [cx, cz][i])) - Math.hypot(...this.centre(q).map((v, i) => v - [cx, cz][i])))[0];
@@ -161,6 +161,7 @@ export class Life {
     if (f.kind === 'landing') {   // the detachment and the engineers jump down and fan out
       f.ids.forEach((id, i) => { this.hold.delete(id); if (s.troop(id) && !this.actors.has(id)) this.person(id, 'troop', f.lx - 0.8 + (i % 4) * 0.5, f.lz + 1.2 + Math.floor(i / 4) * 0.5); });
       this.landing = false; this.lzAt = [f.lx, f.lz];
+      if (f.crates) this.lzCrates = [[-1.3, -0.6], [-1.3, -0.2], [-0.95, -0.6], [-1.3, 0.25], [1.3, -0.5], [1.3, -0.1], [1.65, -0.5], [-0.95, -0.2]].map(([dx, dz]) => [f.lx + dx, f.lz + dz]);
     }
     if (f.kind === 'supply') f.ids.forEach((id, i) => {
       this.hold.delete(id);
@@ -224,9 +225,18 @@ export class Life {
     for (const [w, f] of opts) { r -= w; if (r <= 0) { f(); return; } }
   }
 
+  // the landing, before the clock starts: the first pelican comes down on the landing zone the moment it is marked,
+  // and the detachment and its crates wait there while the track, the Command Post and the flag go in
+  callInLand(x, z) {
+    const s = this.sim; if (s.lzLanded) return; s.lzLanded = true;
+    const ids = s.troops.map(t => t.id); for (const id of ids) this.hold.add(id);
+    this.landing = true; this.queue.push({ kind: 'landing', ids, at: [x + 0.5, z + 0.5], crates: true });
+  }
+  callInUpdate(dt) { this.t += dt; this.flightsUpdate(dt); }
   update(dt) {
     this.t += dt;
     const s = this.sim;
+    if (this.lzCrates && s.t > 90) this.lzCrates = null;   // carried off to the depot
     this.flightsUpdate(dt); this.planPaths();
     if (this.cleaner) { const c = this.actors.get(this.cleaner); if (!c || c.task !== 'free') this.cleaner = null; }
     if (this.ceremony) { this.ceremony.t -= dt; if (this.ceremony.t <= 0 || !s.byId(this.ceremony.flag)) this.ceremony = null; }

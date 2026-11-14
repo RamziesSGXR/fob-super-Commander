@@ -410,6 +410,15 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   }
   // the flag plaza: open ground round the Super Earth flag with a trail round its edge. It is dressed by the charter:
   // trodden dirt at an outpost, gravel and a footpath at a FOB, pavers and lamps at a fort, pale stone and gold at a major base
+  // crates the first pelican set down on the landing zone
+  syncLz() {
+    const list = this.life?.lzCrates || null, key = list ? list.length + ':' + list[0] : '';
+    if (key === this.lzKey) return; this.lzKey = key;
+    if (this.lzG) { this.world.remove(this.lzG); this.lzG = null; }
+    if (!list || !this.m) return;
+    const G = this.lzG = new THREE.Group(); this.world.add(G);
+    for (const [x, z] of list) { const c = makeCrate(this.m); c.position.set(this.wx(x), 0, this.wx(z)); G.add(c); }
+  }
   syncPlaza() {
     const s = this.sim, f = s?.b.find(b => b.type === 'seflag'), key = f ? `${f.x},${f.z},${s.stage || 0}` : '';
     if (key === this.flagPlzKey) return; this.flagPlzKey = key;
@@ -862,7 +871,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       } }
     this.t += dt; const s = this.sim, t = this.t;
     this.camUpdate(dt);
-    this.syncRoads(); this.syncPlaza();
+    this.syncRoads(); this.syncPlaza(); this.syncLz();
     this.syncBuildings(dt);
     this.syncScrub(); this.syncZones();
     this.syncPeople(dt);

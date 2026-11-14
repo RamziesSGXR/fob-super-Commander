@@ -216,7 +216,7 @@ function ciStep() {   // set the tool and the card for the step the landing is o
   ciCard(); ciRead(null);
 }
 function ciDone() {
-  sim.begin(); life = new Life(sim); view.life = life;
+  sim.begin(); if (!sim.lzLanded) { life = new Life(sim); view.life = life; }
   tool = null; ciStart = null; view.setGhost(null); view.showParcels(null); view.showBrush(null); $('callin').classList.add('hidden'); $('hud').classList.remove('calling');
   const hq = sim.b.find(b => b.type === 'hq'); view.lookAt(hq.x + 1.5, hq.z + 1.5); view.zoomT = 24;
   audio.play('place'); buildBar(); hud(); drawMinimap(); store();
@@ -227,7 +227,7 @@ function callIn(x, z) {
   if (!r.ok) { flash(r.why); audio.play('deny'); return; }
   audio.play('place'); drawMinimap();
   if (!sim.callIn) return ciDone();
-  if (st === 'flag') { view.lookAt(x + 0.5, z + 0.5); view.zoomT = 26; flash('Landing zone marked. Now scrape a dirt track from it: drag on the ground.'); }
+  if (st === 'flag') { life.callInLand(x, z); view.lookAt(x + 0.5, z + 0.5); view.zoomT = 26; flash('Landing zone marked: the first pelican is inbound. Now scrape a dirt track from it: drag on the ground.'); }
   else if (st === 'hq') flash('The Command Post is down. Now raise the flag.');
   ciStep();
 }
@@ -1580,6 +1580,7 @@ function loopBody(now) {
     const fx = (held.has('d') || held.has('arrowright') ? 1 : 0) - (held.has('a') || held.has('arrowleft') ? 1 : 0);
     const fz = (held.has('w') || held.has('arrowup') ? 1 : 0) - (held.has('s') || held.has('arrowdown') ? 1 : 0);
     if (fx || fz) view.move(fx, fz, dt);
+    if (!paused && sim.callIn) life.callInUpdate(dt);
     if (!paused && !sim.callIn) {
       acc += dt * gameSpeed() * Sim.rate();   // the simulation's pace: a calendar hour in C.REAL_HOUR seconds at 1x
       const st0 = performance.now(); let sn = 0; while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; sn++; } if (sn) stepMs = stepMs * 0.9 + (performance.now() - st0) / sn * 0.1;

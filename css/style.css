@@ -529,3 +529,4 @@ body.ui-scifi .bi.on { border-color: var(--yellow); background-color: rgba(40, 3
 /* 0.21.2: the menu buttons never leave the screen; the name gives way first, then the day bar */
 #top .who { flex: 0 1 190px; min-width: 96px; overflow: hidden; } #top .who * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #top .menu { flex: 0 0 auto; margin-left: auto; } #top .week { flex: 0 1 190px; min-width: 96px; overflow: hidden; } #top .bigs { flex: 0 0 auto; } #top .res { flex: 0 1 300px; width: auto; min-width: 250px; }
+#hud.calling #top { bottom: 0 !important; }
