@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.12">
+<link rel="stylesheet" href="css/style.css?v=0.13">
 </head>
 <body>
 <div id="app">
@@ -101,6 +101,7 @@
       <p><b>Landing.</b> Pick a spot on the planet map. Water and cliffs can't be built on, but they shut the base in like a wall. Seeps of E-710 and ore fields are marked on the map; in the game, the RESOURCES view by the minimap shows them. You start with an outpost charter (the dashed square); bigger charters come later. Then choose where the HQ stands: it moves free until your first road.</p>
       <p><b>The screen.</b> Across the top: supplies, credits and what you owe, each with its change per day. On the left, the <b>task board</b>: your next orders and everything waiting on your desk, with the buttons to deal with it there. Bottom right, the minimap (click to go there) and the <b>info views</b>: resources, supply routes, roles, money, power, supply, condition and crew. Along the bottom, the build toolbar and the status bar, with the windows: ECONOMY, DESK, DEFENCE, EXPANSION, TRUTH, SCIENCE and STANDINGS.</p>
       <p><b>Building.</b> Draw roads first (ROADS, drag; <kbd>G</kbd> changes snapping). Buildings snap to plots along roads, door to the street. The toolbar is sorted by what things are for, and every card says what the building does and costs a day. Lay the <b>foundation</b> first (landing pad, supply depot, barracks, mess hall, firing range): these bring the money in, and the rest of the base opens once they are placed. Draw a wall round it all (DEFENCE, Wall); a road through a wall is a gate. Large buildings have three designs and add-on parts, and can be refitted later.</p>
+      <p><b>Engineers and standards.</b> Nothing goes up by itself: engineer crews of three do every building job, one job per crew. Two crews land with you; an <b>Engineer Yard</b> takes three recruits and trains another in a day. A new base starts with a security sweep of the landing zone, and building waits until it is declared secure. Beyond the landing zone the ground is covered in scrub and debris; crews clear it before they build on it, and <b>CLEAR SCRUB</b> (Roads bar) sends a crew to clear a patch for the salvage. Buildings come in three standards, picked at the top of the build bar: <b>tents</b> (cheap, fast, smaller, wear out and nobody is proud of them), <b>prefabs</b>, and <b>permanent</b> concrete (dear and slow, the most room, morale and propaganda; needs a Fort charter). Select a building to <b>UPGRADE</b> it a standard in place; it runs at half pace while the crew is in.</p>
       <p><b>Money.</b> <b>Supplies</b> build, pave and pay daily upkeep and the morning deliveries. <b>Credits</b> pay citizen wages, research and the market. You land owing the Bureau for the Founding Charter; it takes a little back every week. ECONOMY has the budget (what comes in and goes out, by source), your loans, and what each kind of building earns or costs. Credits may run into overdraft for a fee; past the limit the staff go unpaid.</p>
       <p><b>The market.</b> Every base on the planet trades supplies, rations, fuel and ammo for credits (ECONOMY, MARKET). Prices move every day, and your own trades move them against you. Rival bases post offers on the task board: they pay over the market for what they are short of and sell cheap what they have too much of.</p>
       <p><b>The routine runs itself.</b> Recruits arrive with the 07:00 pelican and train on the range, the course and the parade ground. Trained troopers ship out at 16:00 to fill the Ministry of Defence's orders. Trucks and forklifts carry rations, fuel and ammo along your roads (the SUPPLY ROUTES view shows where). The day follows the Army: First Call 06:00, Reveille 06:30, Retreat 17:00, Taps 21:00.</p>
@@ -244,28 +245,29 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.12",
-  "./js/config.js": "./js/config.js?v=0.12",
-  "./js/demo.js": "./js/demo.js?v=0.12",
-  "./js/desk.js": "./js/desk.js?v=0.12",
-  "./js/life.js": "./js/life.js?v=0.12",
-  "./js/logo.js": "./js/logo.js?v=0.12",
-  "./js/main.js": "./js/main.js?v=0.12",
-  "./js/market.js": "./js/market.js?v=0.12",
-  "./js/models.js": "./js/models.js?v=0.12",
-  "./js/net.js": "./js/net.js?v=0.12",
-  "./js/noise.js": "./js/noise.js?v=0.12",
-  "./js/path.js": "./js/path.js?v=0.12",
-  "./js/reports.js": "./js/reports.js?v=0.12",
-  "./js/rng.js": "./js/rng.js?v=0.12",
-  "./js/sim.js": "./js/sim.js?v=0.12",
-  "./js/site.js": "./js/site.js?v=0.12",
-  "./js/view.js": "./js/view.js?v=0.12",
-  "./js/voices.js": "./js/voices.js?v=0.12",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.12"
+  "./js/audio.js": "./js/audio.js?v=0.13",
+  "./js/build.js": "./js/build.js?v=0.13",
+  "./js/config.js": "./js/config.js?v=0.13",
+  "./js/demo.js": "./js/demo.js?v=0.13",
+  "./js/desk.js": "./js/desk.js?v=0.13",
+  "./js/life.js": "./js/life.js?v=0.13",
+  "./js/logo.js": "./js/logo.js?v=0.13",
+  "./js/main.js": "./js/main.js?v=0.13",
+  "./js/market.js": "./js/market.js?v=0.13",
+  "./js/models.js": "./js/models.js?v=0.13",
+  "./js/net.js": "./js/net.js?v=0.13",
+  "./js/noise.js": "./js/noise.js?v=0.13",
+  "./js/path.js": "./js/path.js?v=0.13",
+  "./js/reports.js": "./js/reports.js?v=0.13",
+  "./js/rng.js": "./js/rng.js?v=0.13",
+  "./js/sim.js": "./js/sim.js?v=0.13",
+  "./js/site.js": "./js/site.js?v=0.13",
+  "./js/view.js": "./js/view.js?v=0.13",
+  "./js/voices.js": "./js/voices.js?v=0.13",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.13"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.12"></script>
+<script type="module" src="js/main.js?v=0.13"></script>
 </body>
 </html>

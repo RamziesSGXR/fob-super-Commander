@@ -419,6 +419,9 @@ body.ui-scifi .c-sci { color: #c9a8ff; }
 #b-items { margin: 0 214px 6px max(10px, env(safe-area-inset-left)); padding: 6px 8px 8px; background: var(--panel); border-top: 1px solid var(--am-d, var(--line)); border-left: 2px solid var(--yellow); display: flex; flex-direction: column; gap: 6px; max-width: calc(100vw - 234px); }
 .bi-head { display: flex; align-items: baseline; gap: 10px; font-size: 11px; flex-wrap: wrap; } .bi-head b { color: var(--yellow); letter-spacing: 0.14em; } .bi-head span { color: var(--g-dim); }
 .bi-head em { flex-basis: 100%; font-style: normal; color: var(--amber); }
+.bi-std { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; } .bi-std > span { color: var(--g-dim); letter-spacing: 0.14em; margin-right: 2px; }
+.bi-std .btn { padding: 1px 7px; font-size: 10.5px; min-height: 0; line-height: 1.5; } .bi-std .btn.on { background: var(--yellow); color: #111; } .bi-std .btn.lock { opacity: 0.5; }
+.bi-crews { color: var(--cyan, #7fe9e0); letter-spacing: 0.1em; } .bi-crews.bad { color: var(--amber); }
 .bi-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
 .bi { flex: none; width: 128px; min-height: 0; height: 132px; padding: 4px 6px 5px; display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; font-size: 10.5px; text-align: left; border: 1px solid var(--am-d, var(--line)); background: rgba(12, 16, 14, 0.9); color: var(--g); cursor: pointer; font-family: inherit; }
 .bi .th { height: 62px; display: grid; place-items: center; margin: 0 -2px 2px; background: radial-gradient(ellipse at 50% 60%, rgba(127, 233, 224, 0.1), transparent 70%); }

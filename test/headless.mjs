@@ -39,7 +39,7 @@ function build(type, near) {
   }
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
 let step = 0, roadN = 0;
 let founded = false;
@@ -72,6 +72,13 @@ function bot() {
   if (!s.tech.cur) for (const k of ['drill', 'fortworks', 'radio', 'shelving', 'civic', 'archive', 'frv', 'cargo', 'highrise', 'warroom', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.credits >= TECH[k].cost && s.research(k)) break;
   if (s.patrols.length < 3) for (const o of s.offers) { const kinds = ['frv', 'tank'].filter(k => s.armourFree(k)); if (s.chance({ ...o, veh: kinds }) >= 0.65) { s.send(o.id, kinds); break; } }
   for (const b of s.b) if (b.cond < 55 && s.supplies > 500) s.repair(b.id);
+  // construction standards: tents to found the base, prefabs once it pays, permanent at Fort; housing and food upgraded first
+  if (s.founded() && s.week >= 2) s.setStd(s.stage >= 1 ? 2 : 1);
+  if (!s.b.some(b => b.upg)) {
+    const order = ['barracks', 'mess', 'hq', 'range', 'depot', 'medbay', 'course', 'patrol'], keep = s.stage >= 1 ? 1800 : 900;
+    const next = s.b.filter(b => s.upgradeInfo(b).ok).sort((a, b) => ((order.indexOf(a.type) + 1) || 99) - ((order.indexOf(b.type) + 1) || 99) || s.stdOf(a) - s.stdOf(b))[0];
+    if (next && s.supplies > keep + s.upgradeInfo(next).cost) s.upgrade(next.id);
+  }
 }
 
 const pad = (v, n = 6) => String(v).padStart(n);

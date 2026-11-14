@@ -36,6 +36,10 @@ export function makeMats(f) {
   m.seflag = seFlagMat(); m.hdbanner = hdBannerMat();
   m.signBurger = signMat('BIG LIBERTY BURGER', '#c0392b', '#ffe600'); m.signChicken = signMat('PATRIOT CLUCKS', '#1d3f8a', '#ffffff'); m.signCola = signMat('BUREAU COLA & FRIES', '#5a2a7a', '#ffd21f'); m.flag = flagMat(f, logo); m.banner = bannerMat(f); m.bill = billMat(f); m.tex = [logo, m.flag.map, m.banner.map, m.bill.map];
   m.potty = std('#3d7fb0'); m.pottyRoof = std('#e8ecef'); m.grime = new THREE.MeshBasicMaterial({ color: '#3a2a12', transparent: true, opacity: 0, depthWrite: false });
+  // construction standards and engineers (0.13)
+  m.canvas = std('#7d7556', { roughness: 0.95 }); m.canvasDark = std('#5a5440', { roughness: 0.95 }); m.gravel = std('#857c6a', { roughness: 1 });
+  m.ply = std('#a08560', { roughness: 0.9 }); m.hesco = std('#a89470', { roughness: 1 }); m.box1 = std('#5f6e7a', { metalness: 0.4, roughness: 0.55 }); m.box2 = std('#7a5a3a', { metalness: 0.4, roughness: 0.55 });
+  m.engSuit = std('#5d6046'); m.hardhat = std('#e8b81a', { roughness: 0.5 }); m.vest = std('#ff7a1a', { emissive: '#ff5a00', emissiveIntensity: 0.15 }); m.cross = std('#c8241e');
   return m;
 }
 // The Helldivers banner: an original design for this fan game, a yellow helmet on black over hazard stripes.
@@ -638,6 +642,13 @@ const MAKE = {
     box(g, 0.7, 0.55, 0.04, m.dark, -0.6, 0.36, 0.56);
     g.userData.blink = [ball(g, 0.05, m.glowR, 1.5, 2.55, -1.0)];
   },
+  yard(g, m) {   // an engineer yard: a vehicle shed with a roll door, HESCO, a bulldozer and stacked materials
+    slab(g, m, 3, 2, m.asphalt);
+    block(g, m, 1.5, 0.9, 1.3, -0.65, 0, -0.25, m.prim, 2);
+    box(g, 0.9, 0.6, 0.03, m.dark, -0.65, 0.4, 0.42); for (let i = 0; i < 6; i++) box(g, 0.9, 0.012, 0.035, m.steel, -0.65, 0.12 + i * 0.09, 0.43);
+    hesco(g, m, 0.95, -0.55, 3); dozer(g, m, 0.9, 0.35, -0.4);
+    for (let i = 0; i < 3; i++) box(g, 0.5, 0.06, 0.2, m.ply, 0.35, 0.04 + i * 0.065, -0.7, { ry: 0.1 * i });
+  },
   memorial(g, m) {
     box(g, 2.8, 0.08, 0.9, m.white, 0, 0.04, 0.05, { cast: false });
     box(g, 2.7, 0.8, 0.22, m.stone, 0, 0.48, -0.25); box(g, 2.78, 0.06, 0.28, m.dark, 0, 0.9, -0.25);
@@ -664,8 +675,126 @@ const MAKE = {
   },
 };
 
+// ---------------------------------------------------------------- construction standards (0.13): tents and prefabs
+// Every building with standards has a tent and a prefab version, drawn from its footprint (w x d before rotation) with a
+// few props that say what it is. Permanent is the building's own model above.
+function hesco(g, m, x, z, n = 2, ry = 0) {   // wire-mesh bastions full of sand
+  const s = new THREE.Group(); s.position.set(x, 0, z); s.rotation.y = ry; g.add(s);
+  for (let i = 0; i < n; i++) { box(s, 0.3, 0.32, 0.3, m.hesco, (i - (n - 1) / 2) * 0.31, 0.16, 0); box(s, 0.31, 0.012, 0.31, m.steel, (i - (n - 1) / 2) * 0.31, 0.32, 0, { cast: false }); }
+}
+function dozer(g, m, x, z, ry = 0) {
+  const s = new THREE.Group(); s.position.set(x, 0, z); s.rotation.y = ry; g.add(s);
+  box(s, 0.42, 0.12, 0.28, m.rubber, 0, 0.06, 0); box(s, 0.32, 0.16, 0.22, m.hazard, -0.03, 0.2, 0); box(s, 0.14, 0.14, 0.18, m.glass, -0.1, 0.34, 0);
+  box(s, 0.05, 0.16, 0.36, m.steel, 0.26, 0.1, 0); cyl(s, 0.015, 0.015, 0.12, m.dark, 0.08, 0.34, 0.06, { seg: 6 });
+}
+function tent(g, m, len, wid, x, z, ry = 0, h = 0.72, mat = m.canvas) {   // a GP-medium: low walls, a ridge roof, a door flap
+  const t = new THREE.Group(); t.position.set(x, 0, z); t.rotation.y = ry; g.add(t);
+  box(t, len, h * 0.42, wid, mat, 0, h * 0.21, 0);
+  prism(t, len + 0.04, wid + 0.1, h * 0.58, mat, 0, h * 0.42, 0);
+  box(t, Math.min(0.3, len * 0.3), h * 0.36, 0.02, m.canvasDark, 0, h * 0.18, wid / 2 + 0.012, { cast: false });
+  for (const sx of [-1, 1]) box(t, 0.012, h * 0.4, wid + 0.12, m.canvasDark, sx * len / 2, h * 0.2, 0, { cast: false });
+  return t;
+}
+function hut(g, m, len, wid, x, z, ry = 0, h = 0.62) {   // a SEA hut: plywood on a raised floor, tin roof, trim in your colour
+  const t = new THREE.Group(); t.position.set(x, 0, z); t.rotation.y = ry; g.add(t);
+  box(t, len, 0.08, wid, m.dark, 0, 0.04, 0);
+  box(t, len - 0.02, h, wid - 0.02, m.ply, 0, 0.08 + h / 2, 0);
+  box(t, len + 0.01, 0.07, wid + 0.01, m.prim, 0, 0.08 + h - 0.06, 0);
+  prism(t, len + 0.14, wid + 0.16, 0.2, m.metal, 0, 0.08 + h, 0);
+  const n = Math.max(1, Math.floor(len / 0.6));
+  for (let i = 0; i < n; i++) { const wx = -len / 2 + (i + 0.5) * len / n; if (n > 1 && i === Math.floor(n / 2)) continue; box(t, 0.2, 0.13, 0.02, m.window, wx, 0.08 + h * 0.62, wid / 2 + 0.002, { cast: false }); }
+  box(t, 0.2, 0.38, 0.02, m.trim, n > 1 ? -len / 2 + (Math.floor(n / 2) + 0.5) * len / n : 0, 0.08 + 0.19, wid / 2 + 0.004, { cast: false });
+  box(t, 0.3, 0.06, 0.14, m.dark, n > 1 ? -len / 2 + (Math.floor(n / 2) + 0.5) * len / n : 0, 0.03, wid / 2 + 0.08);
+  return t;
+}
+function container(g, m, x, z, ry = 0, mat = m.box1, y = 0, len = 1.2) {
+  const t = new THREE.Group(); t.position.set(x, y, z); t.rotation.y = ry; g.add(t);
+  box(t, len, 0.48, 0.46, mat, 0, 0.24, 0);
+  for (let i = 0; i < 6; i++) box(t, 0.025, 0.44, 0.47, m.dark, -len / 2 + 0.1 + i * (len - 0.2) / 5, 0.24, 0, { cast: false });
+  box(t, 0.02, 0.44, 0.44, m.steel, len / 2 + 0.005, 0.24, 0, { cast: false });
+  return t;
+}
+function canopy(g, m, w, d, h, mat = m.canvas) {   // posts and a flat tarp or tin roof over open ground
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.06, h, 0.06, m.steel, sx * (w / 2 - 0.05), h / 2, sz * (d / 2 - 0.05));
+  box(g, w, 0.04, d, mat, 0, h, 0);
+}
+function signPost(g, m, x, z, mat = m.prim) { box(g, 0.035, 0.5, 0.035, m.steel, x, 0.25, z); box(g, 0.34, 0.18, 0.02, mat, x, 0.48, z + 0.02); box(g, 0.24, 0.04, 0.021, m.white, x, 0.48, z + 0.025, { cast: false }); }
+function redCross(g, m, x, y, z) { box(g, 0.24, 0.24, 0.015, m.white, x, y, z, { cast: false }); box(g, 0.16, 0.05, 0.02, m.cross, x, y, z + 0.004, { cast: false }); box(g, 0.05, 0.16, 0.02, m.cross, x, y, z + 0.004, { cast: false }); }
+const SIGN_OF = { burger: 'signBurger', chicken: 'signChicken', cola: 'signCola' };
+// rows of tents (or huts) filling the back of the plot, leaving a strip at the front for the street side
+function rows(g, m, w, d, k, front = 0.35) {
+  const W = w - 0.3, D = d - 0.25 - front, n = D > 1.5 ? 2 : 1, wid = D / n - (n > 1 ? 0.18 : 0);
+  for (let i = 0; i < n; i++) { const z = -d / 2 + 0.15 + (i + 0.5) * D / n; k === 0 ? tent(g, m, W, wid, 0, z) : hut(g, m, W, wid, 0, z); }
+}
+function stdModel(type, k, w, d, m) {
+  const g = new THREE.Group(), fz = d / 2 - 0.2;
+  box(g, w - 0.08, 0.03, d - 0.08, k === 0 ? m.gravel : m.concrete, 0, 0.015, 0, { cast: false });
+  const corners = () => { sandbags(g, m, -w / 2 + 0.4, fz, 0.6); sandbags(g, m, w / 2 - 0.4, fz, 0.6); };
+  switch (type) {
+    case 'range': case 'course': {   // the training ground is the same at every standard; the shelter beside it is not
+      MAKE[type](g, m);
+      if (k === 0) tent(g, m, 0.8, 0.6, w / 2 - 0.55, -d / 2 + 0.45, 0, 0.55); else hut(g, m, 0.8, 0.55, w / 2 - 0.55, -d / 2 + 0.42, 0, 0.5);
+      break;
+    }
+    case 'depot': case 'shed': {
+      const crates = [];
+      if (k === 0) { for (let i = 0; i < 4; i++) { const x = -0.45 + (i % 2) * 0.9, z = -0.4 + Math.floor(i / 2) * 0.75; for (let j = 0; j < 4; j++) crates.push(box(g, 0.3, 0.26, 0.3, j % 3 ? m.crate : m.e710, x - 0.16 + (j % 2) * 0.32, 0.16, z - 0.16 + Math.floor(j / 2) * 0.32)); box(g, 0.72, 0.04, 0.72, m.canvas, x, 0.31, z); } }
+      else { container(g, m, -0.1, -0.55, 0, m.box1); container(g, m, -0.1, 0.0, 0, m.box2); container(g, m, -0.1, -0.28, 0, m.box1, 0.48); for (let i = 0; i < 6; i++) crates.push(box(g, 0.26, 0.24, 0.26, m.crate, 0.7, 0.14 + Math.floor(i / 2) * 0.25, -0.5 + (i % 2) * 0.3)); }
+      if (type === 'depot') g.userData.crates = crates.slice(0, 12);
+      break;
+    }
+    case 'fueldepot': {   // bladders in a berm, then horizontal tanks on cradles
+      box(g, w - 0.2, 0.14, 0.1, m.sandDark, 0, 0.07, -d / 2 + 0.15); box(g, w - 0.2, 0.14, 0.1, m.sandDark, 0, 0.07, d / 2 - 0.15); box(g, 0.1, 0.14, d - 0.2, m.sandDark, -w / 2 + 0.15, 0.07, 0); box(g, 0.1, 0.14, d - 0.2, m.sandDark, w / 2 - 0.15, 0.07, 0);
+      if (k === 0) for (const z of [-0.38, 0.38]) { const b = cyl(g, 0.55, 0.6, 0.18, m.rubber, 0, 0.1, z, { seg: 18 }); b.scale.z = 0.62; }
+      else for (const z of [-0.38, 0.38]) { cyl(g, 0.26, 0.26, 1.4, m.white, 0, 0.36, z, { rz: Math.PI / 2, seg: 14 }); for (const x of [-0.5, 0.5]) box(g, 0.08, 0.12, 0.4, m.steel, x, 0.06, z); }
+      break;
+    }
+    case 'motorpool': case 'vbay': {
+      if (k === 0) canopy(g, m, w - 0.3, d - 0.5, 0.85); else { canopy(g, m, w - 0.3, d - 0.5, 0.95, m.metal); box(g, w - 0.3, 0.8, 0.04, m.ply, 0, 0.5, -(d - 0.5) / 2); }
+      for (let i = 0; i < 3; i++) cyl(g, 0.12, 0.12, 0.1, m.rubber, -w / 2 + 0.4 + i * 0.13, 0.1 + (i % 2) * 0.05, d / 2 - 0.2, { rx: Math.PI / 2, seg: 10 });
+      container(g, m, w / 2 - 0.5, -(d - 0.5) / 2 + 0.3, 0, m.box2, 0, 0.7);
+      break;
+    }
+    case 'burger': case 'chicken': case 'cola': {   // a stall, then a container kiosk, under the chain's own sign
+      if (k === 0) { canopy(g, m, w - 0.4, d - 0.6, 0.8, m.red); box(g, w - 0.6, 0.38, 0.3, m.ply, 0, 0.19, 0.2); tent(g, m, w - 0.5, 0.6, 0, -d / 2 + 0.45); }
+      else { container(g, m, 0, -0.1, 0, m.box1, 0, w - 0.4); box(g, (w - 0.6), 0.2, 0.03, m.window, 0, 0.32, 0.14); box(g, w - 0.4, 0.04, 0.4, m.red, 0, 0.6, 0.32); }
+      plane(g, 1.2, 0.24, m[SIGN_OF[type]], 0, k === 0 ? 1.0 : 0.82, k === 0 ? 0.15 : 0.13);
+      for (let i = 0; i < 2; i++) box(g, 0.4, 0.05, 0.16, m.ply, -0.4 + i * 0.8, 0.18, d / 2 - 0.2);
+      break;
+    }
+    case 'hq': {   // the command post: tents or huts round a radio mast, the flag of the faction
+      rows(g, m, w, d, k, 0.55);
+      cyl(g, 0.02, 0.03, k === 0 ? 2.0 : 2.6, m.steel, w / 2 - 0.3, (k === 0 ? 2.0 : 2.6) / 2, -d / 2 + 0.3, { seg: 6 }); ball(g, 0.04, m.glowR, w / 2 - 0.3, k === 0 ? 2.02 : 2.62, -d / 2 + 0.3);
+      box(g, 0.34, 0.24, 0.22, m.olive, -w / 2 + 0.35, 0.12, d / 2 - 0.3); cyl(g, 0.02, 0.02, 1.3, m.steel, 0.9, 0.65, d / 2 - 0.25, { seg: 6 }); flagCloth(g, m.flag, 0.45, 0.28, 0.91, 1.15, d / 2 - 0.25);
+      corners(); break;
+    }
+    case 'mess': {
+      rows(g, m, w, d, k, 0.5);
+      box(g, 0.5, 0.36, 0.3, m.olive, w / 2 - 0.45, 0.18, d / 2 - 0.25); cyl(g, 0.035, 0.035, 0.45, m.steel, w / 2 - 0.3, 0.55, d / 2 - 0.25, { seg: 6 });
+      for (let i = 0; i < 2; i++) box(g, 0.6, 0.05, 0.12, m.ply, -0.55 + i * 0.75, 0.16, d / 2 - 0.22);
+      break;
+    }
+    case 'medbay': {
+      rows(g, m, w, d, k, 0.4);
+      redCross(g, m, 0.6, k === 0 ? 0.42 : 0.5, (k === 0 ? -0.15 : -0.15) + (d - 0.65) / 2 + 0.03);
+      signPost(g, m, -w / 2 + 0.35, fz, m.white); break;
+    }
+    case 'yard': {
+      if (k === 0) tent(g, m, 1.4, 1.0, -0.6, -0.25); else hut(g, m, 1.4, 0.95, -0.6, -0.25);
+      hesco(g, m, 0.95, -0.6, k === 0 ? 2 : 3); dozer(g, m, 0.85, 0.3, -0.5);
+      if (k === 1) container(g, m, 0.75, -0.15, Math.PI / 2, m.box2, 0, 0.7);
+      break;
+    }
+    default: rows(g, m, w, d, k); signPost(g, m, -w / 2 + 0.3, fz); if (k === 0) sandbags(g, m, w / 2 - 0.45, fz, 0.6);
+  }
+  return g;
+}
+// the debris a site is cleared of, for the picture of the ground: a few low shapes per tile, coloured by biome
+export const SCRUB_COL = { desert: ['#8a7550', '#6e5d44'], steppe: ['#6b7a3e', '#55623a'], ice: ['#cfd8de', '#a8b6c0'], jungle: ['#3f6a2c', '#2f5222'], ash: ['#4a4442', '#3a3432'] };
 export function buildModel(type, m, merge = false, spec = null) {
-  const g = new THREE.Group(); (MAKE[type] || MAKE.hab)(g, m);
+  const g = new THREE.Group();
+  if (spec?.std != null && spec.std < 2) g.add(stdModel(type, spec.std, spec.w, spec.d, m)); else (MAKE[type] || MAKE.hab)(g, m);
+  if (g.children.length === 1 && g.children[0].userData.crates) g.userData.crates = g.children[0].userData.crates;
   if (spec && (spec.design || spec.parts?.length)) decorate(g, m, spec);
   if (merge) mergeStatic(g); return g;
 }
@@ -752,9 +881,9 @@ export function mergeStatic(root) {
 
 // ---------------------------------------------------------------- people and vehicles
 export function makePerson(m, kind = 'troop') {
-  const hd = kind === 'hd', civ = kind.startsWith('civ');   // Helldivers: black and gold with a cape. Citizens: pressed, approved work clothes
-  const g = new THREE.Group(), body = kind === 'inspector' ? m.coat : hd ? m.hdArmour : civ ? m[kind] : m.uniform;
-  const helmet = hd ? m.hdArmour : m.helmet;
+  const hd = kind === 'hd', civ = kind.startsWith('civ'), eng = kind === 'eng';   // engineers: coveralls, a hard hat and a hi-vis vest   // Helldivers: black and gold with a cape. Citizens: pressed, approved work clothes
+  const g = new THREE.Group(), body = kind === 'inspector' ? m.coat : hd ? m.hdArmour : civ ? m[kind] : eng ? m.engSuit : m.uniform;
+  const helmet = hd ? m.hdArmour : eng ? m.hardhat : m.helmet;
   const leg = (x) => { const p = new THREE.Group(); p.position.set(x, 0.2, 0); g.add(p); box(p, 0.05, 0.2, 0.06, m.boots, 0, -0.1, 0); return p; };
   // an arm is a shoulder joint with the upper arm, and an elbow joint with the forearm and a clenched fist,
   // so poses like the Helldiver salute (fist at the chin, forearm upright) are possible
@@ -772,6 +901,7 @@ export function makePerson(m, kind = 'troop') {
     if (m.crestOn && !hd && !civ) { const c = plane(parts.armL, 0.04, 0.04, m.logo, -0.0235, -0.025, 0); c.rotation.y = -Math.PI / 2; }
   }
   parts.torso = box(g, 0.13, 0.19, 0.08, body, 0, 0.3, 0);
+  if (eng) { box(g, 0.138, 0.13, 0.088, m.vest, 0, 0.33, 0); box(g, 0.14, 0.018, 0.09, m.white, 0, 0.31, 0, { cast: false }); }
   parts.head = new THREE.Group(); parts.head.position.set(0, 0.44, 0); g.add(parts.head);
   ball(parts.head, 0.045, m.skin, 0, 0, 0, { seg: 8 });
   if (kind === 'inspector') { cyl(parts.head, 0.055, 0.05, 0.03, m.cap, 0, 0.035, 0, { seg: 10 }); box(parts.head, 0.07, 0.01, 0.04, m.coat, 0, 0.025, 0.05); box(parts.armR.userData.elbow, 0.07, 0.09, 0.005, m.paper, 0, -0.05, 0.035); }

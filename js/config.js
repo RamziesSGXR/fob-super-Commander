@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.12';
+export const VERSION = '0.13';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -127,7 +127,7 @@ export const MIN = {
 // the build menu, by what a building is for: [key, label, what the section is for, the buildings in it]
 export const GROUPS = [
   ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
-  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'comms', 'mast']],
+  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'comms', 'mast']],
   ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
   ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
   ['income', 'INCOME', 'Buildings that earn credits or make supplies.', ['vend', 'burger', 'chicken', 'cola', 'mart', 'casino', 'extractor', 'mine', 'factory']],
@@ -138,14 +138,14 @@ export const GROUPS = [
 ];
 // what a new base builds before anything else: these are what bring money in. Everything else waits for them
 export const FOUNDATION = ['pad', 'depot', 'barracks', 'mess', 'range'];
-export const EARLY = new Set([...FOUNDATION, 'gen', 'solar', 'potty', 'hab']);
+export const EARLY = new Set([...FOUNDATION, 'gen', 'solar', 'potty', 'hab', 'yard']);
 
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).
 export const B = {
-  hq:       { staff: 2, name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, up: 0, pw: 6, beds: 6, unique: true, fixed: true, eat: 6, lifts: 1,
+  hq:       { staff: 2, name: 'Command HQ', group: 'core', w: 3, d: 3, cost: 0, stdCost: 600, up: 0, pw: 6, beds: 8, unique: true, fixed: true, eat: 8, lifts: 1,
               store: { rations: 40, fuel: 20, ammo: 20 },
-              desc: 'The heart of the faction. Houses and feeds six votes, keeps a little of everything and a forklift.' },
+              desc: 'The heart of the faction: houses and feeds eight votes (six while it is still tents), keeps a little of everything and a forklift. Upgrade it from its card.' },
   seflag:   { name: 'Super Earth Flag', group: 'core', w: 2, d: 2, cost: 0, up: 0, prop: 6, mor: 2, unique: true, fixed: true,
               desc: 'Every base flies one, at its centre. It cannot be removed. Troops salute it, and medals are pinned beneath it.' },
   pad:      { name: 'Landing Pad', group: 'core', w: 3, d: 3, cost: 300, up: 20, pw: -1, pad: true,
@@ -160,6 +160,8 @@ export const B = {
               desc: 'A tall mast and a lot of static. Your first landing pad needs none; every tower lets you run two more.' },
   mast:     { name: 'Broadcast Mast', group: 'core', w: 2, d: 2, cost: 520, up: 22, pw: -5, prop: 9, tech: 'broadcast', needs: ['comms'], pads: 4, staff: 1,
               desc: 'Twice the height of a Comms Tower. Runs four more landing pads, and the evening broadcast reaches the whole base.' },
+  yard:     { name: 'Engineer Yard', group: 'core', w: 3, d: 2, cost: 280, up: 14, pw: -1, crews: 1, needs: ['barracks'],
+              desc: 'A shed, a stack of HESCO and a bulldozer. Takes three of your recruits and trains them as an engineer crew in a day: one more building job at a time.' },
   shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6, store: { rations: 50, fuel: 50, ammo: 50 },
               desc: 'A standard-issue storage bunker. Holds a little of everything, and looks exactly like a shed.' },
 
@@ -369,3 +371,31 @@ export const DIFF = {
   veteran:   { name: 'Veteran', desc: 'The standard posting.', charter: 3000, rate: 0.012, sup: 3600, rivals: 1, pen: 1, od: 800 },
   helldiver: { name: 'Helldiver', desc: 'A big Charter at a steep rate, hungry rivals, and a Bureau that remembers everything.', charter: 4200, rate: 0.018, sup: 3600, rivals: 1.15, pen: 1.4, od: 400 },
 };
+
+// ---------------------------------------------------------------- construction standards (design §7, after US base camp doctrine)
+// Initial (tents), temporary (prefabs) and semi-permanent (concrete). Every number in B was tuned on the permanent standard,
+// so "perm" is 1 everywhere; the others scale it. cost and time: of building it. cap: beds, seats, training places, ward beds,
+// storage and franchise sales. up: upkeep. wear: how fast it wears (a paid building regains 12 a week). mor, prop: what its
+// morale and propaganda are worth. stage: the charter it needs (1 = Fort)
+export const STD = [
+  { key: 'tent', name: 'Tent', doctrine: 'Initial', cost: 0.4, time: 0.35, cap: 0.75, up: 0.75, wear: 5, mor: 0.5, prop: 0.4,
+    desc: 'Canvas, poles and sandbags. Cheap and up in hours, but it holds fewer, wears out without constant upkeep and nobody is proud of it.' },
+  { key: 'prefab', name: 'Prefab', doctrine: 'Temporary', cost: 0.7, time: 0.65, cap: 0.9, up: 0.9, wear: 2.5, mor: 0.8, prop: 0.75,
+    desc: 'Plywood huts and shipping containers off the pelican. A proper roof, near-standard capacity, moderate upkeep.' },
+  { key: 'perm', name: 'Permanent', doctrine: 'Semi-permanent', cost: 1, time: 1, cap: 1, up: 1, wear: 1, mor: 1, prop: 1, stage: 1,
+    desc: 'Concrete and steel. Dear and slow, but it holds the most, barely wears, and the Ministry of Truth approves. Needs a Fort charter.' },
+];
+// the buildings that come in all three standards; everything else has one (and counts as permanent)
+export const STANDARDS = new Set(['hq', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'barracks', 'range', 'course', 'patrol', 'medbay',
+  'armory', 'vbay', 'mess', 'burger', 'chicken', 'cola', 'lecture', 'truth', 'club']);
+// engineers: crews of three do every building job, one job per crew. start: crews that land with you. train: seconds a
+// yard takes to turn three recruits into a crew (a day). help: extra pace for each idle trooper lending a hand (up to two)
+export const ENG = { start: 2, per: 3, train: 120, help: 0.1 };
+// scrub and debris on the ground: cleared by engineers before anything is built on it. t: seconds of crew work a tile
+// (half an hour). yield: supplies salvaged from a tile. keep: the landing zone, kept clear. patch: most tiles in one clearing order
+export const SCRUB = { t: 2.5, yield: 5, keep: 7, patch: 24,
+  density: { desert: 0.3, steppe: 0.4, ice: 0.25, jungle: 0.6, ash: 0.45 },
+  name: { desert: 'scrub and rubble', steppe: 'scrub and brush', ice: 'ice boulders and drift', jungle: 'undergrowth', ash: 'slag and debris' } };
+// the landing: the SEAF security detachment sweeps the ground round the landing zone before the engineers start.
+// dur: seconds (about eight hours). salvage: supplies found
+export const SWEEP = { dur: 42, salvage: [60, 140] };

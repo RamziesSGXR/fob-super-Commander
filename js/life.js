@@ -20,6 +20,12 @@ export class Life {
     this.hold = new Set();        // recruits still on the pelican
     this.ceremony = null; this.nextFake = -1; this.t = 0;
     this.gridKey = '';
+    // a new base: the first pelican brings everyone down onto the landing zone beside the HQ
+    if (sim.sweep && !sim.sweep.done && sim.sweep.t < 1) {
+      const ids = sim.troops.map(t => t.id), hq = sim.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
+      for (const id of ids) this.hold.add(id);
+      this.landing = true; this.queue.push({ kind: 'landing', ids, at: [cx + 4.5, cz + 2] });
+    }
   }
 
   // ---------------------------------------------------------------- walking
@@ -118,10 +124,10 @@ export class Life {
   flightsUpdate(dt) {
     // one pelican per pad at a time; pads work side by side
     for (let i = 0; i < this.queue.length; i++) {
-      const job = this.queue[i], p = this.pad(job.pad), key = p ? p.id : 0;
+      const job = this.queue[i], p = job.at ? null : this.pad(job.pad), key = job.at ? 'lz' : p ? p.id : 0;
       if (this.flights.some(f => f.padKey === key)) continue;
       this.queue.splice(i--, 1);
-      const [lx, lz] = this.landAt(key), from = rnd(0, Math.PI * 2);
+      const [lx, lz] = job.at || this.landAt(key), from = rnd(0, Math.PI * 2);
       this.flights.push({ ...job, padKey: key, lx, lz, from, ph: 'in', k: -rnd(0, 1.5), wait: 0, x: lx + Math.cos(from) * 40, z: lz + Math.sin(from) * 40, y: 14, yaw: from + Math.PI });
     }
     for (const f of this.flights) {
@@ -146,6 +152,10 @@ export class Life {
   }
   landed(f) {
     const s = this.sim;
+    if (f.kind === 'landing') {   // the detachment and the engineers jump down and fan out
+      f.ids.forEach((id, i) => { this.hold.delete(id); if (s.troop(id) && !this.actors.has(id)) this.person(id, 'troop', f.lx - 0.8 + (i % 4) * 0.5, f.lz + 1.2 + Math.floor(i / 4) * 0.5); });
+      this.landing = false; this.lzAt = [f.lx, f.lz];
+    }
     if (f.kind === 'supply') f.ids.forEach((id, i) => {
       this.hold.delete(id);
       if (!s.troop(id) || this.actors.has(id)) return;
@@ -160,7 +170,7 @@ export class Life {
     }
   }
   flightDone(f) {
-    if (f.kind === 'supply') return f.k > 5;
+    if (f.kind === 'supply' || f.kind === 'landing') return f.k > 5;
     if (f.kind === 'deploy') return f.k > 3 && f.ids.every(id => { const a = this.actors.get(id); return !a || (!a.path.length && a.act !== 'plan'); });
     if (f.kind === 'inspector') return f.k > 6 && !this.actors.has(f.inspector);
     return true;
@@ -221,16 +231,18 @@ export class Life {
       const [x, z] = hq ? this.doorOf(hq) : [this.N / 2, this.N / 2];
       this.person(t.id, 'troop', x + rnd(-0.5, 0.5), z + rnd(0, 0.5));
     }
-    this.extras();
+    this.extras(); this.engineers();
     for (const [id, a] of this.actors) {
       if (a.boarding) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (a.kind === 'troop' && !s.troop(id)) { this.actors.delete(id); continue; }
       if (a.kind === 'inspector') { this.inspector(a, dt); continue; }
+      if (a.extra === 'eng') { this.engineer(a, dt); continue; }
       if (a.extra) { this.extra(a, dt); continue; }
       const t = s.troop(id);
       if (a.delay > 0) { a.delay -= dt; continue; }
       if (a.leaving || a.returning) { if (a.act === 'walk' && this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } continue; }
       if (t.state === 'patrol') continue;
+      if (t.state === 'sweep') { this.sweeper(a, t, dt); continue; }
       // the daily routine: a ceremony beats everything, then reveille, lights out and meals, then the job, then drill
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
       const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
@@ -320,7 +332,7 @@ export class Life {
   toBed(a) {   // each night everyone finds a bunk; with none left they sleep outdoors by the HQ
     const s = this.sim, homes = s.b.filter(b => b.done && HOUSING.includes(b.type));
     if (!this.beds || this.beds.day !== s.time.day) this.beds = { day: s.time.day, used: new Map() };
-    const U = this.beds.used, home = homes.find(b => (U.get(b.id) || 0) < B[b.type].beds);
+    const U = this.beds.used, home = homes.find(b => (U.get(b.id) || 0) < s.cap(b, 'beds'));
     if (home) { U.set(home.id, (U.get(home.id) || 0) + 1); const [x, z] = this.doorOf(home); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); return; }
     const hq = s.b.find(b => b.type === 'hq') || s.b[0], [cx, cz] = this.centre(hq), ang = rnd(0, 6.28), [x, z] = this.near(cx + Math.cos(ang) * 4, cz + Math.sin(ang) * 4);
     this.go(a, x + rnd(0.2, 0.8), z + rnd(0.2, 0.8), () => { a.act = 'lie'; a.yaw = rnd(0, 6.28); });
@@ -330,6 +342,74 @@ export class Life {
     if (places.length) { const p = pick(places), [x, z] = this.doorOf(p); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
     else if (vend.length) { const v = pick(vend), [x, z] = this.front(v, rnd(0.6, 1.6), rnd(-0.6, 0.6)); this.go(a, x, z, () => { a.act = 'drink'; a.face = this.centre(v); }); }
     else { a.act = 'idle'; }
+  }
+
+  // ---------------------------------------------------------------- engineers (0.13): three to a crew, in hard hats and hi-vis.
+  // They work their crew's job (a building, an upgrade or a patch of scrub), drill at the yard while in training, knock off
+  // at Taps and sleep at their yard, or at the HQ for the crews that landed with you
+  engineers() {
+    const s = this.sim, want = new Set();
+    if (this.landing) return;
+    for (const c of s.crews || []) for (let i = 0; i < c.men.length; i++) want.add(`en${c.id}_${i}`);
+    for (const key of want) if (!this.actors.has(key)) {
+      const [cid, i] = key.slice(2).split('_').map(Number), c = s.crews.find(c => c.id === cid), home = (c.yard && s.byId(c.yard)) || s.b.find(b => b.type === 'hq');
+      const [x, z] = this.lzAt && s.t < 60 ? this.lzAt : home ? this.doorOf(home) : [this.N / 2, this.N / 2];
+      const a = this.person(key, 'eng', x + rnd(-0.6, 0.6), z + rnd(0.6, 1.2)); a.extra = 'eng'; a.crew = cid; a.n = i;
+    }
+    for (const [id, a] of this.actors) if (a.extra === 'eng' && !want.has(id)) this.actors.delete(id);
+  }
+  // where an engineer should be: a tile of scrub, a spot round a building, the yard, or home
+  engWant(a, c) {
+    const s = this.sim, ph = s.time.phase;
+    if (ph === 'night') return ['home'];
+    if (c.wait > 0) return ['train'];
+    if ((ph === 'reveille' || ph === 'retreat') && s.b.some(b => b.type === 'seflag')) return ['honors'];
+    if (ph === 'mess' || ph === 'chow') return ['mess'];
+    if (c.job == null || !s.secure()) return ['free'];
+    if (c.job < 0) { const o = (s.clr || []).find(o => o.id === c.job); if (!o?.tiles.length) return ['free']; const i = o.tiles[Math.min(a.n, o.tiles.length - 1)]; return ['clr' + i, i]; }
+    const b = s.byId(c.job); if (!b) return ['free'];
+    if (b.clr?.length) { const i = b.clr[Math.min(a.n, b.clr.length - 1)]; return ['clr' + i, i]; }
+    return ['site' + b.id, b];
+  }
+  engineer(a, dt) {
+    const s = this.sim, c = s.crews?.find(c => c.id === a.crew); if (!c) return;
+    const [want, arg] = this.engWant(a, c), home = (c.yard && s.byId(c.yard)) || s.b.find(b => b.type === 'hq');
+    if (a.task !== want) {
+      a.task = want; a.hidden = false; a.wait = 0; a.face = null; a.then = null;
+      if (want === 'honors') { if (a.act === 'plan') a.act = 'idle'; a.act = 'salute'; a.face = this.nearestFlag(a); }
+      else if (want === 'home' && home) { const [x, z] = this.doorOf(home); this.go(a, x, z, () => { a.act = 'inside'; a.hidden = true; }); }
+      else if (want === 'mess') this.toMess(a);
+      else if (want === 'train' && home) { const [x, z] = this.front(home, 1.0, (a.n - 1) * 0.5); this.go(a, x, z, () => { a.act = 'drill'; a.face = null; a.yaw = 0; }); }
+      else if (want.startsWith('clr')) { const N = this.N, x = arg % N, z = (arg / N) | 0, [nx, nz] = this.near(x, z); this.go(a, nx + 0.5 + rnd(-0.2, 0.2), nz + 0.5 + rnd(-0.2, 0.2), () => { a.act = 'build'; a.face = [x + 0.5, z + 0.5]; }); }
+      else if (want.startsWith('site')) {
+        const b = arg, [cx, cz] = this.centre(b), ang = (a.n / 3) * Math.PI * 2 + (b.id % 7), r = Math.max(b.w, b.d) / 2 + 0.55;
+        const [nx, nz] = this.near(cx + Math.cos(ang) * r, cz + Math.sin(ang) * r);
+        this.go(a, nx + 0.5, nz + 0.5, () => { a.act = 'build'; a.face = [cx, cz]; });
+      } else { a.act = 'idle'; a.wait = rnd(0.5, 3); }
+    }
+    if (a.act === 'plan') return;
+    if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } return; }
+    if (want === 'free') {   // between jobs: a smoke by the yard, a look at the plans, a walk round
+      a.wait -= dt;
+      if (a.wait <= 0) {
+        const [hx, hz] = home ? this.front(home, rnd(0.8, 2), rnd(-1.5, 1.5)) : [a.x, a.z], [x, z] = this.near(hx, hz);
+        this.go(a, x + 0.5, z + 0.5, () => { a.act = Math.random() < 0.5 ? 'look' : 'inspect'; a.face = home ? this.centre(home) : null; a.wait = rnd(5, 12); });
+      }
+    }
+    if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z);
+  }
+  // the landing sweep: each trooper takes a bearing and works outward from the HQ, stopping to scan the ground
+  sweeper(a, t, dt) {
+    const s = this.sim, sw = s.sweep; if (!sw) return;
+    if (a.task !== 'sweep') { a.task = 'sweep'; a.hidden = false; a.sw = 0; a.wait = 0; a.act = 'idle'; }
+    if (a.act === 'plan') return;
+    if (a.act === 'walk') { if (this.move(a, dt * WALK) && a.then) { const f = a.then; a.then = null; f(); } return; }
+    a.wait -= dt; if (a.wait > 0) { if (a.face) a.yaw = Math.atan2(a.face[0] - a.x, a.face[1] - a.z); return; }
+    const hq = s.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
+    const k = Math.max(0, sw.team.indexOf(t.id)), n = Math.max(1, sw.team.length), u = Math.min(1, sw.t / sw.dur);
+    const r = 5 + 13 * Math.sin(u * Math.PI), ang = (k / n) * Math.PI * 2 + a.sw * 0.5; a.sw++;
+    const [x, z] = this.near(cx + Math.cos(ang) * r, cz + Math.sin(ang) * r);
+    this.go(a, x + 0.5, z + 0.5, () => { a.act = Math.random() < 0.6 ? 'aim' : 'look'; a.face = [cx + Math.cos(ang) * (r + 6), cz + Math.sin(ang) * (r + 6)]; a.wait = rnd(1.5, 3.5); });
   }
 
   // ---------------------------------------------------------------- Helldivers and citizens: people the Bureau doesn't bill you for
