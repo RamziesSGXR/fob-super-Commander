@@ -6,6 +6,33 @@ import { BIOMES } from './site.js';
 import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
 import { Noise } from './noise.js';
+import { WL } from './site.js';
+
+// ---------------------------------------------------------------- terrain height, in every shader (0.17)
+// Rather than lift every mesh by hand, the vertex stage adds the ground's height under each vertex (in world space) to
+// everything drawn: buildings, roads, people, overlays and their shadows all sit on the ground and follow it. Meshes
+// that carry their own height (the ground itself, the water, the sky) are built with the NO_HGT define. The heights live
+// in a half-float texture, one texel per tile corner.
+export const HG = { tex: new THREE.DataTexture(new Uint16Array(1), 1, 1, THREE.RedFormat, THREE.HalfFloatType), p: new THREE.Vector4(0, 0, 1, 0) };   // p: N, on, N + 1
+HG.tex.magFilter = HG.tex.minFilter = THREE.LinearFilter; HG.tex.needsUpdate = true;
+// copy a simulation's heights into the texture (a new size means a new texture underneath the same object)
+HG.load = function (sim) {
+  const M = sim.N + 1, h = sim.hgt; if (!h) { HG.p.y = 0; return; }
+  if (HG.tex.image.width !== M) { HG.tex.dispose(); HG.tex.image = { data: new Uint16Array(M * M), width: M, height: M }; }
+  const d = HG.tex.image.data; for (let k = 0; k < M * M; k++) d[k] = THREE.DataUtils.toHalfFloat(h[k]);
+  HG.tex.needsUpdate = true; HG.p.set(sim.N, 1, M, 0);
+};
+THREE.ShaderChunk.common += `
+#ifndef NO_HGT
+uniform sampler2D uHgt; uniform vec4 uHgtP;
+float terrainH(vec2 w) { if (uHgtP.y < 0.5) return 0.0; vec2 uv = (w + uHgtP.x * 0.5 + 0.5) / uHgtP.z; return texture2D(uHgt, uv).r; }
+#endif
+`;
+THREE.ShaderChunk.project_vertex = THREE.ShaderChunk.project_vertex.replace('mvPosition = modelViewMatrix * mvPosition;',
+  '#ifndef NO_HGT\n\tvec4 hW = modelMatrix * mvPosition; hW.y += terrainH(hW.xz); mvPosition = viewMatrix * hW;\n#else\n\tmvPosition = modelViewMatrix * mvPosition;\n#endif');
+THREE.ShaderChunk.worldpos_vertex = THREE.ShaderChunk.worldpos_vertex.replace('worldPosition = modelMatrix * worldPosition;',
+  'worldPosition = modelMatrix * worldPosition;\n\t#ifndef NO_HGT\n\tworldPosition.y += terrainH(worldPosition.xz);\n\t#endif');
+THREE.Material.prototype.onBeforeCompile = function (sh) { if (HG.tex) { sh.uniforms.uHgt = { value: HG.tex }; sh.uniforms.uHgtP = { value: HG.p }; } };
 
 const TAU = Math.PI * 2;
 
@@ -80,7 +107,8 @@ export class View {
     cam.position.copy(c).addScaledVector(dir, 30); cam.lookAt(c);
     const a = W / H, k = r * 1.02; Object.assign(cam, { left: -k * a, right: k * a, top: k, bottom: -k }); cam.updateProjectionMatrix();
     const cc = new THREE.Color(); this.r.getClearColor(cc); const ca = this.r.getClearAlpha(), sh = this.r.shadowMap.enabled;
-    this.r.shadowMap.enabled = false; this.r.setRenderTarget(rt); this.r.setClearColor(0x000000, 0); this.r.clear(); this.r.render(sc, cam);
+    const hOn = HG.p.y; HG.p.y = 0;   // thumbnails stand on flat ground
+    this.r.shadowMap.enabled = false; this.r.setRenderTarget(rt); this.r.setClearColor(0x000000, 0); this.r.clear(); this.r.render(sc, cam); HG.p.y = hOn;
     this.r.readRenderTargetPixels(rt, 0, 0, W, H, px); this.r.setRenderTarget(null); this.r.setClearColor(cc, ca); this.r.shadowMap.enabled = sh;
     sc.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     const x = cv.getContext('2d'), im = x.createImageData(W, H);
@@ -124,7 +152,7 @@ export class View {
       this.resG.rotation.x = -Math.PI / 2; this.resG.position.y = 0.05; this.resG.renderOrder = 2; this.world.add(this.resG);
     }
     if (this.resG) this.resG.visible = !!on;
-    if (this.crystals) this.crystals.visible = !!on;
+    this.crystalsOn = !!on; if (this.crystals) this.crystals.visible = !!on;
   }
   // the SUPPLY ROUTES view: an arc for every route goods take, in the good's colour, with packets running along it.
   // routes: [{ a: [x, z], b: [x, z], col, live }]; live ones (a vehicle on it now) are brighter and quicker
@@ -158,31 +186,102 @@ export class View {
   }
   wx(x) { return x - this.N / 2; }
 
+  // the ground's colour, tile by tile: the biome's soil, the sea bed, bare rock on cliffs, mud by the water, lighter
+  // and drier up high, and whatever surface has been painted on
+  paintTiles(x0, z0, x1, z1) {
+    const { g, img, P, nz, hue, bio, tex } = this.gnd, N = this.N, s = this.sim, T = s.terr, d = img.data, W = N * P;
+    x0 = Math.max(0, x0); z0 = Math.max(0, z0); x1 = Math.min(N, x1); z1 = Math.min(N, z1);
+    const PAINT = [null, [206, 186, 142], [168, 146, 108], [96, 128, 66], [118, 92, 68]];
+    for (let tz = z0; tz < z1; tz++) for (let tx = x0; tx < x1; tx++) {
+      const i0 = tz * N + tx, tk = T ? T[i0] : 0, gr = s.hgt ? s.gradeOf(tx, tz, 1, 1) : 0, el = s.hgt ? s.hAt(tx + 0.5, tz + 0.5) : 0, pt = s.paint?.[i0] || 0;
+      let wet = 0; if (T && tk !== 1) for (let j = -2; j <= 2 && !wet; j++) for (let i = -2; i <= 2; i++) { const xx = tx + i, zz = tz + j; if (xx >= 0 && zz >= 0 && xx < N && zz < N && T[zz * N + xx] === 1) { wet = 1 - Math.hypot(i, j) / 3.2; break; } }
+      for (let y = tz * P; y < tz * P + P; y++) for (let x = tx * P; x < tx * P + P; x++) {
+        const n = nz.fbm(x / (2.5 * P), y / (2.5 * P), 4), f = nz.v(x * 5.3 / P, y * 5.3 / P);
+        let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
+        if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
+        else {
+          if (tk === 2) { r *= 0.62; gg *= 0.62; b *= 0.64; }
+          else if (tk === 3) { r *= 0.86; gg *= 0.84; b *= 0.88; }   // E-710 seeps and ore look like ground here: the RESOURCES view shows them
+          else if (tk === 4) { r *= 0.92; gg *= 0.88; b *= 0.84; }
+          const up = Math.max(-0.1, Math.min(0.2, el * 0.07)); r *= 0.95 + up; gg *= 0.95 + up; b *= 0.95 + up;   // drier and paler higher up
+          if (wet > 0) { const m = wet * 0.35; r = r * (1 - m) + 82 * m; gg = gg * (1 - m) + 74 * m; b = b * (1 - m) + 58 * m; }   // mud by the water
+          if (gr > 0.18) { const m = Math.min(1, (gr - 0.18) / 0.35) * 0.7; r = r * (1 - m) + hue[0] * 0.55 * m; gg = gg * (1 - m) + hue[1] * 0.55 * m; b = b * (1 - m) + hue[2] * 0.58 * m; }   // bare rock on the slopes
+          if (pt) { const c = PAINT[pt], m = 0.8; r = r * (1 - m) + c[0] * (0.85 + n * 0.3) * m; gg = gg * (1 - m) + c[1] * (0.85 + n * 0.3) * m; b = b * (1 - m) + c[2] * (0.85 + n * 0.3) * m; }
+        }
+        const i = (y * W + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0, x0 * P, z0 * P, (x1 - x0) * P, (z1 - z0) * P); tex.needsUpdate = true;
+  }
+  // the ground mesh and the height texture, from the simulation's heights
+  groundHeights() {
+    const s = this.sim, M = this.N + 1, pos = this.ground.geometry.attributes.position;
+    for (let k = 0; k < M * M; k++) pos.setY(k, s.hgt ? s.hgt[k] : 0);
+    pos.needsUpdate = true; this.ground.geometry.computeVertexNormals(); this.ground.geometry.computeBoundingSphere();
+    HG.load(s); this.hgtSeen = s.hgtV;
+  }
+  // the site's own water and rock, rebuilt when the ground is worked
+  syncTerrain() {
+    const N = this.N, s = this.sim, T = s.terr, bio = s.site ? BIOMES[s.site.biome] : null, nz = this.gnd.nz, rock = this.rockMat, mx = new THREE.Matrix4(), q = new THREE.Quaternion();
+    for (const o of this.terrObjs || []) { this.world.remove(o); o.geometry?.dispose(); }
+    this.terrObjs = []; const add = o => { this.terrObjs.push(o); this.world.add(o); };
+    if (T && bio) {
+      const wt = [], rk = [], dp = [];
+      for (let i = 0; i < N * N; i++) { if (T[i] === 1) wt.push(i); else if (T[i] === 2) rk.push(i); else if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
+      if (wt.length) {
+        const wm = this.waterMat || new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86 }); wm.defines = { NO_HGT: '' };
+        const wg = new THREE.PlaneGeometry(1.02, 1.02); wg.rotateX(-Math.PI / 2);
+        const wi = new THREE.InstancedMesh(wg, wm, wt.length); wt.forEach((i, k) => { mx.makeTranslation(this.wx(i % N + 0.5), WL + 0.03, this.wx(((i / N) | 0) + 0.5)); wi.setMatrixAt(k, mx); });
+        wi.receiveShadow = true; add(wi); this.waterMat = wm;
+      }
+      if (rk.length) {   // each rock tile gets a boulder, taller the higher the ground
+        const ri = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.75, 0), rock, rk.length);
+        rk.forEach((i, k) => {
+          const x = i % N, z = (i / N) | 0, j = nz.v(x * 1.3, z * 1.3), h = 0.35 + j * 0.7;
+          q.setFromEuler(new THREE.Euler(j * 2, j * 5, j)); mx.compose(new THREE.Vector3(this.wx(x + 0.5), h * 0.4, this.wx(z + 0.5)), q, new THREE.Vector3(0.9 + j * 0.3, h, 0.9 + j * 0.3)); ri.setMatrixAt(k, mx);
+        });
+        ri.castShadow = ri.receiveShadow = true; add(ri);
+      }
+      if (dp.length) {   // violet crystals poking out of the seeps
+        const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
+        const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
+        dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.8, 1)); ci.setMatrixAt(k, mx); });
+        ci.visible = !!this.crystalsOn; add(ci); this.crystals = ci;
+      }
+    }
+  }
   buildGround() {
     this.crystals = null;
     const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = Math.max(4, Math.min(16, Math.floor(1800 / N))), c = document.createElement('canvas');
-    c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P), d = img.data;
-    const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4], T = s.terr, H = s.hgt;
-    for (let y = 0; y < N * P; y++) for (let x = 0; x < N * P; x++) {
-      const tx = Math.floor(x / P), tz = Math.floor(y / P), n = nz.fbm(x / (2.5 * P), y / (2.5 * P), 4), f = nz.v(x * 5.3 / P, y * 5.3 / P);
-      let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
-      const tk = T ? T[tz * N + tx] : 0;
-      if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
-      else if (tk === 2) { r *= 0.62; gg *= 0.62; b *= 0.64; }
-      else if (tk === 3) { r *= 0.86; gg *= 0.84; b *= 0.88; }   // E-710 seeps and ore look like ground here: the RESOURCES view shows them
-      else if (tk === 4) { r *= 0.92; gg *= 0.88; b *= 0.84; }
-      else if (T && H) { const sh = Math.min(1, Math.max(0, (H[tz * N + tx] - bio.water) / (bio.rock - bio.water))); r *= 0.9 + sh * 0.18; gg *= 0.9 + sh * 0.18; b *= 0.9 + sh * 0.18; }
-      const i = (y * N * P + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
-    }
-    g.putImageData(img, 0, 0);
+    c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P);
+    const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4];
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
-    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.world.add(ground); this.ground = ground;
+    this.gnd = { c, g, img, P, nz, hue, bio, tex };
+    this.paintTiles(0, 0, N, N);
+    // the ground: one vertex per tile corner, at its height, lit by its own slope; cliffs get a triplanar rock grain
+    HG.load(s);
+    const geo = new THREE.PlaneGeometry(N, N, N, N); geo.rotateX(-Math.PI / 2);
+    const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }); gm.defines = { NO_HGT: '' };
+    gm.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTpW; varying vec3 vTpN;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTpW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTpN = normalize(mat3(modelMatrix) * objectNormal);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vTpW; varying vec3 vTpN;
+float tpH(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5); float b = fract(sin(dot(i + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5); float c = fract(sin(dot(i + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5); float d = fract(sin(dot(i + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
+float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z); return tpH(p.zy * 3.1) * w.x + tpH(p.xz * 3.1) * w.y + tpH(p.xy * 3.1) * w.z; }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+{ float steep = 1.0 - clamp(vTpN.y, 0.0, 1.0); float gr = tpGrain(vTpW, vTpN) * 0.6 + tpGrain(vTpW * 3.7, vTpN) * 0.4;
+  diffuseColor.rgb *= mix(0.9 + gr * 0.2, 0.55 + gr * 0.5, smoothstep(0.25, 0.6, steep));
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.34, 0.32) * (0.7 + gr * 0.5), smoothstep(0.35, 0.7, steep) * 0.6); }`);
+    };
+    const ground = new THREE.Mesh(geo, gm);
+    ground.receiveShadow = true; this.world.add(ground); this.ground = ground;
+    this.groundHeights(); this.paintSeen = s.paintV; this.terrSeen = s.terrV; s.dirtyBox = null;
     // the land beyond the wire
     const oc = document.createElement('canvas'); oc.width = oc.height = 256; const og = oc.getContext('2d'), oi = og.createImageData(256, 256);
     for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = nz.fbm(x / 30 + 50, y / 30, 4), i = (y * 256 + x) * 4; oi.data[i] = hue[0] * (0.62 + n * 0.35); oi.data[i + 1] = hue[1] * (0.62 + n * 0.35); oi.data[i + 2] = hue[2] * (0.62 + n * 0.35); oi.data[i + 3] = 255; }
     og.putImageData(oi, 0, 0); const ot = new THREE.CanvasTexture(oc); ot.wrapS = ot.wrapT = THREE.RepeatWrapping; ot.repeat.set(N / 40 + 6, N / 40 + 6); ot.colorSpace = THREE.SRGBColorSpace;
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(N * 4 + 200, N * 4 + 200), new THREE.MeshStandardMaterial({ map: ot, roughness: 1 }));
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(N * 4 + 200, N * 4 + 200), new THREE.MeshStandardMaterial({ map: ot, roughness: 1, defines: { NO_HGT: '' } }));
     outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; outer.receiveShadow = true; this.world.add(outer);
     const sky = new THREE.Color(hue[0] / 255 * 0.35 + 0.36, hue[1] / 255 * 0.35 + 0.43, hue[2] / 255 * 0.35 + 0.56);   // a pale blue haze, warmed by the planet's dust
     this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 140, 300 + N);
@@ -197,31 +296,7 @@ export class View {
       q.setFromEuler(new THREE.Euler(a, a * 2, 0)); mx.compose(new THREE.Vector3(x, sc * 0.3, z), q, new THREE.Vector3(sc, sc * 0.7, sc)); rocks.setMatrixAt(n++, mx);
     }
     rocks.castShadow = rocks.receiveShadow = true; this.world.add(rocks);
-    // the site's own water and rock
-    if (T) {
-      const wt = [], rk = [], dp = [];
-      for (let i = 0; i < N * N; i++) { if (T[i] === 1) wt.push(i); else if (T[i] === 2) rk.push(i); else if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
-      if (wt.length) {
-        const wm = new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86 });
-        const wg = new THREE.PlaneGeometry(1.02, 1.02); wg.rotateX(-Math.PI / 2);
-        const wi = new THREE.InstancedMesh(wg, wm, wt.length); wt.forEach((i, k) => { mx.makeTranslation(this.wx(i % N + 0.5), 0.03, this.wx(((i / N) | 0) + 0.5)); wi.setMatrixAt(k, mx); });
-        wi.receiveShadow = true; this.world.add(wi); this.waterMat = wm;
-      }
-      if (rk.length) {   // each rock tile gets a boulder, taller the higher the ground
-        const ri = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.75, 0), rock, rk.length);
-        rk.forEach((i, k) => {
-          const x = i % N, z = (i / N) | 0, h = Math.min(2.6, 0.5 + (H[i] - bio.rock) * 28), j = nz.v(x * 1.3, z * 1.3);
-          q.setFromEuler(new THREE.Euler(j * 2, j * 5, j)); mx.compose(new THREE.Vector3(this.wx(x + 0.5), h * 0.4, this.wx(z + 0.5)), q, new THREE.Vector3(0.9 + j * 0.3, h, 0.9 + j * 0.3)); ri.setMatrixAt(k, mx);
-        });
-        ri.castShadow = ri.receiveShadow = true; this.world.add(ri);
-      }
-      if (dp.length) {   // violet crystals poking out of the seeps
-        const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
-        const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
-        dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.8, 1)); ci.setMatrixAt(k, mx); });
-        ci.visible = false; this.world.add(ci); this.crystals = ci;
-      }
-    }
+    this.rockMat = rock; this.syncTerrain();
     // rock spires on the skyline, fading into the haze
     const sg = new THREE.ConeGeometry(1, 1, 5), spires = new THREE.InstancedMesh(sg, rock, 70);
     for (let i = 0; i < 70; i++) {
@@ -349,6 +424,23 @@ export class View {
     const im = new THREE.InstancedMesh(geo, mat, Math.max(1, pts.length)), mx = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), one = new THREE.Vector3(1, 1, 1);
     pts.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x), 0.04, this.wx(z)), r ? qr : q, one); im.setMatrixAt(k, mx); });
     im.count = pts.length; this.roadG.add(im);
+  }
+  // the landscaping brush: a ring on the ground (it drapes over the hills like everything else), and for the slope
+  // tool a line back to where the slope starts
+  showBrush(x, z, r, a = null) {
+    if (!this.brush) {
+      const pts = []; for (let i = 0; i <= 48; i++) pts.push(new THREE.Vector3(Math.cos(i / 48 * TAU), 0.08, Math.sin(i / 48 * TAU)));
+      // the ring is drawn point by point in world space so the height under each point is its own
+      this.brushGeo = new THREE.BufferGeometry().setFromPoints(pts); this.brushPts = pts;
+      this.brush = new THREE.Line(this.brushGeo, new THREE.LineBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.95, depthTest: false })); this.brush.renderOrder = 9; this.brush.frustumCulled = false;
+      this.brushLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: '#7fe9e0', depthTest: false })); this.brushLine.renderOrder = 9; this.brushLine.frustumCulled = false;
+      this.world.add(this.brush, this.brushLine);
+    }
+    this.brush.visible = x != null; this.brushLine.visible = x != null && !!a; if (x == null) return;
+    const pos = this.brushGeo.attributes.position;
+    for (let i = 0; i <= 48; i++) pos.setXYZ(i, this.wx(x + Math.cos(i / 48 * TAU) * r), 0.08, this.wx(z + Math.sin(i / 48 * TAU) * r));
+    pos.needsUpdate = true;
+    if (a) { const lp = this.brushLine.geometry.attributes.position; lp.setXYZ(0, this.wx(a[0]), 0.1, this.wx(a[1])); lp.setXYZ(1, this.wx(x), 0.1, this.wx(z)); lp.needsUpdate = true; }
   }
   // the LAND overlay: every parcel of the section, shaded by what you can do with it. mode 'land' or 'callin';
   // hover: [px, pz] under the pointer; start: { parcels, ok } for the 3 x 3 the HQ would bring
@@ -540,8 +632,8 @@ export class View {
 
   // where the pointer is: the tile under it and the building it's over
   // a point on the base, on screen: [x, y] in page pixels, or null if behind the camera or off screen
-  toScreen(x, z, y = 0) {
-    const v = new THREE.Vector3(this.wx(x), y, this.wx(z)).project(this.cam);
+  toScreen(x, z, y = null) {
+    const v = new THREE.Vector3(this.wx(x), (y ?? 0) + (this.sim?.hAt ? this.sim.hAt(x, z) : 0), this.wx(z)).project(this.cam);
     if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) return null;
     const r = this.canvas.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height];
   }
@@ -555,10 +647,29 @@ export class View {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2((cx - rect.left) / rect.width * 2 - 1, -(cy - rect.top) / rect.height * 2 + 1);
     this.ray.setFromCamera(ndc, this.cam);
-    const p = new THREE.Vector3(); this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p);
-    const hits = this.ray.intersectObjects([...this.bm.values()], true);
-    const bid = hits.length ? hits[0].object.userData.bid ?? null : null;
+    const p = this.groundHit(this.ray.ray);
+    // buildings are drawn lifted onto the ground by the shader: test the ray against each one's box, lifted the same
+    let bid = null, best = Infinity; const box = new THREE.Box3(), hit = new THREE.Vector3();
+    for (const [id, g] of this.bm) {
+      const b = this.sim.byId?.(id); if (!b) continue;
+      g.userData.box ||= new THREE.Box3().setFromObject(g); box.copy(g.userData.box); const h = this.sim.hAt(b.x + b.w / 2, b.z + b.d / 2); box.min.y += h; box.max.y += h;
+      if (this.ray.ray.intersectBox(box, hit)) { const dd = hit.distanceTo(this.ray.ray.origin); if (dd < best) { best = dd; bid = id; } }
+    }
     return { x: p.x + this.N / 2, z: p.z + this.N / 2, bid };
+  }
+  // where a ray meets the ground: march down it over the height field, then close in
+  groundHit(ray) {
+    const s = this.sim, o = ray.origin, d = ray.direction, H = x => (s?.hAt ? s.hAt(x.x + this.N / 2, x.z + this.N / 2) : 0);
+    if (!s?.hgt) { const p = new THREE.Vector3(); ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p); return p; }
+    // start where the ray comes down through the top of the terrain
+    let t0 = d.y < 0 ? Math.max(0, (o.y - 5) / -d.y) : 0, t1 = d.y < 0 ? (o.y + 2) / -d.y : 2000;
+    const step = 0.4, p = new THREE.Vector3(); let prev = t0;
+    for (let t = t0; t <= t1; t += step) {
+      p.copy(o).addScaledVector(d, t);
+      if (p.y <= H(p)) { let a = prev, b = t; for (let k = 0; k < 12; k++) { const m = (a + b) / 2; p.copy(o).addScaledVector(d, m); if (p.y <= H(p)) b = m; else a = m; } p.copy(o).addScaledVector(d, b); return p; }
+      prev = t;
+    }
+    ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p); return p;
   }
 
   // ---------------------------------------------------------------- the build ghost and the selection
@@ -593,6 +704,16 @@ export class View {
 
   // ---------------------------------------------------------------- every frame
   frame(dt) {
+    // the ground was worked: new heights, colours, water and rock where it changed (at most a few times a second)
+    { const s = this.sim; this.tfT = (this.tfT || 0) - dt;
+      if (s && this.ground && this.tfT <= 0 && (s.hgtV !== this.hgtSeen || s.paintV !== this.paintSeen || s.terrV !== this.terrSeen)) {
+        this.tfT = 0.25;
+        if (s.hgtV !== this.hgtSeen) this.groundHeights();
+        const d = s.dirtyBox; s.dirtyBox = null; if (d) this.paintTiles(d[0], d[1], d[2], d[3]);
+        if (s.terrV !== this.terrSeen) { this.syncTerrain(); this.terrSeen = s.terrV; }
+        this.paintSeen = s.paintV;
+        for (const g of this.bm.values()) delete g.userData.box;
+      } }
     this.t += dt; const s = this.sim, t = this.t;
     this.camUpdate(dt);
     this.syncRoads();

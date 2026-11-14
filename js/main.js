@@ -1,6 +1,8 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
 import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB, ZONES, ZKEYS, GROWS, CHAINS, GROW, UTIL, LAND } from './config.js';
 import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
+import { TERRA } from './terrain.js';
+const TERRA_COST = TERRA.cost;
 import { REQUESTS, GRADES, fileOf, CALLS } from './desk.js';
 import { Life } from './life.js';
 import { View } from './view.js';
@@ -263,6 +265,7 @@ let snapMode = 'grid';
 const lineCost = k => k ? sim.linePrice(k) : 0;
 // thin line icons (24 x 24, drawn with the current colour)
 const ICON = {
+  landscape: 'M2 20 8 11l4 5 3-4 7 8zM15 6a2 2 0 1 0 0.01 0',
   roads: 'M8 21 11 3M16 21 13 3M12 6v2M12 11v2M12 16v2', logistics: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8',
   training: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8M12 11.5v1', living: 'M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5',
   income: 'M4 20h16M7 17v-4M12 17V9M17 17V5', power: 'M13 2 5 14h6l-1 8 8-12h-6z', defence: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
@@ -310,6 +313,7 @@ function buildBar() {
   const lines = group === 'roads' ? ['road1', 'road2', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
+  if (group === 'landscape') { landBar(G); return; }
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
   const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A WATCH${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
   const head = `<div class="bi-head"><b>${G[1]}</b><span>${group === 'power' ? '' : esc(G[2])}</span>${utilLine}<span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
@@ -338,6 +342,7 @@ $('b-items').addEventListener('pointermove', e => {
   if (b.dataset.snap) return tip('<b>Snapping</b><br>GRID: ends on tile centres. 45°: straight lines at 45-degree steps, whole tiles long. FREE: anywhere. Ends always join existing roads and walls. G switches.', e.clientX, e.clientY - 12, true);
   const k = b.dataset.b; if (k.startsWith('zone:')) return tip(k === 'zone:' ? '<b>Unzone</b><br>Drag over the ground to clear zoning.' : `<b>${ZONES[k.slice(5)].name}</b><br>${esc(ZONES[k.slice(5)].desc)}`, e.clientX, e.clientY - 12, true);
   if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
+  if (k.startsWith('tf:')) { const t = TF.find(x => 'tf:' + x[0] === k); return tip(`<b>${t[1]}</b><br>${esc(t[2])}. Costs ${TERRA_COST} supplies for each unit of ground moved; only on your land, never under buildings or roads.`, e.clientX, e.clientY - 12, true); }
   const d = B[k], lk = sim.locked(k), cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
   const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${cp(d.beds)} votes` : '', d.eat ? `feeds ${cp(d.eat)}` : '', d.slots ? `trains ${cp(d.slots)} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a watch`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
@@ -383,6 +388,7 @@ $('design').onclick = e => {
 function pickTool(k) {
   if (k.startsWith('zone:')) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showPlots(tool ? zoneable() : null); buildBar(); if (tool) flash(`Click beside a road to ${k === 'zone:' ? 'clear' : 'fill'} that block${k === 'zone:' ? '' : ' with ' + ZONES[k.slice(5)].name}, or drag to paint a patch. The pale strips are where zoning can go.`); return; }
   if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
+  if (k.startsWith('tf:')) { tool = tool === k ? null : k; tfA = null; select(null); view.setGhost(null); view.showBrush(null); buildBar(); if (tool) flash({ shift: 'Hold the left button to raise, the right to lower.', level: 'Hold to flatten. Shift-click samples the height to level to.', soften: 'Hold to smooth the ground.', slope: 'Click where the slope starts, then where it ends.' }[k.slice(3)] || 'Hold to paint the surface.'); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
   tool = tool === k ? null : k; select(null); buildBar(); designPanel();
@@ -399,6 +405,31 @@ const DEMAND = [['bunks', 'BUNKS'], ['seats', 'MESS SEATS'], ['latrines', 'LATRI
 function demandBars(d) {
   if (!d) return '<span class="fine">Demand is worked out every hour.</span>';
   return DEMAND.map(([k, n]) => `<span class="dm" title="${d[k] ? `Short by ${d[k]}${k === 'bunks' ? ` (jobs for ${d.jobs})` : ''}` : 'Enough for now'}"><i>${n}</i><b><u style="width:${Math.round(d.bars[k] * 100)}%"></u></b></span>`).join('');
+}
+// ---------------------------------------------------------------- LANDSCAPE: shape the ground, paint its surface
+const TF = [['shift', 'Shift', 'Raise with the left button, lower with the right'], ['level', 'Level', 'Flatten to a height: Shift-click samples one'],
+  ['soften', 'Soften', 'Smooth spikes and sharp drops into slopes'], ['slope', 'Slope', 'Click two points: an even grade between them'],
+  ['paint:1', 'Sand', 'Paint the surface'], ['paint:2', 'Dry ground', 'Paint the surface'], ['paint:3', 'Lush grass', 'Paint the surface'], ['paint:4', 'Dirt', 'Paint the surface'], ['paint:0', 'Unpaint', 'Back to the ground as it was']];
+const PAINTCOL = ['#555', '#cebA8e', '#a8926c', '#608042', '#765c44'];
+let tfR = 3, tfS = 2, tfTarget = null, tfA = null, tfDrag = null, tfAt = null;
+function landBar(G) {
+  const m = v => `${Math.round(v * LAND.TILE_M)} m`;
+  const head = `<div class="bi-head" title="${esc(G[2])}"><b>${G[1]}</b><span class="bi-crews">BRUSH <button class="btn" data-tfr="-1" type="button">−</button> ${tfR} <button class="btn" data-tfr="1" type="button">+</button> · STRENGTH <button class="btn" data-tfs="-1" type="button">−</button> ${tfS} <button class="btn" data-tfs="1" type="button">+</button> · LEVEL TO <input id="tf-target" type="number" step="5" value="${tfTarget == null ? '' : Math.round(tfTarget * LAND.TILE_M)}" placeholder="sample" style="width:64px"> M · MOVED ${fmt(Math.round(sim.stats.moved || 0))} · ${TERRA_COST} SUP A UNIT</span></div>`;
+  const card = ([k, n, why]) => `<button class="bi road ${tool === 'tf:' + k ? 'on' : ''}" data-b="tf:${k}" type="button" title="${esc(why)}"><span class="th ic-th">${k.startsWith('paint') ? `<i class="zsw" style="background:${PAINTCOL[+k.slice(6)]}"></i>` : icon('landscape')}</span><b>${n}</b><span class="why">${esc(why)}</span><span class="cost">${k === 'slope' && tool === 'tf:slope' && tfA ? 'NOW CLICK THE END' : k === 'level' && tfTarget != null ? 'TO ' + m(tfTarget) : ''}</span></button>`;
+  $('b-items').innerHTML = head + `<div class="bi-row">${TF.map(card).join('')}</div>`;
+  for (const b of $('b-items').querySelectorAll('[data-tfr]')) b.onclick = () => { tfR = Math.max(1, Math.min(12, tfR + +b.dataset.tfr)); buildBar(); };
+  for (const b of $('b-items').querySelectorAll('[data-tfs]')) b.onclick = () => { tfS = Math.max(1, Math.min(4, tfS + +b.dataset.tfs)); buildBar(); };
+  const ti = $('tf-target'); if (ti) ti.onchange = () => { tfTarget = ti.value === '' ? null : +ti.value / LAND.TILE_M; buildBar(); };
+}
+// one frame of a held brush
+function tfStroke(dt) {
+  if (!tfDrag || !tfAt || !tool?.startsWith('tf:')) return;
+  const op = tool.slice(3), [x, z] = tfAt;
+  if (op.startsWith('paint:')) { sim.paintGround(x, z, tfR, +op.slice(6)); return; }
+  if (op === 'slope') return;
+  if (op === 'level' && tfTarget == null) tfTarget = sim.hAt(x, z);
+  const r = sim.terraform(op, x, z, { r: tfR, s: tfS * 0.6, dt, sign: tfDrag.btn === 2 ? -1 : 1, target: tfTarget, quiet: true });
+  if (!r.ok && r.why) { flash(r.why); tfDrag = null; }
 }
 function zonesBar(G, found, fm) {
   const d = sim.dem, ch = sim.chainNow(), lockedChain = sim.b.some(b => B[b.type].chain);
@@ -1250,6 +1281,17 @@ cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; drag = null; return; }
   if (isZone(tool) && e.button === 0) { zoneDrag = tileOf(e); drag = null; view.showPlots(zoneRect(zoneDrag, zoneDrag)); return; }
+  if (tool?.startsWith('tf:') && (e.button === 0 || e.button === 2)) {
+    const p = view.pick(e.clientX, e.clientY); tfAt = [p.x, p.z]; drag = null;
+    if (tool === 'tf:level' && e.shiftKey) { tfTarget = sim.hAt(p.x, p.z); flash(`Level to ${Math.round(tfTarget * LAND.TILE_M)} m`); buildBar(); return; }
+    if (tool === 'tf:slope') {
+      if (!tfA) { tfA = [p.x, p.z, sim.hAt(p.x, p.z)]; flash('Now click where the slope ends.'); buildBar(); return; }
+      const b = [p.x, p.z, sim.hAt(p.x, p.z)], L = Math.hypot(b[0] - tfA[0], b[1] - tfA[1]); let cost = 0, why = '';
+      for (let pass = 0; pass < 6; pass++) for (let t = 0; t <= L; t += Math.max(0.5, tfR * 0.5)) { const r = sim.terraform('slope', tfA[0] + (b[0] - tfA[0]) * t / (L || 1), tfA[1] + (b[1] - tfA[1]) * t / (L || 1), { r: tfR, s: 4, dt: 0.5, a: tfA, b, quiet: true }); if (r.ok) cost += r.cost; else if (r.why) why = r.why; }
+      flash(cost ? `Graded: ${Math.round(cost)} supplies of earthworks.` : why || 'Nothing to grade there.'); tfA = null; audio.play(cost ? 'place' : 'deny'); buildBar(); return;
+    }
+    tfDrag = { btn: e.button }; return;
+  }
   if (isRoad(tool) && e.button === 0) { if (tool !== 'unroad') roadDrag = lineEnd(e); else roadDrag = { x: 0, z: 0, bull: true }; drag = null; return; }
   drag = { x: e.clientX, y: e.clientY, btn: e.button, moved: false };
 });
@@ -1273,6 +1315,7 @@ cv.addEventListener('pointermove', e => {
   if (tool === 'clear') { const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), i = tz * sim.N + tx, o = sim.clearOrderAt(i);
     if (e.pointerType === 'mouse') tip(o ? `Ordered: ${o.tiles.length} tiles. Click to cancel` : sim.scrub?.[i] ? `Clear this patch of ${sim.scrubName()}` : 'Nothing to clear here', e.clientX, e.clientY); return; }
   if (isRoad(tool)) roadPreview(e);
+  else if (tool?.startsWith('tf:')) { const p = view.pick(e.clientX, e.clientY); tfAt = [p.x, p.z]; view.showBrush(p.x, p.z, tool.startsWith('tf:paint') ? tfR : tfR, tool === 'tf:slope' && tfA ? tfA : null); if (e.pointerType === 'mouse') tip(`${Math.round(sim.hAt(p.x, p.z) * LAND.TILE_M)} m`, e.clientX, e.clientY); }
   else if (tool === 'starter') { const t = tileAt(e); hover = t; const ok = sim.canStarter(t.tx, t.tz, rot); view.setGhost('starter', t.tx, t.tz, rot, ok.ok); ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'callin') { const t = tileAt(e); hover = t; const ok = sim.canFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); ciStart = { parcels: sim.startParcels(t.tx, t.tz), ok: ok.ok }; ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'land') { const p = view.pick(e.clientX, e.clientY), q = sim.parcelAt(p.x, p.z); landHover = q; if (e.pointerType === 'mouse') { const st = sim.parcelState(...q), c = sim.parcelCost(...q); tip(`<b>Parcel ${sim.parcelName(...q)}</b> · ${{ owned: 'yours', buy: `${c.sup} SUP · ${c.cr} CR · click to see`, next: esc(sim.canBuy(...q).why), far: 'must touch your ground', edge: 'never granted' }[st]}`, e.clientX, e.clientY); } }
@@ -1286,6 +1329,7 @@ cv.addEventListener('pointermove', e => {
   }
 });
 function up(e) {
+  if (tfDrag) { tfDrag = null; ptrs.delete(e.pointerId); buildBar(); audio.play('place'); return; }
   if (!playing) return;
   ptrs.delete(e.pointerId);
   if (zoneDrag) {
@@ -1500,6 +1544,8 @@ function loopBody(now) {
     if (sim) { sim.step(dt); for (const ev of sim.drain()) life.event(ev); life.update(dt); }
   }
   if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
+  if (playing && sim && tfDrag) tfStroke(Math.min(0.05, dt));
+  if (playing && view.brush?.visible && !tool?.startsWith('tf:')) view.showBrush(null);
   if (playing && sim) { view.showParcels(tool === 'land' ? 'land' : tool === 'callin' ? 'callin' : null, tool === 'land' ? landHover : null, tool === 'callin' ? ciStart : null); if (tool !== 'land' && landSel) landCard(null); else if (landSel) landCard(landSel); }
   if (!view.lost) { const t0 = performance.now(); view.frame(dt); frameMs = frameMs * 0.9 + (performance.now() - t0) * 0.1; }
   if (debugOn) debugPanel(dt);

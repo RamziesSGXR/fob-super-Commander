@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.17.0';
+export const VERSION = '0.17.1';
 
 export const C = {
   N: 276,                   // the map is N x N tiles: a section of the planet, GRID x GRID parcels of PARCEL tiles each
@@ -135,6 +135,7 @@ export const MIN = {
 export const GROUPS = [
   ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
   ['zones', 'ZONES', 'Paint zones along roads: bunks, mess halls, latrines, storage and shops grow in them by themselves as the base needs them, at the standard picked here.', []],
+  ['landscape', 'LANDSCAPE', 'Shape the ground and paint its surface, for supplies. Buildings level their own footprint as they go down; roads need a gentle grade; dig below the waterline and it floods.', []],
   ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'comms', 'mast']],
   ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
   ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],

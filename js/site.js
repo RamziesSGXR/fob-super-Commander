@@ -63,6 +63,23 @@ export function makeSite(seed, biome, cx, cy, N) {
   return { terr, hgt, water: b.water, rock: b.rock };
 }
 
+// the ground's height (0.17): one value per tile corner, (N + 1) x (N + 1), in world units (tiles; a tile is LAND.TILE_M
+// metres). The waterline is height 0: the sea floor shelves below it, land rises above it on the same field that decides
+// water and rock, and the rock is a stepped plateau with cliffs round its edge. A little fine noise roughens it close up.
+export const RELIEF = 4, CLIFF = 0.9, WL = 0;
+export const elevOf = (b, h) => h < b.water ? (h - b.water) * RELIEF * 0.6 - 0.04
+  : (h - b.water) * RELIEF + CLIFF * Math.min(1, Math.max(0, (h - b.rock + 0.012) / 0.022)) ** 2 * (3 - 2 * Math.min(1, Math.max(0, (h - b.rock + 0.012) / 0.022)));
+export function makeHeights(seed, biome, cx, cy, N) {
+  const b = BIOMES[biome], f = field(seed), M = N + 1, out = new Float32Array(M * M), fine = new Noise(seed + 404);
+  const k = SCALE * 0.9 / TPP;
+  for (let z = 0; z < M; z++) for (let x = 0; x < M; x++) {
+    const u = cx * SCALE * 0.9 + (x - 0.5 - N / 2) * k, v = cy * SCALE * 0.9 + (z - 0.5 - N / 2) * k;
+    const h = f.h(u, v) + (fine.fbm(u * 9, v * 9, 2) - 0.5) * 0.012;
+    out[z * M + x] = elevOf(b, h);
+  }
+  return out;
+}
+
 // what a spot offers, for the landing screen. Looks at the ground a base of N tiles would have
 export function survey(seed, biome, cx, cy, N) {
   const { terr } = makeSite(seed, biome, cx, cy, N), n = N * N, cnt = [0, 0, 0, 0, 0];

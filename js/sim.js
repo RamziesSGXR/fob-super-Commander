@@ -17,6 +17,7 @@ import { Build } from './build.js';
 import { Zones } from './zones.js';
 import { Utilities } from './utils.js';
 import { Land, GRID } from './land.js';
+import { Terrain, TERRA } from './terrain.js';
 import { Market, bindMarket } from './market.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
@@ -107,6 +108,7 @@ export class Sim {
     if (!this.roads) this.roads = new Uint8Array(N * N);
     if (!this.walls) this.walls = new Uint8Array(N * N);
     if (!this.inMask) this.inMask = new Uint8Array(N * N);
+    this.heightsInit();
   }
   rebuildNet() {
     const r = raster(this.net, this.N, this.blockMask());
@@ -201,6 +203,8 @@ export class Sim {
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
   checkLine(a, b, k, dry) {
     const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
+    // a road climbs only so steeply from one tile to the next (walls go where they must)
+    if (k !== 'wall' && this.hgt) { let ph = null; for (const [x, z] of tiles) { const h = this.hAt(x + 0.5, z + 0.5); if (ph !== null && Math.abs(h - ph) > TERRA.roadGrade) return { ok: false, why: `Too steep for a road here (${Math.round(Math.abs(h - ph) * 100)}% grade): ease the slope (LANDSCAPE)`, cost: 0 }; ph = h; } }
     let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: nothing is built on it', cost: 0 }; } }
     const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
     if (tiles.some(([x, z]) => !this.ownedTile(x, z))) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)', cost };
@@ -340,6 +344,8 @@ export class Sim {
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
       const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
     }
+    // the ground under it is levelled as it goes down, so long as it is not too steep to start with
+    if (this.hgt && this.gradeOf(x, z, w, dd) > TERRA.maxGrade) return { ok: false, why: `Too steep (${Math.round(this.gradeOf(x, z, w, dd) * 50)} m of rise): level it first (LANDSCAPE)` };
     return { ok: true };
   }
   place(type, x, z, rot = 0, free = false, spec = null) {
@@ -352,6 +358,7 @@ export class Sim {
     if (this.hasStd(type)) { b.std = this.stdFor(type, spec); b.cost = cost; b.time = this.buildTime(type, b.std); }
     if (!free) { b.clr = this.scrubUnder(x, z, w, dd); if (!b.clr.length) delete b.clr; }
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) this.occ[(z + j) * this.N + x + i] = b.id;
+    this.levelFoot(x, z, w, dd);
     this.b.push(b);
     if (!free) this.events.push({ t: 'placed', id: b.id });
     this.roadsV = (this.roadsV || 0) + 1;   // roadside lamps step around new buildings
@@ -1355,8 +1362,8 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'wallIn', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 11; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn();
+    for (const k of Object.keys(this)) if (!['hgt', 'hgt0', 'terr0', 'paint', 'own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'wallIn', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    o.rngS = this.rng.s; o.v = 11; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn(); o.hgtS = this.packHeights(); o.paintS = this.packPaint();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -1367,6 +1374,7 @@ export class Sim {
     this.own = this.unpackOwn(s.ownS); delete this.ownS;
     this.genMap();
     for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
+    this.unpackTerrain(s.hgtS, s.paintS); delete this.hgtS; delete this.paintS;
     this.scrub = this.unpackScrub(s.scrubS); delete this.scrubS;
     this.zone = this.unpackZones(s.zoneS); delete this.zoneS;
     this.rebuildNet();
@@ -1375,4 +1383,4 @@ export class Sim {
     if (!this.orders.length) this.newOrder();
   }
 }
-Object.assign(Sim.prototype, Market, Build, Zones, Utilities, Land); bindMarket(B);
+Object.assign(Sim.prototype, Market, Build, Zones, Utilities, Land, Terrain); bindMarket(B);
