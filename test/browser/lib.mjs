@@ -18,7 +18,12 @@ export async function open(w = 1440, h = 860) {
 // found a random faction, land on the suggested site, and put the HQ tool away
 export async function newGame(p) {
   await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600);
-  await p.click('#ld-go'); await p.waitForTimeout(1500); await p.keyboard.press('Escape');
+  await callIn(p); await p.keyboard.press('Escape');
+}
+// take the section on the landing screen and call the HQ in at the suggested spot
+export async function callIn(p) {
+  await p.click('#ld-go'); await p.waitForTimeout(1500);
+  await p.evaluate(() => { const f = window.__fob, [x, z] = f.sim.autoSpot(); f.callIn(x, z); }); await p.waitForTimeout(800);
 }
 // lay a cross of paved road and the foundation, through the simulation, then let a few days pass
 export async function foundation(p, days = 6) {

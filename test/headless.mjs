@@ -11,8 +11,8 @@ if (process.env.COMMIT) { const [d, p, t] = process.env.COMMIT.split(',').map(Nu
 const N = s.N, m = N / 2;
 
 function spot(type, near = [m, m]) {
-  let best = null;
-  for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) for (const rot of [0, 1]) {
+  let best = null; const [x0, z0, x1, z1] = s.ownBounds();
+  for (let z = Math.max(1, z0); z < Math.min(N - 1, z1); z++) for (let x = Math.max(1, x0); x < Math.min(N - 1, x1); x++) for (const rot of [0, 1]) {
     if (!s.canPlace(type, x, z, rot).ok) continue;
     let crowd = false;   // leave a walking gap round every building
     const [w, d] = rot % 2 ? [B[type].d, B[type].w] : [B[type].w, B[type].d];
@@ -42,9 +42,17 @@ function build(type, near) {
 const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'motorpool', 'fueldepot', 'gen', 'well', 'lagoon', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'fuelfarm', 'tower', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
 let step = 0, roadN = 0;
-let founded = false;
+let founded = false, wallAt = 0, start0 = null;
+function rewall() {   // take the old wall down and put a new one round everything held, with the gate road through the south side
+  wallAt = s.stage;
+  for (const g of s.net.segs.filter(g => g.k === 'wall')) { const a = s.net.nodes.find(n => n.id === g.a), b = s.net.nodes.find(n => n.id === g.b); if (a && b) s.removeLine((a.x + b.x) / 2, (a.z + b.z) / 2); }
+  const [x0, z0, x1, z1] = s.ownBounds(), L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
+  const lo = [x0 + 1.5, z0 + 1.5], hi = [x1 - 1.5, z1 - 1.5];
+  L(lo[0], lo[1], hi[0], lo[1], 'wall'); L(hi[0], lo[1], hi[0], hi[1], 'wall'); L(hi[0], hi[1], lo[0], hi[1], 'wall'); L(lo[0], hi[1], lo[0], lo[1], 'wall');
+  L(m + 1, z1 - 4, m + 1, z1 + 1, 'paved');
+}
 function found() {   // the bot's opening: a paved spine and cross streets, a pad, then a wall round it all with a gate
-  founded = true;
+  founded = true; start0 = s.parcelAt(s.ownBounds()[0], s.ownBounds()[1]);
   const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
   L(m + 1, s.box()[1] - 2, m + 1, m - 12, 'paved'); L(m - 12, m + 0.5, m + 13, m + 0.5, 'dirt'); L(m - 12, m + 8.5, m + 13, m + 8.5, 'dirt'); L(m - 12, m - 7.5, m + 13, m - 7.5, 'dirt');
   const [b0, b1] = s.box(), lo = b0 + 1.5, hi = b1 - 1.5;
@@ -64,7 +72,7 @@ function bot() {
     if (s.locked(want) && !waitable) step++;
     else if (!s.locked(want) && build(want, ['lookout', 'turret', 'flood'].includes(want) ? (k => [k ? s.box()[0] + 3 : s.box()[1] - 3, s.box()[1] - 3])(s.count(want) % 2) : want === 'barracks' || want === 'hab' ? [m - 10, m] : [m + 2, m + 2])) step++;
   } else if (s.power.ratio < 1) build('solar');
-  else if (s.troops.length > s.beds - 3 && s.week > 3 && !s.b.some(b => b.grown === 'life' && !b.done)) s.paintZone(m - 12, m - 10 - s.week, m - 1, m - 8, 'life');   // more room for bunks
+  else if (s.troops.length > s.beds - 3 && s.week > 3 && !s.b.some(b => b.grown === 'life' && !b.done)) { const top = Math.max(s.ownBounds()[1] + 4, m - 10 - 3 * s.week); s.paintZone(m - 12, top, m - 1, m - 8, 'life'); const L = (ax, az, bx, bz) => s.drawLine(s.snapLine({ x: ax, z: az }, 'grid', 'dirt'), s.snapLine({ x: bx, z: bz }, 'grid', 'dirt'), 'dirt'); if (!s.road(m - 7, top + 1)) L(m - 6.5, m - 7.5, m - 6.5, top + 0.5); }   // more room for bunks, with a street up the middle
   if (s.power.ratio < 1 && s.supplies > 300) build('solar');
   if (s.nextStage() && s.stageCheck().every(c => c.ok)) s.promote();
   for (const c of s.calls) if (!c.acc && s.have(c.g) > c.n * 1.5) s.answer(c.id, true);
@@ -72,7 +80,16 @@ function bot() {
   for (const t of s.toReview().slice(0, 2)) s.gradeTroop(t.id, trueGrade(t));
   // saving for the next charter: once the votes and standing are there, keep credits and sell surplus supplies for them
   const ns = s.nextStage(), saving = ns && s.stageCheck().filter(c => !c.ok).every(c => /credits|supplies for the charter/.test(c.text)), short = ns && s.stageCheck().some(c => !c.ok && /credits/.test(c.text));
-  if (!saving && s.credits > 700 && s.supplies < 1500) s.buySupplies();
+  // land: each charter, the bot grows its ground to a bigger rectangle (north and west first, where the bunks go), and
+  // once the rectangle is all held, moves its wall out to the new edge
+  if (!saving) {
+    const [w, h] = [[3, 3], [4, 5], [6, 6], [8, 8]][s.stage], [x0, z0] = start0, rx = Math.max(1, x0 + 3 - w), rz = Math.max(1, z0 + 3 - h);
+    const want = []; for (let pz = rz; pz < rz + h; pz++) for (let px = rx; px < rx + w; px++) if (!s.owns(px, pz) && s.grantable(px, pz)) want.push([px, pz]);
+    const nb = want.find(([px, pz]) => s.parcelState(px, pz) === 'buy');
+    if (nb && s.credits > s.parcelCost(...nb).cr + 200 && s.supplies > s.parcelCost(...nb).sup + 900) s.buyParcel(...nb);
+    if (!want.length && wallAt !== s.stage) rewall();
+  }
+  if ((!saving && s.credits > 700 && s.supplies < 1500) || (saving && ns && s.credits > ns.cr + 400 && s.supplies < (ns.sup || 0) + 300)) s.buySupplies();
   while ((s.credits < 150 || (saving && short)) && s.supplies > 1200 + (ns?.sup || 0) && s.sellSupplies());
   if (!saving && s.credits > 900 && s.loans[0]) s.repay(0, s.credits - 600);
   if (!saving && !s.tech.cur) for (const k of ['drill', 'fortworks', 'radio', 'shelving', 'civic', 'archive', 'frv', 'cargo', 'highrise', 'warroom', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.credits >= TECH[k].cost && s.research(k)) break;
@@ -111,6 +128,7 @@ for (let i = 0; i < weeks * C.WEEK * 10; i++) {
       + ` ${pad(s.b.length, 4)} ${pad(s.stats.deployed, 7)} ${pad(s.stats.trained, 7)} ${pad(s.hunger.toFixed(2), 7)} ${pad(s.audit ? s.audit.lines : '-', 5)}  ${GKEYS.map(g => Math.round(s.amount(g))).join('/').padStart(13)} ${s.power.made}/${s.power.used}` + ` st${s.stage} cr${Math.round(s.credits)} p${s.price("sup").toFixed(2)}`);
   }
 }
+if (process.env.DUMP) { const N = s.N, z = [0, 0, 0, 0], zin = [0, 0, 0, 0]; for (let i = 0; i < N * N; i++) if (s.zone[i]) { z[s.zone[i]]++; if (s.inMask[i]) zin[s.zone[i]]++; } console.log('held', s.held(), 'allow', s.allowance(), 'zones', z.join('/'), 'inside', zin.join('/'), 'bounds', s.ownBounds().join(','), 'hq', s.b[0].x, s.b[0].z); }
 if (process.env.DUMP) console.log("stage", s.stage, JSON.stringify(s.stageCheck?.()), "credits", Math.round(s.credits), "heads", s.heads(), "debt", Math.round(s.debt()));
 if (process.env.DUMP) console.log(JSON.stringify(s.util), 'risk', s.risk, 'sick', s.stats.sick, 'piped', Math.round(s.stats.piped || 0));
 if (process.env.DUMP) console.log(s.b.map(b => b.type + (b.done ? "" : "*") + (b.grown ? "@" + b.grown : "")).join(" "), JSON.stringify(s.growNote), JSON.stringify(s.dem));

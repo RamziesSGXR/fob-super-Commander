@@ -1,6 +1,6 @@
 // The 3D view: a near-isometric camera you can rotate, the ground, the wire, every building and everyone walking about.
 import * as THREE from './vendor/three.js';
-import { B, ZONES, ZKEYS, UTIL } from './config.js';
+import { B, ZONES, ZKEYS, UTIL, LAND } from './config.js';
 import { dims, wingOf } from './sim.js';
 import { BIOMES } from './site.js';
 import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
@@ -44,7 +44,7 @@ export class View {
     this.sim = sim; this.life = life; this.N = sim.N;
     this.world.clear();
     this.chunks = new Map(); this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
-    this.ghostKey = ''; this.scrubKey = null; this.scrubM = null; this.zoneKey = null; this.zoneM = null;
+    this.ghostKey = ''; this.scrubKey = null; this.scrubM = null; this.zoneKey = null; this.zoneM = null; this.parcelKey = ''; this.parcelG = null;
     this.buildGround();
     this.setFaction(sim.faction);
   }
@@ -160,11 +160,11 @@ export class View {
 
   buildGround() {
     this.crystals = null;
-    const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = 16, c = document.createElement('canvas');
+    const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = Math.max(4, Math.min(16, Math.floor(1800 / N))), c = document.createElement('canvas');
     c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P), d = img.data;
     const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4], T = s.terr, H = s.hgt;
     for (let y = 0; y < N * P; y++) for (let x = 0; x < N * P; x++) {
-      const tx = Math.floor(x / P), tz = Math.floor(y / P), n = nz.fbm(x / 40, y / 40, 4), f = nz.v(x / 3, y / 3);
+      const tx = Math.floor(x / P), tz = Math.floor(y / P), n = nz.fbm(x / (2.5 * P), y / (2.5 * P), 4), f = nz.v(x * 5.3 / P, y * 5.3 / P);
       let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
       const tk = T ? T[tz * N + tx] : 0;
       if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
@@ -181,11 +181,11 @@ export class View {
     // the land beyond the wire
     const oc = document.createElement('canvas'); oc.width = oc.height = 256; const og = oc.getContext('2d'), oi = og.createImageData(256, 256);
     for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = nz.fbm(x / 30 + 50, y / 30, 4), i = (y * 256 + x) * 4; oi.data[i] = hue[0] * (0.62 + n * 0.35); oi.data[i + 1] = hue[1] * (0.62 + n * 0.35); oi.data[i + 2] = hue[2] * (0.62 + n * 0.35); oi.data[i + 3] = 255; }
-    og.putImageData(oi, 0, 0); const ot = new THREE.CanvasTexture(oc); ot.wrapS = ot.wrapT = THREE.RepeatWrapping; ot.repeat.set(10, 10); ot.colorSpace = THREE.SRGBColorSpace;
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ map: ot, roughness: 1 }));
+    og.putImageData(oi, 0, 0); const ot = new THREE.CanvasTexture(oc); ot.wrapS = ot.wrapT = THREE.RepeatWrapping; ot.repeat.set(N / 40 + 6, N / 40 + 6); ot.colorSpace = THREE.SRGBColorSpace;
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(N * 4 + 200, N * 4 + 200), new THREE.MeshStandardMaterial({ map: ot, roughness: 1 }));
     outer.rotation.x = -Math.PI / 2; outer.position.y = -0.02; outer.receiveShadow = true; this.world.add(outer);
     const sky = new THREE.Color(hue[0] / 255 * 0.35 + 0.36, hue[1] / 255 * 0.35 + 0.43, hue[2] / 255 * 0.35 + 0.56);   // a pale blue haze, warmed by the planet's dust
-    this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 140, 300);
+    this.skyDay = sky.clone(); this.skyNight = new THREE.Color('#0a0f1e'); this.scene.background = sky.clone(); this.scene.fog = new THREE.Fog(sky.clone(), 140, 300 + N);
     // rocks and hills
     const rock = new THREE.MeshStandardMaterial({ color: new THREE.Color(hue[0] / 340, hue[1] / 340, hue[2] / 340), roughness: 1, flatShading: true });
     const rg = new THREE.DodecahedronGeometry(1, 0), rocks = new THREE.InstancedMesh(rg, rock, 160), mx = new THREE.Matrix4(), q = new THREE.Quaternion();
@@ -230,7 +230,7 @@ export class View {
     }
     spires.castShadow = true; this.world.add(spires);
     for (let i = 0; i < 26; i++) {
-      const a = i / 26 * TAU + nz.v(i, 9), r = 95 + nz.v(9, i) * 50, h = 10 + nz.v(i * 3, 2) * 22;
+      const a = i / 26 * TAU + nz.v(i, 9), r = N / 2 + 40 + nz.v(9, i) * 60, h = 10 + nz.v(i * 3, 2) * 22;
       const hill = new THREE.Mesh(new THREE.ConeGeometry(h * 1.6, h, 6), rock); hill.position.set(Math.cos(a) * r, h / 2 - 1, Math.sin(a) * r); hill.rotation.y = a; this.world.add(hill);
     }
     this.hes = new THREE.MeshStandardMaterial({ color: '#8c8f88', roughness: 0.9 }); this.hesTop = new THREE.MeshStandardMaterial({ color: '#41464a', roughness: 0.8 });   // concrete perimeter wall, dark cap and buttresses
@@ -332,14 +332,63 @@ export class View {
     this.charterLine();
     this.streetLamps();
   }
+  // the edge of the ground you hold: a dashed yellow line along every parcel side with your land on one side only
   charterLine() {
-    const [lo, hi] = this.sim.box(); if (hi - lo >= this.N) return;
+    const s = this.sim, P = LAND.PARCEL, G = LAND.GRID; if (!s.own) return;
     const mat = this.charterMat ||= new THREE.MeshBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.55 });
-    const geo = new THREE.PlaneGeometry(0.6, 0.08); geo.rotateX(-Math.PI / 2); const pts = [];
-    for (let t = lo; t < hi; t += 1) pts.push([t + 0.3, lo, 0], [t + 0.3, hi, 0], [lo, t + 0.3, 1], [hi, t + 0.3, 1]);
-    const im = new THREE.InstancedMesh(geo, mat, pts.length), mx = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), one = new THREE.Vector3(1, 1, 1);
+    const geo = new THREE.PlaneGeometry(0.6, 0.12); geo.rotateX(-Math.PI / 2); const pts = [];
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) {
+      if (!s.owns(px, pz)) continue;
+      const x0 = px * P, z0 = pz * P;
+      if (!s.owns(px, pz - 1)) for (let t = 0; t < P; t++) pts.push([x0 + t + 0.3, z0, 0]);
+      if (!s.owns(px, pz + 1)) for (let t = 0; t < P; t++) pts.push([x0 + t + 0.3, z0 + P, 0]);
+      if (!s.owns(px - 1, pz)) for (let t = 0; t < P; t++) pts.push([x0, z0 + t + 0.3, 1]);
+      if (!s.owns(px + 1, pz)) for (let t = 0; t < P; t++) pts.push([x0 + P, z0 + t + 0.3, 1]);
+    }
+    const im = new THREE.InstancedMesh(geo, mat, Math.max(1, pts.length)), mx = new THREE.Matrix4(), q = new THREE.Quaternion(), qr = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), one = new THREE.Vector3(1, 1, 1);
     pts.forEach(([x, z, r], k) => { mx.compose(new THREE.Vector3(this.wx(x), 0.04, this.wx(z)), r ? qr : q, one); im.setMatrixAt(k, mx); });
-    this.roadG.add(im);
+    im.count = pts.length; this.roadG.add(im);
+  }
+  // the LAND overlay: every parcel of the section, shaded by what you can do with it. mode 'land' or 'callin';
+  // hover: [px, pz] under the pointer; start: { parcels, ok } for the 3 x 3 the HQ would bring
+  showParcels(mode, hover = null, start = null) {
+    const s = this.sim, P = LAND.PARCEL, G = LAND.GRID;
+    const key = mode ? `${mode}|${s.ownV || 0}|${s.stage}|${Math.floor(s.credits / 50)}|${Math.floor(s.supplies / 50)}|${hover}|${start ? start.parcels.join(';') + start.ok : ''}` : '';
+    if (key === this.parcelKey) return; this.parcelKey = key;
+    if (this.parcelG) { this.world.remove(this.parcelG); this.parcelG.traverse(o => { o.geometry?.dispose(); if (o.material && o.material !== this.parcelMat) o.material.dispose?.(); }); this.parcelG = null; }
+    if (!mode) return;
+    const g = this.parcelG = new THREE.Group(); g.renderOrder = 4;
+    const fillGeo = new THREE.PlaneGeometry(P - 0.3, P - 0.3); fillGeo.rotateX(-Math.PI / 2);
+    const fill = new THREE.InstancedMesh(fillGeo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 1, depthWrite: false }), G * G);
+    const col = new THREE.Color(), mx = new THREE.Matrix4(); let n = 0;
+    const startSet = new Set((start?.parcels || []).map(p => p.join(',')));
+    const shade = (px, pz) => {
+      if (startSet.has(px + ',' + pz)) return start.ok ? ['#7fe9e0'] : ['#ff4a4a'];
+      const st = mode === 'callin' ? (s.grantable(px, pz) ? 'far' : 'edge') : s.parcelState(px, pz);
+      return { owned: null, buy: ['#f5d547'], next: ['#b0702a'], far: null, edge: ['#000000'] }[st];
+    };
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) {
+      const sh = shade(px, pz); if (!sh) continue;
+      if (sh[0] === '#000000') continue;
+      const hv = hover && hover[0] === px && hover[1] === pz;
+      mx.makeTranslation(this.wx(px * P + P / 2), 0.07, this.wx(pz * P + P / 2)); fill.setMatrixAt(n, mx);
+      fill.setColorAt(n, col.set(sh[0]).lerp(new THREE.Color('#ffffff'), hv ? 0.4 : 0)); n++;
+    }
+    fill.count = n; fill.material.opacity = 0.3; fill.frustumCulled = false; fill.renderOrder = 4;
+    // the edge of the section and (calling in) everything else darkens
+    const dark = new THREE.InstancedMesh(fillGeo, new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.4, depthWrite: false }), G * G); let k = 0;
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) { const sh = shade(px, pz); if (!sh || sh[0] !== '#000000') continue; mx.makeTranslation(this.wx(px * P + P / 2), 0.065, this.wx(pz * P + P / 2)); dark.setMatrixAt(k++, mx); }
+    dark.count = k; dark.frustumCulled = false; dark.renderOrder = 4;
+    g.add(dark, fill);
+    // the grid: a faint line on every parcel edge, a bright one round the parcel under the pointer
+    const pts = [];
+    for (let i = 0; i <= G; i++) pts.push(new THREE.Vector3(this.wx(0), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(G * P), 0.08, this.wx(i * P)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(0)), new THREE.Vector3(this.wx(i * P), 0.08, this.wx(G * P)));
+    const grid = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#f5d547', transparent: true, opacity: 0.22, depthWrite: false })); grid.renderOrder = 5; g.add(grid);
+    if (hover && s.grantable(hover[0], hover[1])) {
+      const [px, pz] = hover, a = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([i, j]) => new THREE.Vector3(this.wx((px + i) * P), 0.09, this.wx((pz + j) * P)));
+      const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false })); ring.renderOrder = 6; g.add(ring);
+    }
+    this.world.add(g);
   }
   wallPiece(g, a, b) {
     const L = Math.hypot(b.x - a.x, b.z - a.z) + 0.9, ang = -Math.atan2(b.z - a.z, b.x - a.x), mx = this.wx((a.x + b.x) / 2), mz = this.wx((a.z + b.z) / 2);
@@ -455,7 +504,8 @@ export class View {
     c.left = -z * this.aspect + off; c.right = z * this.aspect + off; c.top = z; c.bottom = -z; c.updateProjectionMatrix();
     const d = 160, cp = Math.cos(this.pitch);
     c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
-    c.lookAt(this.target); this.scene.fog.near = d - 34; this.scene.fog.far = d + 150;
+    c.lookAt(this.target); this.scene.fog.near = d - 34 + z * 1.2; this.scene.fog.far = d + 150 + z * 2.6;
+    this.shadowFit(z);
     this.sun.target.position.copy(this.target);
   }
   rotate(steps) { this.yawT += steps * Math.PI / 4; }
@@ -467,7 +517,14 @@ export class View {
   tiltBy(d) { this.tiltT = Math.max(0.03, Math.min(1.5, this.tiltT + d)); }
   dolly(f) { this.distT = Math.max(1.2, Math.min(90, this.distT * f)); }
   spin(dx) { this.yawT += dx; this.yaw = this.yawT; }
-  zoomBy(f) { this.zoomT = Math.max(4, Math.min(30, this.zoomT * f)); }
+  zMax() { return Math.max(30, Math.round(this.N * 0.5)); }   // far enough out to see the whole section
+  zoomBy(f) { this.zoomT = Math.max(4, Math.min(this.zMax(), this.zoomT * f)); }
+  // the sun's shadow box follows the zoom; zoomed right out, nothing is big enough to need one
+  shadowFit(z) {
+    const h = Math.min(90, Math.max(26, z * 1.5)), sc = this.sun.shadow.camera, on = z < 70;
+    if (this.sun.castShadow !== on) this.sun.castShadow = on;
+    if (Math.abs(sc.right - h) > 2) { Object.assign(sc, { left: -h, right: h, top: h, bottom: -h, far: 90 + h * 2 }); sc.updateProjectionMatrix(); }
+  }
   pan(dxPx, dyPx) {   // drag the ground under the pointer
     const k = this.photo ? this.dist * 1.1 / this.h : this.zoom * 2 / this.h, s = Math.sin(this.yaw), c = Math.cos(this.yaw);
     const ax = -dxPx * k, az = -dyPx * k / Math.sin(this.photo ? Math.max(0.35, this.tilt) : this.pitch);

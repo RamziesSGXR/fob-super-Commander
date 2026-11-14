@@ -1,6 +1,6 @@
-import { open } from './lib.mjs';
+import { open, callIn } from './lib.mjs';
 const { b, p, errs } = await open(1280, 860);
-await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await p.click('#ld-go'); await p.waitForTimeout(1500);
+await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await callIn(p);
 await p.keyboard.press('Escape');
 await p.evaluate(() => { const { sim: s } = window.__fob; s.troops.forEach(t => t.train = 100); for (let i = 0; i < 10; i++) s.addTroop(100); s.send(s.offers[0].id, []); s.newOffers(); s.send(s.offers[1].id, []); });
 await p.evaluate(() => { const { sim: s } = window.__fob; for (let i = 0; i < 400; i++) { s.step(0.5); } });

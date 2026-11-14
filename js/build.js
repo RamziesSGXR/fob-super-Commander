@@ -142,10 +142,9 @@ export const Build = {
   // ---------------------------------------------------------------- scrub and debris
   makeScrub() {
     const N = this.N, sc = new Uint8Array(N * N); if (!this.site) return sc;
-    const nz = new Noise((this.seed ^ 0x5c7b) >>> 0), dens = SCRUB.density[this.site.biome] ?? 0.4, m = N / 2;
+    const nz = new Noise((this.seed ^ 0x5c7b) >>> 0), dens = SCRUB.density[this.site.biome] ?? 0.4;
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const i = z * N + x, t = this.terr?.[i]; if (t === GROUND.WATER || t === GROUND.ROCK) continue;
-      if (Math.hypot(x + 0.5 - m, z + 0.5 - m) < SCRUB.keep) continue;   // the landing zone was cleared from orbit
       const v = nz.fbm(x / 7, z / 7) * 0.8 + nz.v(x * 0.9, z * 0.9) * 0.2;
       if (v > 1 - dens) sc[i] = 1;
     }
@@ -163,14 +162,15 @@ export const Build = {
   // the engineers clear a patch of scrub round a tile, for its salvage: up to SCRUB.patch connected tiles inside the charter
   orderClear(tx, tz) {
     const N = this.N, i0 = tz * N + tx; if (!this.scrub?.[i0]) return { ok: false, why: `Nothing to clear here` };
-    const bx = this.box(), held = new Set((this.clr || []).flatMap(o => o.tiles));
+    const held = new Set((this.clr || []).flatMap(o => o.tiles));
     if (held.has(i0)) return { ok: false, why: 'Already ordered' };
+    if (!this.ownedTile(tx, tz)) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)' };
     const q = [i0], seen = new Set(q), tiles = [];
     while (q.length && tiles.length < SCRUB.patch) {
       const i = q.shift(), x = i % N, z = (i / N) | 0; tiles.push(i);
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, nz = z + dz, j = nz * N + nx;
-        if (nx < bx[0] || nz < bx[0] || nx >= bx[1] || nz >= bx[1] || seen.has(j) || !this.scrub[j] || held.has(j) || this.occ[j]) continue;
+        if (!this.ownedTile(nx, nz) || seen.has(j) || !this.scrub[j] || held.has(j) || this.occ[j]) continue;
         seen.add(j); q.push(j);
       }
     }

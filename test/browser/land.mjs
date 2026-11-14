@@ -1,4 +1,4 @@
-import { open } from './lib.mjs';
+import { open, callIn } from './lib.mjs';
 const { b, p, errs } = await open(1280, 760);
 await p.click('#b-new'); await p.click('#fx-rand'); await p.click('[data-diff="helldiver"]'); await p.waitForTimeout(200);
 await p.screenshot({ path: 'test/shots/l0-faction.png' });
@@ -7,7 +7,7 @@ await p.screenshot({ path: 'test/shots/l1-land.png' });
 const box = await (await p.$('#ld-mark')).boundingBox();
 await p.mouse.click(box.x + box.width * 0.62, box.y + box.height * 0.45); await p.waitForTimeout(400);
 await p.screenshot({ path: 'test/shots/l2-pick.png' });
-await p.click('#ld-go'); await p.waitForTimeout(2500);
+await callIn(p);
 const info = await p.evaluate(() => { const s = window.__fob.sim, c = [0, 0, 0, 0, 0]; for (const v of s.terr) c[v]++; return { site: s.site, diff: s.diff, terr: c, box: s.box(), sup: s.supplies, loan: s.loans[0].bal, od: s.OD }; });
 await p.evaluate(() => { const { view } = window.__fob; view.zoomT = view.zoom = 34; }); await p.waitForTimeout(1200);
 await p.screenshot({ path: 'test/shots/l3-site.png' });

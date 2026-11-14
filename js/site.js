@@ -50,7 +50,7 @@ export function regionImage(seed, biome) {
   return img;
 }
 
-// the base's ground, N x N tiles, centred on region pixel (cx, cy). The middle is cleared for the landing
+// the section's ground, N x N tiles, centred on region pixel (cx, cy)
 export function makeSite(seed, biome, cx, cy, N) {
   const b = BIOMES[biome], f = field(seed), terr = new Uint8Array(N * N), hgt = new Float32Array(N * N);
   const k = SCALE * 0.9 / TPP;   // one tile, in field units
@@ -58,9 +58,6 @@ export function makeSite(seed, biome, cx, cy, N) {
   for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
     const u = cx * SCALE * 0.9 + (x - N / 2) * k, v = cy * SCALE * 0.9 + (z - N / 2) * k;
     let h = f.h(u, v) + (fine.fbm(u * 9, v * 9, 2) - 0.5) * 0.06;   // close up, shores and cliffs are ragged
-    const r = Math.hypot(x - N / 2, z - N / 2);
-    if (r < 10) h = b.water + 0.02 + (h - b.water - 0.02) * Math.max(0, (r - 6) / 4);   // the landing zone is always open ground
-    if (r < 10 && h > b.rock - 0.01) h = b.rock - 0.02;
     hgt[z * N + x] = h; terr[z * N + x] = classify(b, h, f.dep(u, v));
   }
   return { terr, hgt, water: b.water, rock: b.rock };

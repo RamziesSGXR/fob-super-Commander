@@ -19,12 +19,12 @@ export const Zones = {
   growZone(type) { return GROWS.get(type) || null; },
   // paint (or with zk null, clear) every tile in a rectangle that can hold a zone: inside the charter, on open land
   paintZone(x0, z0, x1, z1, zk) {
-    const N = this.N, n = zk ? ZONES[zk].n : 0, bx = this.box(); let k = 0;
+    const N = this.N, n = zk ? ZONES[zk].n : 0, [bx0, bz0, bx1, bz1] = this.ownBounds(); let k = 0;
     if (!this.zone) this.zone = new Uint8Array(N * N);
-    for (let z = Math.max(bx[0], Math.min(z0, z1)); z <= Math.min(bx[1] - 1, Math.max(z0, z1)); z++)
-      for (let x = Math.max(bx[0], Math.min(x0, x1)); x <= Math.min(bx[1] - 1, Math.max(x0, x1)); x++) {
+    for (let z = Math.max(bz0, Math.min(z0, z1)); z <= Math.min(bz1 - 1, Math.max(z0, z1)); z++)
+      for (let x = Math.max(bx0, Math.min(x0, x1)); x <= Math.min(bx1 - 1, Math.max(x0, x1)); x++) {
         const i = z * N + x, t = this.terr?.[i];
-        if (t === GROUND.WATER || t === GROUND.ROCK || this.roads[i] || this.walls[i]) continue;
+        if (t === GROUND.WATER || t === GROUND.ROCK || this.roads[i] || this.walls[i] || !this.ownedTile(x, z)) continue;
         if (this.zone[i] !== n) { this.zone[i] = n; k++; }
       }
     if (k) { this.zoneV = (this.zoneV || 0) + 1; this.events.push({ t: 'zones' }); this.stats.zoned = (this.stats.zoned || 0) + k; }
@@ -113,7 +113,7 @@ export const Zones = {
     // nearest the HQ first, so the base grows outward from its heart
     const hq = this.b.find(b => b.type === 'hq'), cx = hq ? hq.x + 1.5 : N / 2, cz = hq ? hq.z + 1.5 : N / 2;
     tiles.sort((a, b) => Math.hypot(a % N - cx, ((a / N) | 0) - cz) - Math.hypot(b % N - cx, ((b / N) | 0) - cz));
-    for (const i of tiles.slice(0, 160)) {
+    for (const i of tiles.slice(0, 900)) {   // nearest first; a big zone is searched well beyond its first street
       const tx = i % N, tz = (i / N) | 0;
       for (let rot = 0; rot < 4; rot++) {
         const [w, d] = dims(type, rot);

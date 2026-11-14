@@ -6,6 +6,7 @@
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
 import { FOUNDATION, EARLY } from './config.js';
+import { LAND } from './config.js';
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW, UTIL } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
@@ -15,6 +16,7 @@ import { writeReport } from './reports.js';
 import { Build } from './build.js';
 import { Zones } from './zones.js';
 import { Utilities } from './utils.js';
+import { Land, GRID } from './land.js';
 import { Market, bindMarket } from './market.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
@@ -70,18 +72,25 @@ export class Sim {
     this.tech = { done: [], cur: null, pts: 0 };
     this.stats = { patrolsWon: 0, patrolsLost: 0, deployed: 0, trained: 0, inspections: 0, delivered: 0 };
     this.week_ = { short: 0, total: 0, fed: 0, eat: 0 };   // this week's supply record, for the Expansion audit
+    // the land: parcels, none held until the HQ comes down (a flat test map holds the middle 7 x 7, about the old 80 tiles)
+    this.own = new Uint8Array(GRID * GRID);
     this.genMap();
     this.updateRivals();
-    const m = this.N / 2;
-    // you land with a command post, a flag and open ground: the roads, the wall, the pad and everything else are yours to lay out
     this.std = opts.flat ? 2 : 0;   // the standard the build menu is set to: tents, to start (a flat test map keeps the old base)
     this.scrub = this.makeScrub(); this.crewsInit(); this.zone = new Uint8Array(this.N * this.N); this.chain = null;
-    this.place('hq', m - 3, m - 3, 0, true, { std: this.std });
-    this.place('seflag', m - 5, m + 2, 0, true);
     this.net = emptyNet();
-    this.rebuildNet();
-    const hq = this.b.find(b => b.type === 'hq'); hq.stock = { ...B.hq.store }; for (const g in hq.stock) hq.stock[g] = this.storeCap(hq, g);
     for (let i = 0; i < C.START.troops; i++) this.addTroop(i < 3 ? 100 : 30);
+    this.flat = !!opts.flat;
+    // a new game opens on the empty section: the Commander calls the HQ in. Everyone else (tests, the bot, the title demo)
+    // gets it set down on open ground near the middle
+    if (opts.callIn) { this.callIn = true; this.rebuildNet(); this.ranking(); this.tick(); this.marketInit(); this.recalc(); return; }
+    if (opts.flat) { const m = this.N / 2; this.found(m - 3, m - 3, { force: true }); const c = (GRID - 1) / 2; for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) this.own[(c + j) * GRID + c + i] = 1; this.rebuildNet(); }
+    else { const at = opts.at || this.autoSpot(); this.found(at[0], at[1], { force: !!opts.at }); }
+    this.begin();
+  }
+  // the first day, once the HQ is down: the first offers, the Ministries' first words, the sweep
+  begin() {
+    const opts = { flat: this.flat };
     this.newOffers(); this.newOrder();
     this.ranking(); this.tick(); this.marketInit();
     this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base. You have open ground, a command post and ${C.START.supplies} supplies: draw a road, then build along it.`);
@@ -99,34 +108,22 @@ export class Sim {
     if (!this.walls) this.walls = new Uint8Array(N * N);
     if (!this.inMask) this.inMask = new Uint8Array(N * N);
   }
-  // the wall round the starting box, plus the road in. extra: [[ax, az, bx, bz, kind, width]] lines to add
-  startNet(extra) {
-    const N = this.N, o = (N - C.BOX) / 2, lo = o + 0.5, hi = o + C.BOX - 0.5, m = N / 2;
-    this.net = emptyNet();
-    const line = (ax, az, bx, bz, k, w) => addLine(this.net, snap(this.net, { x: ax, z: az }, 'free', w), snap(this.net, { x: bx, z: bz }, 'free', w), k, w);
-    line(lo, lo, hi, lo, 'wall'); line(hi, lo, hi, hi, 'wall'); line(hi, hi, lo, hi, 'wall'); line(lo, hi, lo, lo, 'wall');
-    if (!extra.length) {
-      line(m + 1, N, m + 1, m - 4, 'paved', 2);
-      line(m - 1.5, m + 0.5, m + 4.5, m + 0.5, 'paved', 1);
-    }
-    for (const [ax, az, bx, bz, k, w] of extra) line(ax, az, bx, bz, k, w);
-  }
   rebuildNet() {
     const r = raster(this.net, this.N, this.blockMask());
     this.roads = r.roads; this.walls = r.walls; this.inMask = r.inside; this.gates = r.gates; this.area = r.area;
     if (this.scrub) for (let i = 0; i < this.scrub.length; i++) if (this.scrub[i] && (this.roads[i] || this.walls[i])) { this.scrub[i] = 0; this.scrubV = (this.scrubV || 0) + 1; }
     // until a wall closes, the camp is open ground: build anywhere, defend nothing
     this.open = r.area === 0;
-    const N = this.N, bx = this.box();
+    const N = this.N;
     if (this.open) for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) ? 0 : 1; }
-    // only inside the charter's bounds
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (x < bx[0] || z < bx[0] || x >= bx[1] || z >= bx[1]) this.inMask[z * N + x] = 0;
+    // only on ground the Bureau has granted: the parcels you hold, or the old square charter
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (!this.ownedTile(x, z)) this.inMask[z * N + x] = 0;
     this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
   }
   blocked(i) { const t = this.terr?.[i]; return t === GROUND.WATER || t === GROUND.ROCK; }
   blockMask() { const N = this.N, m = new Uint8Array(N * N); if (this.terr) for (let i = 0; i < N * N; i++) m[i] = this.blocked(i) ? 1 : 0; return m; }
   // the charter's square: [lo, hi) on both axes
-  box() { const s = Math.min(this.N, C.STAGES[this.stage || 0].box), lo = Math.floor((this.N - s) / 2); return [lo, lo + s]; }
+  box() { const [x0, z0, x1, z1] = this.ownBounds(); return [Math.min(x0, z0), Math.max(x1, z1)]; }   // the square round every parcel held
   // ---------------------------------------------------------------- the charter: outpost, fort, major base
   nextStage() { return C.STAGES[(this.stage || 0) + 1] || null; }
   stageCheck() {
@@ -136,7 +133,7 @@ export class Sim {
   promote() {
     const n = this.nextStage(), ck = this.stageCheck(); if (!n || ck.some(c => !c.ok)) return false;
     this.spend('charter', n.sup || 0, n.cr); this.stage++; this.rebuildNet(); this.gain('pro', 6); this.pride += 4;
-    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. The ground you may build on has grown to ${Math.min(this.N, n.box)} tiles a side, the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken: ${n.cr.toLocaleString('en-US')} credits and ${(n.sup || 0).toLocaleString('en-US')} supplies.`);
+    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. You may now hold up to ${n.parcels >= 441 ? 'every grantable' : n.parcels} parcels of land (LAND), the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken: ${n.cr.toLocaleString('en-US')} credits and ${(n.sup || 0).toLocaleString('en-US')} supplies.`);
     this.events.push({ t: 'stage', stage: this.stage }); return true;
   }
   inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
@@ -144,7 +141,10 @@ export class Sim {
   // the main gate: the one nearest the bottom of the map. x, z: just inside it; ox, oz: off the edge of the map beyond it
   gate() {
     const N = this.N, gs = this.gates || [];
-    if (!gs.length) return { x: N / 2, z: N / 2 + C.BOX / 2 - 2, ox: N / 2, oz: N + 5, gx: N / 2, gz: N / 2 + C.BOX / 2 };
+    if (!gs.length) {   // no wall yet: the way in is the road south from the HQ, off the bottom of your ground
+      const hq = this.b.find(b => b.type === 'hq'), cx = hq ? hq.x + hq.w / 2 : N / 2, z1 = this.ownBounds()[3] || N / 2;
+      return { x: cx, z: z1 - 2, ox: cx, oz: Math.min(N + 5, z1 + 30), gx: cx, gz: z1 };
+    }
     const g = gs.reduce((p, q) => q.z > p.z ? q : p);
     let cx = 0, cz = 0, n = 0; for (let i = 0; i < N * N; i++) if (this.inMask[i]) { cx += i % N; cz += (i / N) | 0; n++; }
     cx = n ? cx / n + 0.5 : N / 2; cz = n ? cz / n + 0.5 : N / 2;
@@ -203,7 +203,7 @@ export class Sim {
     const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
     let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); wet++; } }
     const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
-    const [lo, hi] = this.box(); if ([a, b].some(p => p.x < lo - 1 || p.z < lo - 1 || p.x > hi + 1 || p.z > hi + 1)) return { ok: false, why: 'Outside the charter: the Bureau has not granted that ground yet', cost };
+    if (tiles.some(([x, z]) => !this.ownedTile(x, z))) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)', cost };
     if (len < 0.9) return { ok: false, why: 'Too short', cost };
     if (a.x < 0 || a.z < 0 || b.x < 0 || b.z < 0 || a.x > this.N || a.z > this.N || b.x > this.N || b.z > this.N) return { ok: false, why: 'Off the map', cost };
     for (const [x, z] of lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w)) if (this.occ[z * this.N + x]) return { ok: false, why: 'A building is in the way', cost };
@@ -932,9 +932,9 @@ export class Sim {
       const dir = dirs[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
       let place = placeName(s.biome, g.k, shore, () => this.rng.next());
       if ([...this.offers, ...this.patrols].some(o => o.place === place) && i < 20) continue;
-      return { px: x, py: y, km: Math.round(r * 2.5) / 10, dir, place };
+      return { px: x, py: y, km: Math.round(r * 2.1) / 10, dir, place };
     }
-    return { px: s.u + r0, py: s.v, km: Math.round(r0 * 2.5) / 10, dir: 'E', place: 'Eastern Flats' };
+    return { px: s.u + r0, py: s.v, km: Math.round(r0 * 2.1) / 10, dir: 'E', place: 'Eastern Flats' };
   }
   newOffers() {
     this.offers = [];
@@ -1350,90 +1350,24 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 10; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
+    for (const k of Object.keys(this)) if (!['own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    o.rngS = this.rng.s; o.v = 11; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
+    if (!s.v || s.v < 11) throw new Error('save from before the big map (0.16)');
     Object.assign(this, structuredClone(s));
-    if (!s.v || s.v < 2) this.wt *= C.T;
     this.rng = new RNG(1); this.rng.s = s.rngS; this.events = [];
-    this.N = s.N || 40; delete this.walls; delete this.inMask; delete this.gates;
-    this.roads = new Uint8Array(this.N * this.N);
-    if (s.roadsS) for (let i = 0; i < s.roadsS.length; i++) this.roads[i] = +s.roadsS[i];
-    this.genMap();
-    if (!s.v || s.v < 3) this.migrate3();
-    for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
-    if (!s.v || s.v < 3) this.roadsFromGate();
-    if (!this.net) this.migrate5();
-    delete this.roadsS;
+    delete this.walls; delete this.inMask; delete this.gates; delete this.roads;
+    this.own = this.unpackOwn(s.ownS); delete this.ownS;
     this.genMap();
     for (const b of this.b) for (let j = 0; j < b.d; j++) for (let i = 0; i < b.w; i++) this.occ[(b.z + j) * this.N + b.x + i] = b.id;
-    this.scrub = this.unpackScrub(s.scrubS); delete this.scrubS;   // bases from before 0.13 have none
-    if (!this.crews) this.crewsInit();
-    this.std ??= this.stage >= 1 ? 2 : 1;
-    if (!s.v || s.v < 9) { this.utilGrace = UTIL.grace; this.say('pro', `Notice: the Bureau's utilities inspectorate arrives in ${UTIL.grace} days. Build power substations, wells and a sewage lagoon (UTILITIES) so every building is covered.`); }   // bases from before 0.15
-    this.zone = this.unpackZones(s.zoneS); delete this.zoneS; this.chain ??= this.b.find(b => B[b.type]?.chain)?.type || null;   // bases from before 0.14 have no zones
+    this.scrub = this.unpackScrub(s.scrubS); delete this.scrubS;
+    this.zone = this.unpackZones(s.zoneS); delete this.zoneS;
     this.rebuildNet();
-    if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
-    this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
-    this.credits ??= C.START.credits; this.mood ||= 0; this.desk ||= []; this.flow ||= { cur: this.newFlow(), last: null };
-    if (this.b.length > 10 || this.week > 2) this.foundedF = true;   // bases from before the foundation rule
-    this.flow.today ||= this.newDay(); this.flow.days ||= []; this.loans ||= []; this.calls ||= []; this.diff ||= 'veteran'; this.stage ??= 2;   // bases from before charters keep all their ground
-    if (!s.v || s.v < 10) { if (this.stage >= 1) this.stage++; this.rebuildNet(); }   // 0.15.1 added the FOB charter between Outpost and Fort
-    for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
     this.adjacency(); this.recalc(); this.tick(); this.marketInit();
     if (!this.orders.length) this.newOrder();
   }
-  // bases saved before the supply lines: pumps and plants go (refunded), E-710 and shells become fuel and ammo at the HQ
-  migrate3() {
-    const old = this.b.filter(b => b.type === 'pump' || b.type === 'plant');
-    for (const b of old) this.supplies += b.type === 'pump' ? 250 : 380;
-    this.b = this.b.filter(b => !old.includes(b));
-    for (const b of this.b) { b.stock ||= zero(); if (B[b.type]?.squads) b.squads ??= 1; }
-    this.b = this.b.filter(b => B[b.type]);
-    const hq = this.b.find(b => b.type === 'hq');
-    if (hq) hq.stock = { rations: B.hq.store.rations, fuel: Math.min(B.hq.store.fuel, Math.round(this.e710 || 0) + 10), ammo: Math.min(B.hq.store.ammo, Math.round(this.shells || 0) + 10) };
-    for (const t of this.troops) t.train ??= t.missions > 0 ? 100 : 60;
-    delete this.e710; delete this.shells; delete this.contracts; delete this.cap;
-    this.stats = { deployed: 0, trained: 0, delivered: 0, ...this.stats };
-    if (old.length) this.say('base', `The Bureau has decommissioned ${old.length} extraction site${old.length > 1 ? 's' : ''}: this is a military base. E-710 now arrives by pelican. Construction costs refunded.`);
-  }
-  // bases saved before roads and walls became lines: the old map moves into the middle of the bigger one, the old perimeter
-  // becomes a wall, and painted road tiles become road lines, one per straight run
-  migrate5() {
-    const old = this.N, o = (C.N - old) / 2, R = this.roads, lines = [];
-    const done = new Uint8Array(old * old);
-    const runs = (t, horiz) => {
-      for (let a = 1; a < old - 1; a++) {
-        let s = -1;
-        for (let b = 1; b <= old - 1; b++) {
-          const on = b < old - 1 && (horiz ? R[a * old + b] : R[b * old + a]) === t;
-          if (on && s < 0) s = b;
-          if (!on && s >= 0) {
-            if (b - s >= 3) { lines.push(horiz ? [s + o + 0.5, a + o + 0.5, b - 1 + o + 0.5, a + o + 0.5] : [a + o + 0.5, s + o + 0.5, a + o + 0.5, b - 1 + o + 0.5]); for (let k = s; k < b; k++) done[horiz ? a * old + k : k * old + a] = 1; }
-            s = -1;
-          }
-        }
-      }
-    };
-    const extra = [];
-    for (const t of [1, 2]) {
-      lines.length = 0; runs(t, true); runs(t, false);
-      for (let i = 0; i < old * old; i++) if (R[i] === t && !done[i]) { const x = i % old + o, z = ((i / old) | 0) + o; lines.push([x + 0.25, z + 0.5, x + 0.75, z + 0.5]); }   // odd tiles left over
-      for (const l of lines) extra.push([...l, t === 2 ? 'paved' : 'dirt', 1]);
-    }
-    // the old road out of the gate, carried on to the edge of the new map
-    extra.push([C.N / 2 + 1, o + old - 1.5, C.N / 2 + 1, C.N, 'paved', 2]);
-    for (const b of this.b) { b.x += o; b.z += o; }
-    for (const v of this.veh) { v.x += o; v.z += o; v.path = []; v.parked = false; }
-    this.N = C.N; this.roads = null;
-    this.startNet(extra);
-  }
-  roadsFromGate() {   // a dirt road up from the gate on whatever ground is free
-    const m = this.N / 2;
-    for (const x of [m, m + 1]) for (let z = this.N - 2; z > 2; z--) { if (this.occ[z * this.N + x]) break; this.roads[z * this.N + x] = 1; }
-  }
 }
-Object.assign(Sim.prototype, Market, Build, Zones, Utilities); bindMarket(B);
+Object.assign(Sim.prototype, Market, Build, Zones, Utilities, Land); bindMarket(B);

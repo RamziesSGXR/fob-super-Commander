@@ -1,6 +1,6 @@
-import { open } from './lib.mjs';
+import { open, callIn } from './lib.mjs';
 const { b, p, errs } = await open(1280, 760);
-await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await p.click('#ld-go'); await p.waitForTimeout(1500); await p.keyboard.press('Escape');
+await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await callIn(p); await p.keyboard.press('Escape');
 const r = await p.evaluate(() => {
   const { sim: s } = window.__fob, m = 32; s.supplies = 99999; s.credits = 9999; s.foundedF = true; s.tech.done.push('fortworks', 'civic', 'archive', 'warroom', 'command'); s.stage = 2; s.terr.fill(0); s.rebuildNet();
   const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
