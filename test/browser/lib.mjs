@@ -28,7 +28,7 @@ export async function callIn(p) {
 // lay a cross of paved road and the foundation, through the simulation, then let a few days pass
 export async function foundation(p, days = 6) {
   await p.evaluate(days => {
-    const { sim: s } = window.__fob, hq = s.b.find(b => b.type === 'hq'), cx = hq.x + 1, cz = hq.z + 7; s.supplies += 4000;
+    const { sim: s } = window.__fob, hq = s.b.find(b => b.type === 'hq'), cx = hq.x + 1, cz = hq.z + 7; s.supplies += 4000; s.equipFree = true;
     // level a square south of the HQ first, as a player would with LANDSCAPE, so the roads keep their grade
     { const M = s.N + 1, R = 32, base = Math.max(0.5, s.hv(hq.x, hq.z)); for (let z = cz - R; z <= cz + R; z++) for (let x = cx - R; x <= cx + R; x++) if (!s.lockedCorner(x, z)) s.hgt[z * M + x] = base; s.reclassify(cx - R - 1, cz - R - 1, cx + R + 1, cz + R + 1); s.rebuildNet(); }
     const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'grid', k), s.snapLine({ x: bx, z: bz }, 'grid', k), k);

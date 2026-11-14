@@ -22,6 +22,7 @@ await p.evaluate(() => { window.__fob.sim.supplies += 3000; });
 await p.click('#b-groups [data-g="zones"]'); await p.waitForTimeout(300);
 const iv = await p.evaluate(() => document.querySelector('#iv .on')?.dataset.iv || '');
 await p.click('#b-items [data-b="zone:life"]').catch(() => {}); await p.waitForTimeout(300);
+await p.evaluate(([x, z]) => { const v = window.__fob.view; v.target.x = v.wx(x + 4.5); v.target.z = v.wx(z + 16); }, [x, z]); await p.waitForTimeout(500);   // the bottom bars are tall: bring the spot up the screen
 await click(x + 4.5, z + 6.5);
 const zoned = await p.evaluate(() => window.__fob.sim.zoneCount('life'));
 await p.screenshot({ path: 'test/shots/hq3.png' });

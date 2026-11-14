@@ -86,6 +86,7 @@ export const Terrain = {
   // lower), level (to target), soften, slope (along a to b). Only on your land, never under buildings or roads
   terraform(op, x, z, o = {}) {
     if (!this.hgt) return { ok: false, why: 'This ground cannot be worked' };
+    { const q = this.equipLock('landscape'); if (q) return { ok: false, why: `${q}: earthworks want its bulldozers` }; }
     const M = this.N + 1, r = o.r ?? 3, s = o.s ?? 1, dt = o.dt ?? 0.1, rr = r * r;
     const ch = []; let vol = 0;
     for (let j = Math.floor(z - r); j <= Math.ceil(z + r); j++) for (let i = Math.floor(x - r); i <= Math.ceil(x + r); i++) {

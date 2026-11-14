@@ -27,7 +27,7 @@ export const Build = {
   stdOf(b) { return b && this.hasStd(b.type) ? (b.std ?? 2) : 2; },
   // the standard a new building of this type goes up at: the one asked for, else the one picked in the build menu
   stdFor(type, spec) { return this.hasStd(type) ? (spec?.std ?? this.std ?? 2) : 2; },
-  stdLock(k) { const s = STD[k]; return s.stage && (this.stage ?? 0) < s.stage ? `${s.name} needs a ${C.STAGES[s.stage].name} charter` : null; },
+  stdLock(k) { const s = STD[k], q = this.equipLock('std' + k); return s.stage && (this.stage ?? 0) < s.stage ? `${s.name} needs a ${C.STAGES[s.stage].name} charter` : q ? `${s.name}: ${q.toLowerCase()}` : null; },
   setStd(k) { if (STD[k] && !this.stdLock(k)) this.std = k; return this.std; },
   // a capacity number (beds, eat, slots, ward, sales...) at the building's standard. Upgrades work at the old one until done
   capF(b) { return STD[this.stdOf(b)].cap; },

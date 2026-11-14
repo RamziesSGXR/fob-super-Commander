@@ -1,7 +1,7 @@
 // The 3D view: a near-isometric camera you can rotate, the ground, the wire, every building and everyone walking about.
 import * as THREE from './vendor/three.js';
 import { B, ZONES, ZKEYS, UTIL, LAND } from './config.js';
-import { dims, wingOf } from './sim.js';
+import { dims, wingOf, PLAZA } from './sim.js';
 import { BIOMES } from './site.js';
 import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
@@ -268,6 +268,7 @@ export class View {
     const lin = c => new THREE.Color().setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace);
     const U = { uGA: { value: this.gndA }, uGB: { value: this.gndB }, uN: { value: N }, uHue: { value: lin(hue) }, uBed: { value: lin((bio?.sea || [70, 110, 150]).map(v => v * 0.7)) }, uElev: this.uElev ||= { value: 0 }, uGrid: this.uGrid ||= { value: 0 } };
     const gm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }); gm.defines = { STANDARD: '', NO_HGT: '' };
+    gm.polygonOffset = true; gm.polygonOffsetFactor = 2; gm.polygonOffsetUnits = 6;   // the ground gives way to whatever lies on it
     gm.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTpW; varying vec3 vTpN;')
@@ -407,6 +408,26 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     }
     this.roadG.add(g);
   }
+  // the flag plaza: open ground round the Super Earth flag with a trail round its edge. It is dressed by the charter:
+  // trodden dirt at an outpost, gravel and a footpath at a FOB, pavers and lamps at a fort, pale stone and gold at a major base
+  syncPlaza() {
+    const s = this.sim, f = s?.b.find(b => b.type === 'seflag'), key = f ? `${f.x},${f.z},${s.stage || 0}` : '';
+    if (key === this.flagPlzKey) return; this.flagPlzKey = key;
+    if (this.flagPlz) { this.world.remove(this.flagPlz); this.flagPlz.traverse(o => { o.geometry?.dispose(); o.material?.dispose?.(); }); this.flagPlz = null; }
+    if (!f) return;
+    const st = Math.min(3, s.stage || 0), G = this.flagPlz = new THREE.Group(); G.position.set(this.wx(f.x + 1), 0, this.wx(f.z + 1)); this.world.add(G);
+    const mat = (c, n, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -n, polygonOffsetUnits: -n * 3, ...o });
+    const ring = (r0, r1, y, m) => { const g = new THREE.RingGeometry(r0, r1, 56, Math.max(1, Math.round((r1 - r0) * 4))); g.rotateX(-Math.PI / 2); const me = new THREE.Mesh(g, m); me.position.y = y; me.receiveShadow = true; me.frustumCulled = false; G.add(me); };
+    const R = PLAZA + 0.95;
+    ring(0, R - 0.5, 0.012, mat(['#6f5b40', '#8d887a', '#a9a79c', '#c9c5b6'][st], 1));
+    ring(R - 0.5, R, 0.014, mat(['#5d4a33', '#b3b1a6', '#d6d3c6', '#e4e0d2'][st], 2));
+    if (st >= 1) ring(1.5, 1.62, 0.016, mat(st >= 3 ? '#c9a23a' : '#d9d9d2', 3));
+    if (st >= 3) ring(R - 0.58, R - 0.5, 0.016, mat('#c9a23a', 3));
+    if (st >= 2) { const post = new THREE.MeshStandardMaterial({ color: '#2c2f2c', roughness: 0.6 }), lamp = new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffe9a0', emissiveIntensity: 1.4 });
+      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + Math.PI / 8, x = Math.cos(a) * (R - 0.62), z = Math.sin(a) * (R - 0.62);
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.3, 6), post); p.position.set(x, 0.15, z); p.castShadow = true; G.add(p);
+        const l = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), lamp); l.position.set(x, 0.32, z); G.add(l); } }
+  }
   syncRoads() {
     const s = this.sim; if (s.roadsV === this.roadsV) return; this.roadsV = s.roadsV;
     this.roadG.clear(); this.booms = [];
@@ -423,7 +444,10 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     const dash = this.dashMat ||= new THREE.MeshBasicMaterial({ color: '#d8c35a' }), white = this.zebraMat ||= new THREE.MeshBasicMaterial({ color: '#d9d9d2' });
     const walk = this.walkMat ||= new THREE.MeshStandardMaterial({ color: '#a7a69c', roughness: 0.9 });
     this.roadMats[3] ||= new THREE.MeshStandardMaterial({ color: '#b3b1a6', roughness: 0.9 });
-    const surfOf = k => k === 'dirt' ? 1 : k === 'path' ? 3 : 2, hwOf = sg => sg.k === 'path' ? 0.36 : sg.k === 'dirt' ? 0.44 : sg.w / 2, rut = this.rutMat ||= new THREE.MeshStandardMaterial({ color: '#5d4a33', roughness: 1 }), kerbed = sg => sg.k === 'paved' || sg.k === 'bridge', KW = 0.22;
+    // surfaces that overlap are layered by depth offset, not by height: dirt under footpath under asphalt under kerbs under paint
+    const lay = (mt, n) => { if (!mt.polygonOffset) { mt.polygonOffset = true; mt.polygonOffsetFactor = -n; mt.polygonOffsetUnits = -n * 3; mt.needsUpdate = true; } return mt; };
+    lay(this.roadMats[1], 1); lay(this.roadMats[3], 2); lay(this.roadMats[2], 3); lay(walk, 4); lay(dash, 5); lay(white, 5);
+    const surfOf = k => k === 'dirt' ? 1 : k === 'path' ? 3 : 2, hwOf = sg => sg.k === 'path' ? 0.36 : sg.k === 'dirt' ? 0.44 : sg.w / 2, rut = lay(this.rutMat ||= new THREE.MeshStandardMaterial({ color: '#5d4a33', roughness: 1 }), 2), kerbed = sg => sg.k === 'paved' || sg.k === 'bridge', KW = 0.22;
     const yOf = sf => 0.012 + (sf === 2 ? 0.004 : sf === 1 ? 0.002 : 0.003);
     const roads = net.segs.filter(g => g.k !== 'wall'), inc = new Map(), cut = new Map();
     for (const sg of roads) for (const [me, ot] of [[sg.a, sg.b], [sg.b, sg.a]]) { const n = nd(me), o = nd(ot), L = Math.hypot(o.x - n.x, o.z - n.z) || 1; (inc.get(me) || inc.set(me, []).get(me)).push({ sg, ang: Math.atan2(o.z - n.z, o.x - n.x), ux: (o.x - n.x) / L, uz: (o.z - n.z) / L, hw: hwOf(sg), L }); }
@@ -838,7 +862,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       } }
     this.t += dt; const s = this.sim, t = this.t;
     this.camUpdate(dt);
-    this.syncRoads();
+    this.syncRoads(); this.syncPlaza();
     this.syncBuildings(dt);
     this.syncScrub(); this.syncZones();
     this.syncPeople(dt);

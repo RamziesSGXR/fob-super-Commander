@@ -277,6 +277,7 @@ const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', why: 'One tile wide, che
   unroad: { name: 'Bulldoze', k: null, why: 'Take out a road or a wall', desc: 'Click a road or a wall to take it out. Half the cost back.' },
   land: { name: 'Land', k: null, area: true, why: 'Buy parcels next to yours', desc: 'Shows the section as parcels, 600 m on a side. Yellow ones touch your ground and can be bought; click one to see what is on it and its price. The charter sets how many you may hold.' },
   clear: { name: 'Clear Scrub', k: null, area: true, why: `Engineers clear a patch, +${SCRUB.yield} SUP a tile`, desc: `Click scrub or debris to have the next free engineer crew clear that patch (up to ${SCRUB.patch} tiles). Each tile cleared brings in ${SCRUB.yield} supplies of salvage. Click an ordered patch to cancel it. Anything you build on scrub is cleared first anyway.` } };
+let lkSaid = null;
 const SNAPS = ['grid', '45', 'free'], SNAPNAME = { grid: 'GRID', 45: '45°', free: 'FREE' };
 let snapMode = 'grid';
 const lineCost = k => k ? sim.linePrice(k) : 0;
@@ -330,12 +331,12 @@ function buildBar() {
   const lines = group === 'roads' ? ['road1', 'road2', 'path', 'bridge', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
-  if (group === 'landscape') { landBar(G); return; }
+  if (group === 'landscape') { const lk = sim.equipLock('landscape'); if (lk && lkSaid !== sim) { lkSaid = sim; flash(`Earthworks: ${lk.toLowerCase()} (LOGISTICS).`); } landBar(G); return; }
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
   const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A WATCH${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
   const head = `<div class="bi-head"><b>${G[1]}</b><span>${group === 'power' ? '' : esc(G[2])}</span>${utilLine}<span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
   $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
-    + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : k === 'land' ? 'zones' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'land' ? `${sim.held()} / ${Math.min(441, sim.allowance())} HELD` : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
+    + lines.map(k => { const d0 = RTOOLS[k], lk = d0.k ? sim.equipLock(d0.k) : null, d = lk ? { ...d0, why: lk } : d0; return `<button class="bi road ${tool === k ? 'on' : ''} ${lk ? 'lock' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : k === 'land' ? 'zones' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'land' ? `${sim.held()} / ${Math.min(441, sim.allowance())} HELD` : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
       const lk = sim.locked(k), cost = sim.costOf(k, specOf(k)), poor = sim.supplies < cost, fnd = !found && FOUNDATION.includes(k) && fm.includes(k);
       return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}" data-std="${sim.hasStd(k) ? sim.std : 2}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${cost} SUP${d.up ? ` · <i>−${perDay(d.up * (sim.hasStd(k) ? STD[sim.std].up : 1))}/watch</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
@@ -407,7 +408,7 @@ $('design').onclick = e => {
 };
 function pickTool(k) {
   if (k.startsWith('zone:')) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showPlots(tool ? zoneable() : null); buildBar(); if (tool) flash(`Click beside a road to ${k === 'zone:' ? 'clear' : 'fill'} that block${k === 'zone:' ? '' : ' with ' + ZONES[k.slice(5)].name}, or drag to paint a patch. The pale strips are where zoning can go.`); return; }
-  if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
+  if (RTOOLS[k]) { const lk = RTOOLS[k].k && sim.equipLock(RTOOLS[k].k); if (lk) { flash(`${RTOOLS[k].name}: ${lk.toLowerCase()} (LOGISTICS).`); audio.play('deny'); return; } tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
   if (k.startsWith('tf:')) { tool = tool === k ? null : k; tfA = null; select(null); view.setGhost(null); view.showBrush(null); buildBar(); if (tool) flash({ shift: 'Hold the left button to raise, the right to lower.', level: 'Hold to flatten. Shift-click samples the height to level to.', soften: 'Hold to smooth the ground.', slope: 'Click where the slope starts, then where it ends.' }[k.slice(3)] || 'Hold to paint the surface.'); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
@@ -555,6 +556,7 @@ function logoImg(logo) {
   const c = document.createElement('canvas'); c.width = c.height = 44; drawLogo(c.getContext('2d'), logo, 1, 1, 42); const u = c.toDataURL(); logoCache.set(k, u); return u;
 }
 function startMoveHQ() { select(null); tool = 'movehq'; flash('Pick where the HQ stands, inside your land. The flag goes beside it.'); }
+let lastWarn = [];
 const ORDERS = [
   ['Draw a road from your HQ (ROADS, drag). Stay inside your land: the dashed yellow line', s => s.net.segs.some(q => q.k !== 'wall')],
   ['Paint a Life Support zone and a Logistics zone along the road (ZONES: click beside a road to fill a block): barracks, a mess, latrines and a depot grow there', s => s.zoneCount('life') > 0 && s.zoneCount('logi') > 0],
@@ -567,13 +569,13 @@ const ORDERS = [
   ['Carry the grid with a Substation so nothing goes dark (UTILITIES; the UTILITIES view shows coverage)', s => s.has('substation')],
   ['Upgrade a tent to a prefab: select it and press UPGRADE', s => s.b.some(b => b.done && s.hasStd(b.type) && b.type !== 'hq' && s.stdOf(b) >= 1)],
   ['Ship trained troopers to the front: transports leave the pad at 16:00', s => s.stats.deployed > 0],
-  ['Deal with the desk: answer a request or grade a trooper\'s file (here, or DESK)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
+  ['Deal with the desk: answer a request or grade a trooper\'s file (here, or HUMANITY)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
   ['Answer a Ministry call: set aside what they ask for', s => (s.stats.calls || 0) > 0],
-  ['Set your Ministry commitments (ECONOMY, COMMITMENTS): what you give each Ministry a watch for standing', s => !!s.commitSet],
+  ['Set your Ministry commitments (PROSPERITY, COMMITMENTS): what you give each Ministry a watch for standing', s => !!s.commitSet],
   ['Trade on the market or with a rival base: buy what you are short of, sell the surplus', s => (s.stats.trades || 0) + (s.stats.mkt || 0) > 0],
   ['Keep supplies and credits rising: the net per watch is under each at the top', s => { const r = s.rates(); return s.week >= 2 && r.supNet >= 0 && r.crNet >= 0; }],
   ['Build a Patrol Office for standing patrols', s => s.has('patrol')],
-  ['Pay back the Founding Charter (ECONOMY, LOANS)', s => !s.loans.some(l => l.k === 'charter')],
+  ['Pay back the Founding Charter (PROSPERITY, LOANS)', s => !s.loans.some(l => l.k === 'charter')],
   ['Be promoted to a Forward Operating Base (EXPANSION, CHARTER)', s => s.stage >= 1],
   ['Buy a parcel of land next to yours: the FOB charter lets you hold 20 (ROADS, LAND)', s => (s.stats.parcels || 0) >= 1],
   ['Be promoted to a Fort: more land, permanent buildings', s => s.stage >= 2],
@@ -741,7 +743,8 @@ function taskBoard() {
   // files to grade
   { const files = Math.min(s.reviewsLeft(), s.toReview().length); if (files) items.push(`<div class="tb-i"><em>ROSTER REVIEW</em><b>${files} trooper file${files > 1 ? 's' : ''} to grade</b><span>A fair grade pays 8 supplies and 3 credits.</span><div class="tb-b"><button class="btn" data-open="led" type="button">OPEN THE DESK</button></div></div>`); }
   // what needs fixing
-  const warn = (t, why, open) => items.push(`<div class="tb-i alert"><b>${esc(t)}</b><span>${esc(why)}</span>${open ? `<div class="tb-b"><button class="btn" data-open="${open}" type="button">OPEN</button></div>` : ''}</div>`);
+  lastWarn = [];
+  const warn = (t, why, open) => { lastWarn.push({ t, why, open }); items.push(`<div class="tb-i alert"><b>${esc(t)}</b><span>${esc(why)}</span>${open ? `<div class="tb-b"><button class="btn" data-open="${open}" type="button">OPEN</button></div>` : ''}</div>`); };
   const use = s.usage();
   for (const g of GKEYS) if (use[g] > 0 && s.amount(g) < use[g] * 0.5) warn(`${GOODS[g].name} running low`, `${Math.floor(s.amount(g))} left, ${Math.round(use[g])} used a watch. More storage brings bigger deliveries; or buy on the market.`, 'eco:market');
   for (const m of MKEYS) if ((s.commit?.[m] || 0) && (s.commitLast?.[m] ?? 1) < 0.6) warn(`${COMMIT[m].ministry}: commitment short`, `Only ${Math.round(s.commitLast[m] * 100)}% paid yesterday. Trade for the goods, or lower the level.`, 'eco:commit');
@@ -793,7 +796,7 @@ function infoHtml(k) {
 }
 document.addEventListener('pointermove', e => { const el = e.target.closest?.('[data-info]'); if (!el || !playing) return; const h = infoHtml(el.dataset.info); if (h) { const r = el.getBoundingClientRect(); tip(h, r.left + r.width / 2, r.top < innerHeight / 2 ? r.bottom + 8 : r.top - 8, r.top >= innerHeight / 2); } });
 document.addEventListener('pointerout', e => { if (e.target.closest?.('[data-info]') && !e.relatedTarget?.closest?.('[data-info]') && flashT <= 0) hideTip(); });
-document.addEventListener('click', e => { const el = e.target.closest?.('#status [data-info]'); if (el && INFO_GO[el.dataset.info]) { INFO_GO[el.dataset.info](); audio.play('click'); } });
+document.addEventListener('click', e => { const el = e.target.closest?.('#status [data-info], #top .res [data-info]'); if (el && INFO_GO[el.dataset.info]) { INFO_GO[el.dataset.info](); audio.play('click'); } });
 // ---------------------------------------------------------------- layout: keep the floating panels out of each other's way.
 // CSS places them; this trims and shifts them as they open, close and grow, every frame
 function layout() {
@@ -802,7 +805,7 @@ function layout() {
   if (!playing) return;
   if (W <= 760 || H <= 560) {   // phones: a popup takes the top of the screen and the task board steps aside for it
     const pop = q('deskpop'), orders = q('orders'), selp = q('selp'), up = shown(pop), card = shown(selp);
-    const t0 = q('top').getBoundingClientRect().bottom + 6, floor = card ? selp.getBoundingClientRect().top : (shown(q('b-items')) ? q('b-items') : q('b-groups')).getBoundingClientRect().top;
+    const t0 = 8, floor = card ? selp.getBoundingClientRect().top : (shown(q('b-items')) ? q('b-items') : q('b-groups')).getBoundingClientRect().top;
     if (up) Object.assign(pop.style, { left: '4vw', right: 'auto', width: '92vw', transform: 'none', top: t0 + 'px', bottom: 'auto', maxHeight: Math.max(120, floor - t0 - 8) + 'px', overflowY: 'auto' });
     if (orders) orders.style.visibility = up || card ? 'hidden' : '';   // the task board steps aside for a popup or a building card
     return;
@@ -812,7 +815,7 @@ function layout() {
   if (items) items.style.marginRight = right + 'px';                       // the build bar stops short of the minimap column
   if (iv) iv.style.maxWidth = (mr.width + 4) + 'px';                       // the view buttons wrap inside that column
   const barTop = shown(items) ? items.getBoundingClientRect().top : groups.getBoundingClientRect().top;
-  const top0 = q('top').getBoundingClientRect().bottom + 6;
+  const top0 = 8;
   // the left column: the task board stops above the build bar
   const orders = q('orders'), oShown = shown(orders); if (oShown) orders.style.maxHeight = Math.max(120, barTop - orders.getBoundingClientRect().top - 8) + 'px';
   // the right column: standings, the building card (folding the standings away when there's no room), the view buttons
@@ -892,6 +895,7 @@ function hud() {
   $('md-def').textContent = o ? `${o.sent}/${o.n} shipped` : `${s.patrols.length} patrols out`;
   $('md-pro').textContent = low.length ? `${low.map(g => GOODS[g].short).join(', ')} low` : s.hunger > 0.15 ? 'votes hungry' : 'supplies OK';
   $('md-tru').textContent = s.inspected ? 'inspected' : `inspects in ${days(C.WEEK * C.INSPECT_AT - s.wt)}`.replace(' days', 'd').replace(' day', 'd').replace(' min', 'm');
+  $('md-int').textContent = lastWarn.length ? `${lastWarn.length} warning${lastWarn.length > 1 ? 's' : ''}` : 'all clear';
   $('md-st').textContent = `${['1st', '2nd', '3rd', '4th'][s.rank]} of 4`;
   { const files = Math.min(s.reviewsLeft(), s.toReview().length), calls = s.calls.filter(c => !c.acc).length; $('md-led').textContent = calls ? `${calls} call${calls > 1 ? 's' : ''}` : s.desk.length ? `${s.desk.length} request${s.desk.length > 1 ? 's' : ''}` : files ? `${files} file${files > 1 ? 's' : ''}` : 'clear'; }
   $('md-sci').textContent = s.tech.cur ? `${Math.floor(s.tech.pts / TECH[s.tech.cur].hrs * 100)}%` : s.has('lab') ? 'idle' : `${s.tech.done.length}/${Object.keys(TECH).length}`;
@@ -1046,13 +1050,37 @@ function renderEco(s) {
   }
   return h;
 }
+// ---------------------------------------------------------------- the Ministry of Intelligence: what to do next, what is
+// going wrong, what is owed and what is coming
+function renderIntel(s) {
+  const done = ORDERS.map(o => o[1](s)), todo = ORDERS.map((o, i) => i).filter(i => !done[i]).slice(0, 4);
+  let h = `<div class="mi-head"><div class="big">${lastWarn.length || '✓'}</div><div><b>MINISTRY OF INTELLIGENCE</b><p>What the base should do next, what is going wrong, what is owed and what is on its way. Nothing here is an order: it is advice.</p></div></div>`;
+  h += `<h3>SUGGESTED ACTIONS</h3>` + (todo.length ? `<ul class="rep">${todo.map(i => `<li>${esc(ORDERS[i][0])}</li>`).join('')}</ul>` : '<p class="fine left">The first orders are all done.</p>');
+  const n = s.nextStage(), ck = n ? s.stageCheck().filter(c => !c.ok) : [];
+  if (n) h += `<h3>TOWARD THE ${n.name.toUpperCase()} CHARTER</h3>` + (ck.length ? `<ul class="rep">${ck.map(c => `<li class="down">Still needed: ${esc(c.text)}</li>`).join('')}</ul>` : '<p class="up">Everything is in place: apply on the Expansion tab.</p>');
+  { const eq = [['yard', 'Engineer Yard', 'earthworks (LANDSCAPE) and prefab buildings'], ['batch', 'Concrete Batch Plant', 'paved roads, footpaths, bridges and permanent buildings']].filter(([k]) => !s.has(k));
+    if (eq.length) h += `<h3>CONSTRUCTION EQUIPMENT</h3><ul class="rep">${eq.map(([, nme, what]) => `<li>No ${nme} yet: the engineers cannot do ${what}.</li>`).join('')}</ul>`; }
+  h += `<h3>WARNINGS</h3>` + (lastWarn.length ? lastWarn.map(w => `<div class="card2"><div class="l"><b class="down">${esc(w.t)}</b><span>${esc(w.why)}</span></div></div>`).join('') : '<p class="fine left">Nothing is going wrong that Intelligence can see.</p>');
+  const pay = s.loans.reduce((a, l) => a + Math.min(l.bal, LOANS[l.k].pay), 0);
+  h += `<h3>PAYMENTS</h3><div class="kv"><span>OWED IN ALL</span><b>${fmt(s.loans.reduce((a, l) => a + l.bal, 0))} CR</b></div><div class="kv"><span>TAKEN EACH DAY</span><b>${fmt(pay)} CR</b></div>`
+    + (s.credits < 0 ? `<div class="kv"><span>OVERDRAWN</span><b class="down">${fmt(-s.credits)} CR of ${fmt(s.OD)}</b></div>` : '') + (s.unpaidDays ? `<div class="kv"><span>WAGES UNPAID</span><b class="down">${s.unpaidDays} watch${s.unpaidDays > 1 ? 'es' : ''}</b></div>` : '');
+  const inc = [];
+  for (const c of s.calls) inc.push(`${MINI[CALLS[c.k].m]}: "${CALLS[c.k].title}", ${fmt(c.n)} ${c.g} due day ${calDay(c.due)}${c.acc ? ' (set aside)' : ''}`);
+  for (const o of s.orders) inc.push(`Deployment order: ${o.sent} of ${o.n} troopers shipped, due day ${calDay(o.due)}`);
+  if (s.sweep && !s.sweep.done && s.sweep.px != null) inc.push(`Parcel ${s.parcelName(s.sweep.px, s.sweep.pz)} is being swept: secure in ${days(s.sweep.dur - s.sweep.t)}`);
+  if (!s.inspected) inc.push(`The Ministry of Truth inspects in ${days(Math.max(0, C.WEEK * C.INSPECT_AT - s.wt))}`);
+  h += `<h3>INCOMING</h3>` + (inc.length ? `<ul class="rep">${inc.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="fine left">Nothing due.</p>');
+  h += `<h3>THREATS</h3><p class="fine left">No hostile contact near the perimeter. Raids are not in the field yet; when they are, this is where the warning comes.</p>`;
+  return h;
+}
 function renderMins(force) {
   const s = sim;
-  const tabs = [['eco', 'ECONOMY'], ['led', 'DESK'], ['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['sci', 'SCIENCE'], ['st', 'STANDINGS']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
+  const tabs = [['eco', 'PROSPERITY'], ['led', 'HUMANITY'], ['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['sci', 'SCIENCE'], ['int', 'INTELLIGENCE'], ['st', 'UNITY']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
   if ($('mi-tabs')._html !== tabs) $('mi-tabs').innerHTML = $('mi-tabs')._html = tabs;
   let h = '';
   const head = m => `<div class="mi-head"><div class="big c-${m}">${Math.round(s.stand[m])}</div><div><b class="c-${m}">${MIN[m].name.toUpperCase()}</b><p>${MIN[m].wants} Standing drifts back toward ${C.STAND.rest} every day.</p></div></div>`;
   if (minTab === 'eco') h += renderEco(s);
+  else if (minTab === 'int') h += renderIntel(s);
   else if (minTab === 'def') {
     const home = s.troops.filter(t => t.state !== 'patrol'), ready = home.filter(t => t.train >= 100).length, rec = s.troops.filter(t => t.train < 100), training = rec.filter(t => t.at).length;
     h += head('def') + `<h3>DEPLOYMENT ORDERS</h3>`;
@@ -1126,7 +1154,7 @@ function renderMins(force) {
     for (const t of files.slice(0, left > 0 ? 3 : 0)) { const f = fileOf(t);
       h += `<div class="file"><div><b>${rankOf(t.missions)} ${esc(t.name)}</b>${t.grade ? ` <span>last graded ${t.grade}</span>` : ''}<br><span>RANGE</span> ${f.range} · <span>COURSE</span> ${f.course} · <span>MISSIONS</span> ${f.missions}${f.medals ? ` · <span>MEDALS</span> ${f.medals}` : ''}<br><span>CONDUCT</span> ${esc(f.conduct)}<br><span>NEXT OF KIN</span> <i>${esc(f.kin)}</i></div>`
         + `<div class="g">${GRADES.map(g => `<button class="btn" data-grade="${t.id}:${g}" type="button">${g}</button>`).join('')}</div></div>`; }
-    h += `<p class="fine left">Money, loans and the market are under ECONOMY.</p>`;
+    h += `<p class="fine left">Money, loans and the market are under PROSPERITY.</p>`;
   } else if (minTab === 'sci') {
     const labs = s.b.filter(b => b.type === 'lab' && b.done), rate = s.labRate();
     h += `<p>A Science Lab researches one upgrade at a time while it is staffed and powered. More labs, faster research. Research is paid for up front.</p>`;
@@ -1186,7 +1214,16 @@ $('mi-body').onclick = e => {
 };
 function openMins(tab) { if (tab) minTab = tab; $('mins').classList.remove('hidden'); $('deskpop').classList.add('hidden'); renderMins(true); }
 function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) { $('deskpop').classList.add('hidden'); renderMins(true); } }
-$('mdock').onclick = e => { const b = e.target.closest('[data-mt]'); if (b) toggleMins(b.dataset.mt); };
+$('mdock').onclick = e => {
+  if (e.target.closest('[data-emp]')) { setEmp(!empOpen); audio.play('click'); return; }
+  if (e.target.closest('[data-map]')) { mapOpen = !mapOpen; $('hud').classList.toggle('nomap', !mapOpen); $('md-map-b').classList.toggle('on', mapOpen); audio.play('click'); return; }
+  const b = e.target.closest('[data-mt]'); if (b) toggleMins(b.dataset.mt);
+};
+// EMPLOYMENT opens and closes the build bar; MAP the minimap
+let empOpen = true, mapOpen = false;
+function setEmp(on) { empOpen = on; $('hud').classList.toggle('noemp', !on); $('md-emp-b').classList.toggle('on', on); document.documentElement.style.setProperty('--tb', on ? '50px' : '0px'); if (!on && tool && !sim?.callIn) { tool = null; view.setGhost(null); view.showRoadGhost(null); view.showPlots(null); } }
+$('hud').classList.add('nomap'); $('md-emp-b').classList.add('on');
+$('b-buy').onclick = () => { const r = sim.trade('sup', 100, true); if (r.ok) audio.play('place'); else { flash(r.why || 'Cannot buy supplies now.'); audio.play('deny'); } hud(); };
 document.querySelector('#top .bigs').onclick = e => { const b = e.target.closest('[data-mt]'); if (!b) return; ecoTab = b.dataset.et || 'budget'; openMins('eco'); };
 $('mi-x').onclick = () => $('mins').classList.add('hidden');
 $('b-week').onclick = () => toggleMins('st'); $('stand').onclick = () => toggleMins('st');

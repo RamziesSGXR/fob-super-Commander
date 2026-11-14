@@ -502,3 +502,27 @@ body.ui-scifi .bi.on { border-color: var(--yellow); background-color: rgba(40, 3
 #debug { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); width: 300px; padding: 0 10px 8px; z-index: 30; font-size: 11px; pointer-events: none; opacity: 0.94; }
 #debug .kv b { text-align: right; }
 #status #clock { flex-shrink: 0; margin-right: 12px; } #status #ck-phase { display: inline-block; min-width: 76px; }
+
+/* 0.20: one bar. The old top bar (name, supplies, credits, the day, the menu buttons) sits on the bottom, on top of the
+   status row; the standings panel is gone (UNITY has it); the minimap opens from MAP; EMPLOYMENT opens the build bar */
+:root { --sb: 80px; }
+#status { height: calc(34px + env(safe-area-inset-bottom)); gap: 8px; }
+#top, body.ui-scifi #top { top: auto; bottom: calc(34px + env(safe-area-inset-bottom)); min-height: 46px; height: 46px; padding: 0 max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); background: rgba(6, 8, 7, 0.96); border: 0; border-top: 1px solid var(--am-d, var(--line)); gap: 12px; }
+#top .res { display: flex; gap: 12px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+#top .ri i { font-style: normal; font-size: 9px; letter-spacing: 0.14em; color: var(--g-dim); margin-right: 4px; } #top .ri b { color: var(--cy, var(--g)); } #top .ri.bad b { color: #ff6a4d; }
+#top #b-buy { min-height: 26px; font-size: 10.5px; padding: 2px 8px; white-space: nowrap; }
+#top .week { min-width: 200px; }
+#stand { display: none !important; }
+#orders { top: calc(8px + env(safe-area-inset-top)); max-height: calc(100vh - 8px - var(--sb) - var(--tb) - 190px); }
+#notices, #mmwrap #comms, #callin, #debug { top: calc(8px + env(safe-area-inset-top)); }
+#hud.noemp #build { display: none; }
+#hud.nomap #minimap, #hud.nomap #b-mmz { display: none; }
+#status #mdock { margin-left: 0; flex: 1; justify-content: flex-end; overflow-x: auto; }
+#status .md.on b { color: var(--yellow); }
+@media (max-width: 1180px) { #top .res { display: none; } }
+#mins { max-height: min(78vh, 680px, calc(100vh - 2 * (var(--sb) + var(--tb)) - 8px)); }
+#top .res { flex-wrap: wrap; row-gap: 0; column-gap: 10px; width: 300px; flex: 0 0 300px; font-size: 10.5px; line-height: 1.55; align-content: center; height: 100%; }
+#top .week { min-width: 150px; } #top .who { min-width: 0; flex-shrink: 1; }
+@media (max-width: 1380px) { #top .res { display: none; } }
+#top { gap: 8px !important; } #top .who { min-width: 150px; flex-shrink: 0; } #top .week { min-width: 130px; }
+@media (max-width: 1500px) { #b-rl, #b-rr { display: none; } }

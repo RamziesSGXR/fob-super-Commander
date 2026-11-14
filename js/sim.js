@@ -6,7 +6,7 @@
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
 import { FOUNDATION, EARLY } from './config.js';
-import { LAND } from './config.js';
+import { LAND, EQUIP } from './config.js';
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW, UTIL } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
@@ -25,6 +25,10 @@ export const MKEYS = ['def', 'pro', 'tru'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const FAST = [1, ROADS[1].speed, ROADS[2].speed, ROADS[3].speed];
 // wheels belong on roads: off them a vehicle crawls, so routes follow the road network wherever there is one
+// people keep to the roads and paths: a route may be three times longer on a road before they cut across the ground
+const WPREF = [1, 2.6, 3.2, 3.2];
+// the flag plaza: this many cells round the Super Earth flag stay open, whatever is built
+export const PLAZA = 2;
 const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed, 0.3];
 
 export function rankOf(missions) { let r = RANKS[0][1]; for (const [n, name] of RANKS) if (missions >= n) r = name; return r; }
@@ -81,7 +85,7 @@ export class Sim {
     this.scrub = this.makeScrub(); this.crewsInit(); this.zone = new Uint8Array(this.N * this.N); this.chain = null;
     this.net = emptyNet();
     for (let i = 0; i < C.START.troops; i++) this.addTroop(i < 3 ? 100 : 30);
-    this.flat = !!opts.flat;
+    this.flat = !!opts.flat; if (opts.flat) this.equipFree = true;
     // a new game opens on the empty section: the Commander calls the HQ in. Everyone else (tests, the bot, the title demo)
     // gets it set down on open ground near the middle
     if (opts.callIn) { this.callIn = 'flag'; this.rebuildNet(); this.ranking(); this.tick(); this.marketInit(); this.recalc(); return; }
@@ -127,9 +131,13 @@ export class Sim {
   box() { const [x0, z0, x1, z1] = this.ownBounds(); return [Math.min(x0, z0), Math.max(x1, z1)]; }   // the square round every parcel held
   // ---------------------------------------------------------------- the charter: outpost, fort, major base
   nextStage() { return C.STAGES[(this.stage || 0) + 1] || null; }
+  // the engineers' equipment: null if they have what a kind of work needs, otherwise why not. what: a road kind, 'std1',
+  // 'std2' or 'landscape'
+  equipLock(what) { const t = EQUIP[what]; return !t || this.equipFree || this.has(t) ? null : `Needs a ${B[t].name}`; }
   stageCheck() {
     const n = this.nextStage(); if (!n) return null;
-    return [{ ok: this.heads() >= n.troops, text: `${n.troops} votes on the base (${this.heads()})` }, { ok: this.stand.pro >= n.pro, text: `Expansion standing ${n.pro} (${Math.round(this.stand.pro)})` }, { ok: this.credits >= n.cr, text: `${n.cr.toLocaleString('en-US')} credits for the charter fee (${Math.round(this.credits).toLocaleString('en-US')})` }, { ok: this.supplies >= (n.sup || 0), text: `${(n.sup || 0).toLocaleString('en-US')} supplies for the charter works (${Math.round(this.supplies).toLocaleString('en-US')})` }].filter(c => !/^0 supplies/.test(c.text));
+    return [{ ok: this.heads() >= n.troops, text: `${n.troops} votes on the base (${this.heads()})` }, { ok: this.stand.pro >= n.pro, text: `Expansion standing ${n.pro} (${Math.round(this.stand.pro)})` }, { ok: this.credits >= n.cr, text: `${n.cr.toLocaleString('en-US')} credits for the charter fee (${Math.round(this.credits).toLocaleString('en-US')})` }, { ok: this.supplies >= (n.sup || 0), text: `${(n.sup || 0).toLocaleString('en-US')} supplies for the charter works (${Math.round(this.supplies).toLocaleString('en-US')})` }].filter(c => !/^0 supplies/.test(c.text))
+      .concat((n.needs || []).map(t => ({ ok: this.has(t), text: `${B[t].name} built` })), n.store ? [{ ok: this.storeAll() >= n.store, text: `Storage for ${n.store} goods (${Math.round(this.storeAll())})` }] : []);
   }
   promote() {
     const n = this.nextStage(), ck = this.stageCheck(); if (!n || ck.some(c => !c.ok)) return false;
@@ -168,7 +176,7 @@ export class Sim {
     if (this._pathV !== this._walkV) { this._paths = new Map(); this._pathV = this._walkV; }
     const key = ((az * N + ax) * N + bz) * N + bx, hit = this._paths.get(key);
     if (hit) return hit.map(p => [p[0], p[1]]);
-    const p = findPath(N, w, this.roads, FAST, ax, az, bx, bz) || [[bx + 0.5, bz + 0.5]];
+    const p = findPath(N, w, this.roads, WPREF, ax, az, bx, bz) || [[bx + 0.5, bz + 0.5]];
     if (this._paths.size > 4000) this._paths.clear();
     this._paths.set(key, p.map(q => [q[0], q[1]]));
     return p;
@@ -206,6 +214,7 @@ export class Sim {
     if (k === 'bridge') return this.checkBridge(a, b, len, tiles);
     // nothing joins a bridge partway across: roads meet it at its ends, where it stands on the ground
     for (const p of [a, b]) { const d = this.deckAt(p.x, p.z); if (d != null && Math.abs(d - this.hAt(p.x, p.z)) > 0.25) return { ok: false, why: 'Roads join a bridge at its ends, not across the span', cost: 0 }; }
+    { const q = this.equipLock(k); if (q) return { ok: false, why: `${q}: until then the engineers can only scrape dirt tracks`, cost: 0 }; }
     for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: lay a bridge across it', cost: 0 }; } }
     let cost = Math.ceil(len) * this.linePrice(k);
     if (k !== 'wall') {
@@ -246,6 +255,7 @@ export class Sim {
   // a bridge: both ends on firm ground, an even grade between them, clear of the ground all the way across. Water, rock
   // and gullies under it are fine; a hill in the way is not
   checkBridge(a, b, len, tiles) {
+    { const q = this.equipLock('bridge'); if (q) return { ok: false, why: `${q} to pour a bridge`, cost: 0 }; }
     const N = this.N, cost = Math.ceil(len) * this.linePrice('bridge'), ha = this.hAt(a.x, a.z), hb = this.hAt(b.x, b.z);
     if (len < 3) return { ok: false, why: 'Too short for a bridge', cost };
     if (len > 48) return { ok: false, why: 'Longer than a span can reach (48 cells, 384 m): put a pier in on land', cost };
@@ -404,12 +414,14 @@ export class Sim {
       const i = q[h], x = i % N; if (dist[i] >= 4) continue;
       for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && dist[j] < 0 && this.inMask[j] && !this.roads[j] && !this.occ[j] && !this.walls[j]) { dist[j] = dist[i] + 1; q.push(j); }
     }
-    const out = []; for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (dist[i] > 0) out.push([x, z, dist[i]]); return out;
+    const pf = this.b.find(b => b.type === 'seflag'), plz = (x, z) => pf && x >= pf.x - PLAZA && x < pf.x + 2 + PLAZA && z >= pf.z - PLAZA && z < pf.z + 2 + PLAZA;
+    const out = []; for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (dist[i] > 0 && !plz(x, z)) out.push([x, z, dist[i]]); return out;
   }
   fits(type, x, z, rot, dz = 0, self = 0) {
-    const [w, dd] = dims(type, rot, dz);
+    const [w, dd] = dims(type, rot, dz), pf = type !== 'seflag' && this.b.find(b => b.type === 'seflag');
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) {
       const tx = x + i, tz = z + j;
+      if (pf && tx >= pf.x - PLAZA && tx < pf.x + 2 + PLAZA && tz >= pf.z - PLAZA && tz < pf.z + 2 + PLAZA) return { ok: false, why: 'Kept clear: this is the flag plaza' };
       if (!this.inside(tx, tz)) return { ok: false, why: !this.ownedTile(tx, tz) ? 'Outside your land: buy the parcel first (LAND)' : this.walls[tz * this.N + tx] ? 'A wall is in the way' : 'Off the map' };
       if (this.occ[tz * this.N + tx] && this.occ[tz * this.N + tx] !== self) return { ok: false, why: 'Something is in the way' };
       if (this.sweeping(tx, tz)) return { ok: false, why: 'This parcel is still being swept: build here once it is declared secure' };
@@ -520,6 +532,7 @@ export class Sim {
   needCap(b, g) { return b.done && !b.off && B[b.type].need ? B[b.type].need[g] || 0 : 0; }
   stored(g) { return this.b.reduce((a, b) => a + (this.storeCap(b, g) ? b.stock[g] : 0), 0); }
   storage(g) { return this.b.reduce((a, b) => a + this.storeCap(b, g), 0); }
+  storeAll() { return this.storage('rations') + this.storage('fuel') + this.storage('ammo'); }
   onPad(g) { return this.b.reduce((a, b) => a + (B[b.type].pad ? b.stock[g] : 0), 0); }
   inUse(g) { return this.b.reduce((a, b) => a + (this.needCap(b, g) ? b.stock[g] : 0), 0); }
   carried(g) { return this.veh.reduce((a, v) => a + (v.load && v.job?.g === g ? v.load : 0), 0); }

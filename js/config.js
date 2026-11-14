@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.19.0';
+export const VERSION = '0.20.0';
 
 export const C = {
   N: 1725,                  // the map is N x N cells of 8 m: a 13.8 km section of the planet, GRID x GRID parcels of PARCEL cells each
@@ -10,10 +10,11 @@ export const C = {
   // four steps, after the design doc: a camp in an action area, a forward operating base behind a closed wall, a walled
   // garrison town, a major installation. Each is granted for votes, Expansion standing and a fee in credits and supplies
   STAGES: [
+    // needs: buildings the Bureau wants standing before it grants the charter; store: total storage (rations, fuel, ammo)
     { name: 'Outpost', parcels: 12 },
-    { name: 'Forward Operating Base', short: 'FOB', parcels: 20, troops: 30, pro: 50, cr: 600, sup: 600, alloc: 0.15 },
-    { name: 'Fort', parcels: 36, troops: 60, pro: 60, cr: 1200, sup: 1500, alloc: 0.3 },
-    { name: 'Major Base', parcels: 441, troops: 110, pro: 70, cr: 2000, sup: 3000, alloc: 0.5 },
+    { name: 'Forward Operating Base', short: 'FOB', parcels: 20, needs: ['depot', 'barracks', 'mess', 'range', 'yard'], store: 400, troops: 30, pro: 50, cr: 600, sup: 600, alloc: 0.15 },
+    { name: 'Fort', parcels: 36, needs: ['batch', 'motorpool', 'medbay', 'comms'], store: 900, troops: 60, pro: 60, cr: 1200, sup: 1500, alloc: 0.3 },
+    { name: 'Major Base', parcels: 441, needs: ['treatment', 'lab', 'fuelfarm'], store: 1300, troops: 110, pro: 70, cr: 2000, sup: 3000, alloc: 0.5 },
   ],                  // supplies per tile of wall
   DAY: 120,                 // a watch: four calendar hours of simulation time; each closes its own books (upkeep, food, fuel)
   WEEK: 720,                // a calendar day: six four-hour watches (C.DAY each); the allocation comes every day
@@ -26,7 +27,7 @@ export const C = {
   // simulation runs six watches (C.DAY each, four hours), each closing its own books. People and vehicles move at their own pace.
   REAL_HOUR: 180,
   INSPECT_AT: 0.55,         // the Ministry of Truth inspects this far into each week
-  START: { supplies: 3600, credits: 600, troops: 6, morale: 55 },
+  START: { supplies: 4500, credits: 600, troops: 6, morale: 55 },
   WAGE: 2,                 // credits a day for every citizen on the staff
   OVERDRAFT: 800,          // how far credits may go below zero before the Bureau stops lending
   REFIT: 0.15,             // a refit costs the difference in price plus this share of the base price
@@ -92,8 +93,8 @@ export const GOODS = {
 };
 export const GKEYS = Object.keys(GOODS);
 // Roads: tiles laid on the grid. People and vehicles move this many times faster on them.
-export const ROADS = { 1: { name: 'Dirt Road', cost: 3, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 8, speed: 2.4, walk: 1.4 },
-  3: { name: 'Footpath', cost: 4, speed: 1, walk: 1.4 } };   // paved for boots: vehicles get nothing from it
+export const ROADS = { 1: { name: 'Dirt Road', cost: 1, speed: 1.6, walk: 1.25 }, 2: { name: 'Paved Road', cost: 4, speed: 2.4, walk: 1.4 },
+  3: { name: 'Footpath', cost: 2, speed: 1, walk: 1.4 } };   // paved for boots: vehicles get nothing from it
 // Vehicles: speed in tiles per game second off-road, and what they carry.
 export const VEHICLES = {
   lift: { name: 'Forklift', speed: 0.7, load: 12 }, truck: { name: 'Supply Truck', speed: 1.0, load: 30 },
@@ -137,7 +138,7 @@ export const GROUPS = [
   ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
   ['zones', 'ZONES', 'Paint zones along roads: bunks, mess halls, latrines, storage and shops grow in them by themselves as the base needs them, at the standard picked here.', []],
   ['landscape', 'LANDSCAPE', 'Shape the ground and paint its surface, for supplies. Buildings level their own footprint as they go down; roads need a gentle grade; dig below the waterline and it floods.', []],
-  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'comms', 'mast']],
+  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'batch', 'comms', 'mast']],
   ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
   ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
   ['income', 'INCOME', 'Buildings that earn credits or make supplies.', ['vend', 'burger', 'chicken', 'cola', 'mart', 'casino', 'extractor', 'mine', 'factory']],
@@ -174,6 +175,8 @@ export const B = {
               desc: 'Twice the height of a Comms Tower. Runs four more landing pads, and the evening broadcast reaches the whole base.' },
   yard:     { name: 'Engineer Yard', group: 'core', w: 3, d: 2, cost: 280, up: 14, pw: -1, crews: 1, needs: ['barracks'],
               desc: 'A shed, a stack of HESCO and a bulldozer. Takes three of your recruits and trains them as an engineer crew in a watch: one more building job at a time.' },
+  batch:    { name: 'Concrete Batch Plant', group: 'core', w: 3, d: 2, cost: 340, up: 16, pw: -2, crew: 1, needs: ['yard'], noisy: true,
+              desc: 'Cement silos, an aggregate hopper and a mixer truck. Until it stands the engineers can only scrape dirt: with it they pour paved roads, footpaths, bridges and permanent buildings.' },
   shed:     { name: 'SEAF Bunker', group: 'core', w: 2, d: 2, cost: 120, up: 6, store: { rations: 50, fuel: 50, ammo: 50 },
               desc: 'A standard-issue storage bunker. Holds a little of everything, and looks exactly like a shed.' },
 
@@ -432,6 +435,10 @@ export const SCRUB = { t: 2.5, yield: 5, keep: 7, patch: 24,
 // A parcel's price: supplies for the survey and the stakes, plus a Bureau filing fee in credits; both rise with every parcel
 // held past the start, and are weighted by how much of it can be built on and what is under it
 export const LAND = { PARCEL: 75, GRID: 23, TILE_M: 8, START: 3, sup: 150, supStep: 25, cr: 20, crStep: 4 };
+// construction equipment: what the engineers need on the base before they can do each kind of work. The Engineer Yard
+// brings the bulldozers and graders (earthworks, prefabs); the Concrete Batch Plant brings concrete (paving, bridges,
+// permanent buildings). Dirt tracks, tents, walls of HESCO and scrub clearing need nothing but hands
+export const EQUIP = { landscape: 'yard', std1: 'yard', paved: 'batch', path: 'batch', bridge: 'batch', std2: 'batch' };
 export const SWEEP = { dur: 42, salvage: [60, 140] };
 
 // ---------------------------------------------------------------- zones (0.14, design §8, after doctrine's functional areas)

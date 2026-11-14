@@ -695,6 +695,14 @@ const MAKE = {
     hesco(g, m, 0.95, -0.55, 3); dozer(g, m, 0.9, 0.35, -0.4);
     for (let i = 0; i < 3; i++) box(g, 0.5, 0.06, 0.2, m.ply, 0.35, 0.04 + i * 0.065, -0.7, { ry: 0.1 * i });
   },
+  batch(g, m) {   // a concrete batch plant: two cement silos on legs, an aggregate hopper with a conveyor, a mixer drum, a gravel heap
+    slab(g, m, 3, 2, m.gravel || m.asphalt);
+    for (const x of [-1.0, -0.5]) { cyl(g, 0.2, 0.2, 0.9, m.white || m.steel, x, 0.95, -0.5); cyl(g, 0.03, 0.2, 0.2, m.steel, x, 0.42, -0.5); for (const [dx, dz] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]]) box(g, 0.03, 0.5, 0.03, m.steel, x + dx, 0.25, -0.5 + dz); }
+    box(g, 0.7, 0.35, 0.6, m.prim, 0.25, 0.75, -0.45); for (const [dx, dz] of [[-0.3, -0.25], [0.3, -0.25], [-0.3, 0.25], [0.3, 0.25]]) box(g, 0.04, 0.6, 0.04, m.steel, 0.25 + dx, 0.3, -0.45 + dz);
+    box(g, 1.1, 0.05, 0.22, m.dark, 0.95, 0.5, -0.45, { rz: 0.5 });
+    cyl(g, 0.22, 0.16, 0.5, m.steel, -0.2, 0.3, 0.45, { rz: Math.PI / 2 - 0.25 }); box(g, 0.5, 0.2, 0.3, m.prim, 0.25, 0.14, 0.45);
+    add(g, new THREE.ConeGeometry(0.42, 0.34, 9), m.gravel || m.stone, 1.05, 0.17, 0.4);
+  },
   memorial(g, m) {
     box(g, 2.8, 0.08, 0.9, m.white, 0, 0.04, 0.05, { cast: false });
     box(g, 2.7, 0.8, 0.22, m.stone, 0, 0.48, -0.25); box(g, 2.78, 0.06, 0.28, m.dark, 0, 0.9, -0.25);

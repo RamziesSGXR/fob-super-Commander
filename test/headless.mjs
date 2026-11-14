@@ -42,7 +42,7 @@ function build(type, near) {
   }
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'motorpool', 'fueldepot', 'gen', 'well', 'lagoon', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'batch', 'motorpool', 'fueldepot', 'gen', 'well', 'lagoon', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'treatment', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'fuelfarm', 'tower', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
 let step = 0, roadN = 0;
 let founded = false, wallAt = 0, start0 = null;
@@ -54,16 +54,16 @@ function rewall() {   // take the old wall down and put a new one round the bigg
   const [x0, z0, x1, z1] = perim(), L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
   const lo = [x0 + 1.5, z0 + 1.5], hi = [x1 - 1.5, z1 - 1.5];
   L(lo[0], lo[1], hi[0], lo[1], 'wall'); L(hi[0], lo[1], hi[0], hi[1], 'wall'); L(hi[0], hi[1], lo[0], hi[1], 'wall'); L(lo[0], hi[1], lo[0], lo[1], 'wall');
-  L(m + 1, z1 - 4, m + 1, z1 + 1, 'paved');
+  L(m + 1.5, z1 - 4, m + 1.5, z1 + 1, s.has('batch') ? 'paved' : 'dirt');
 }
 function found() {   // the bot's opening: a paved spine and cross streets, a pad, then a wall round it all with a gate
   founded = true; start0 = s.parcelAt(s.ownBounds()[0], s.ownBounds()[1]);
   const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
   const [b0, , b1] = perim();
-  L(m + 1, b1 - 2, m + 1, m - 12, 'paved'); L(m - 12, m + 0.5, m + 13, m + 0.5, 'dirt'); L(m - 12, m + 8.5, m + 13, m + 8.5, 'dirt'); L(m - 12, m - 7.5, m + 13, m - 7.5, 'dirt');
+  L(m + 1.5, b1 - 2, m + 1.5, m - 12, 'dirt'); L(m - 12, m + 0.5, m + 13, m + 0.5, 'dirt'); L(m - 12, m + 8.5, m + 13, m + 8.5, 'dirt'); L(m - 12, m - 7.5, m + 13, m - 7.5, 'dirt');
   const lo = b0 + 1.5, hi = b1 - 1.5;
   L(lo, lo, hi, lo, 'wall'); L(hi, lo, hi, hi, 'wall'); L(hi, hi, lo, hi, 'wall'); L(lo, hi, lo, lo, 'wall');
-  L(m + 1, b1 - 2, m + 1, b1 + 1, 'paved');
+  L(m + 1.5, b1 - 2, m + 1.5, b1 + 1, 'dirt');
   build('pad', [m + 5, m - 3]);
   // zones: bunks, mess and latrines to the west, storage by the pad, shops to the south-west; the rest is placed by hand
   s.paintZone(m - 12, m - 7, m - 1, m + 8, 'life'); s.paintZone(m + 2, m - 7, m + 12, m - 1, 'logi'); s.paintZone(m - 12, m + 9, m - 1, m + 12, 'comm');
