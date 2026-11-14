@@ -4,7 +4,7 @@
 
 Build and run your faction's base for Super Earth. A browser game for the **Super Earth Special Forces** community, in the same look as [Orbital Fury](https://orbitalfury.com/) and [Super Orbital Simulator](https://ramziessgxr.github.io/super-orbital-simulator/).
 
-> **Prototype 0.11** (the version shows on the title screen and in the menu). Pick a landing site on a real stretch of planet, land in debt with a Founding Charter, draw the roads and the wall around the water and rock, build along them, train troopers, and grow from an Outpost to a Fort to a Major Base.
+> **Prototype 0.12** (the version shows on the title screen and in the menu). Pick a landing site on a real stretch of planet, land in debt with a Founding Charter, draw the roads and the wall around the water and rock, build along them, train troopers, and grow from an Outpost to a Fort to a Major Base.
 
 You command a loyal sub-faction of Super Earth: your name, your crest, your colours, your base. The base turns recruits into troopers for the front. Every week the Federation hands out supplies, and the better your standing with its Ministries, the bigger your share. Three other loyal factions on the planet want the same supplies.
 
@@ -24,7 +24,9 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 - **Placing the HQ.** After landing you choose where inside the charter the HQ stands (the flag goes beside it). You can move it free until you draw your first road; or just start building where it landed.
 - **Starting out.** You land with just the Command HQ and the Super Earth flag, 3,600 supplies, 600 credits, and a Founding Charter of 3,000 credits owed to the Bureau. Draw a road, put a Landing Pad on it (supplies and recruits arrive at 07:00), then a depot, a mess and a barracks. Until a wall closes you can build anywhere; the Ministry gives you two weeks before it starts marking the missing wall.
 - **Outpost, Fort, Major Base.** The Bureau's charter decides how much ground you may use, drawn as a dashed line. An Outpost gets 36 tiles across. With 40 troopers trained, Expansion standing of 55 and 1,500 credits you can be promoted to a Fort (56 tiles, a bigger allocation); with 110 troopers, 70 and 4,000 credits, a Major Base (the whole 80-tile map). Promote from the Expansion tab. Some large buildings need a Fort or better.
-- **Money and debt.** The top bar shows supplies and credits with the net per day under each. The **LEDGER** tab has the accounts for each of the last seven days and the week: what came in and went out, and from where. Upkeep is paid every day, and citizens are paid 2 credits a day each. Credits may go below zero to an overdraft (800 on Veteran), with a weekly fee; past that, wages go unpaid, franchise sales stop and morale drops until you are back in credit. Loans: the Founding Charter, a Bureau Development Loan (1,200) and Emergency Credit (500), each with weekly interest and a weekly repayment, up to 6,000 owed in all. Repay early from the Ledger. The Bureau also sells supplies (100 for 60 credits) and buys them back (100 for 35).
+- **Money and debt.** Across the top: supplies, credits and what you owe, each with its change per day. **ECONOMY** has the budget (income and spending per day, by source, as bars), your loans, and **PRODUCTION**: what each kind of building earns or costs a day. Upkeep is paid every day, and citizens are paid 2 credits a day each. Credits may go below zero to an overdraft (800 on Veteran), with a weekly fee; past that, wages go unpaid, franchise sales stop and morale drops until you are back in credit. Loans: the Founding Charter, a Bureau Development Loan (1,200) and Emergency Credit (500), each with weekly interest and a weekly repayment, up to 6,000 owed in all.
+- **The market.** Every base on the planet trades supplies, rations, E-710 fuel and ammo for credits (ECONOMY, MARKET). Prices move every day with the Ministry indices, and your own trades move the price against you (buy high, sell low: there is a spread). Rival bases post offers at 10:00 and 15:00, over the market for what they are short of, under it for what they have too much of; they last two days and show on the task board.
+- **Ministry commitments.** ECONOMY, COMMITMENTS: for each Ministry, choose what the base gives it every day, NONE to ALL OUT. Defence takes ammo and rations (better operation odds, deployments pay more), Expansion takes supplies and fuel (faster building), Truth takes credits and supplies (morale). Each level buys standing at the Ministry's planet-wide **index**, a daily ticker shown under the standings: high when every base is chasing that Ministry, or when news (an offensive, audit season, election week) pushes it up. No base can afford ALL OUT on everything.
 - **Leave it running.** A base you stop touching doesn't fall apart: deployment orders are sized to what you shipped last week and partly delivered orders still count, so it holds steady and simply stops growing. What brings decline is ignoring things.
 - **Calls from the Ministries.** Now and then a Ministry asks the base to set something aside: ammunition for a front, rations for a relief column, E-710 for the fleet, credits for war bonds. A card comes up; answer within a few days and you gain standing. Let it lapse and that Ministry marks you down.
 - **Supplies and credits.** Supplies build, pave and feed the base: they come from the weekly allocation, shipped troopers, won operations and fair roster grades. Credits are money: shipped troopers, special operations, franchise sales. Credits pay for research and Ledger requests, and buy supplies from the Bureau (100 for 60). The **LEDGER** tab's accounts show where both came from this week and last.
@@ -41,7 +43,7 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 - **Briefings and armour.** Before any patrol leaves, the squad leader gathers his team by the Patrol Office (or the HQ) and gives them the plan, then they march out the gate together. With Fast Recon Vehicles researched, a Vehicle Bay keeps an FRV, and with Armoured Doctrine a tank. Tick them on a special operation card to take them along: better odds, fewer casualties, some fuel, and a two-day wait if one is wrecked. Armoured assaults only turn up once you have a Vehicle Bay.
 - **Operations map and reports.** Every operation goes somewhere real: a named place on the planet, so many kilometres and which way, marked on the map in the Defence tab with the squads out in the field. Some missions call for an FRV (convoys, evacuations) or a tank (bug holes, bot outposts); bringing it gives better odds and a quarter more reward, and an Armoured assault really needs the tank. The FRV gets a squad there and back in two thirds of the time. Every special operation files an after-action report (standing patrols only when something happens): read them in the Defence tab.
 - **Standing patrols.** A Patrol Office sends squads of three trained troopers out every morning at 08:00 and brings them home, on its own. Set how many squads it keeps out (0 to 3) when you select it. It keeps those troopers back from the transports. Special operations still turn up in the Defence panel if you want to send one by hand.
-- **Three Ministries, three kinds of standing.** Bottom right, with what each has waiting.
+- **Three Ministries, three kinds of standing.** Their windows are in the status bar along the bottom, with what each has waiting.
 
   | Ministry | Wants | How it's scored |
   | --- | --- | --- |
@@ -50,7 +52,7 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
   | Truth | A base that inspires | A weekly inspection: morale (35%), propaganda (45%) and condition (20%) |
 
 - **The week.** Seven days, two minutes each at normal speed. At the end of it Super Earth ranks the four factions by total standing and splits the allocation (1st gets 1.5×, 4th gets 0.6×), and the higher you rank the more of your empty bunks each morning's recruits fill. Then upkeep is paid.
-- **Time.** The clock and date sit bottom left. `[` and `]` slow down and speed up (½× to 8×), `1` `2` `3` pick 1×, 2× and 4×, `Space` pauses.
+- **Time.** The clock and date sit at the left of the status bar. `[` and `]` slow down and speed up (½× to 8×), `1` `2` `3` pick 1×, 2× and 4×, `Space` pauses.
 - **The daily routine, Army style.** First Call at 06:00: everyone turns out in front of their quarters. Reveille at 06:30 as the flag goes up: following Army Regulation 600-25, everyone outdoors stops where they stand, faces the nearest flag and salutes, and vehicles halt; anyone indoors carries on. Then PT, chow at 08:00, Work Call at 09:00, mess at 11:30, duty until Retreat at 17:00 (the same honours as the flag comes down), free time, and Taps at 21:00, when everyone finds a bunk; votes without one sleep outdoors by the HQ. Generator and motor pool crews work nights. SEAF troopers wear light-blue armour and blue helmets; your faction colour goes on the armband and the crest on the shoulder (change it in the faction editor).
 - **The flag plaza.** The open ground round the Super Earth flag is where medals are pinned and where everyone gathers for ceremonies. Select the flag to see the plaza and **MOVE FLAG** (100 supplies).
 - **The Bureau** writes every week: memos, casualty form letters, and a ledger (STANDINGS) of the allocation before its handling fee and Presidential consulting. It counts votes, not people: "Two votes have been delivered to your base."
@@ -58,6 +60,10 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 - **Falling behind never ends the game.** A low rank means less supply, so upkeep goes unpaid and buildings wear down, morale slips and inspections suffer. You can always climb back.
 - **Fort Sanctuary's buildings.** From the SESF base build: a Memorial Plaque at the gate, Floodlight Towers and Defence Turrets on the wall, the Emergency Operations Bunker, the Server and Storage Vault, the War Room, the Memorial Halls, DEMOCRA-MART, the Citizens' Casino, Cryopreservation Storage and the Security Brig. Most unlock through three new research projects (Fortification Doctrine, Civic Programme, Quantum Archives) and a fourth for the War Room.
 - **Industry.** An E-710 Extractor (on a seep) pumps fuel, an Ore Mine (on ore) digs out supplies, and the State Industrial Complex (research State Industry, Fort or better) turns fuel into supplies. Each needs a crew and power.
+- **The build toolbar.** Sorted by what things are for: Roads, Logistics, Training, Living, Income, Power, Defence, Truth and Command. Every card has a picture of the building, what it does and what it costs a day. A new base lays its **foundation** first (landing pad, supply depot, barracks, mess hall, firing range): these bring the money in, and the rest opens once they are placed.
+- **The task board.** On the left: the next three orders, then everything on the desk, with its buttons: Ministry calls, requests, offers from rival bases, files to grade, and warnings (goods running low, a commitment short, no power, hungry votes, an idle lab).
+- **The minimap and info views.** Bottom right: the base from above (click or drag to go there; 1×, 2×, 3× zoom) and nine views that recolour the base: RESOURCES (deposits, water and rock, with buildings see-through), SUPPLY ROUTES (what goes from where to where, with a packet for every load), ROLES, MONEY (what each building earns or costs), POWER, SUPPLY, CONDITION and CREW. `I` steps through them.
+- **The building card.** Select a building for a status line (running, short of crew, out of ammo...), its upkeep and its net a day, and everything about it.
 - **Designs and parts.** Large buildings are designed before you place them. Pick one of three designs (Standard Issue; Fortified, which wears half as fast and adds Defence; Monumental, with columns, gold and banners for propaganda and pride), then add parts such as a lit sign, relay antennas, roof floodlights, a roof gun, solar panels or a holo display. Each part costs more and does more, and shows on the model. Fortified adds a walled yard a tile wide on each side and Monumental a colonnaded wing, so both need more ground. The Science Lab, Helldiver Barracks and Command Tower take designs too. Your last choice is kept for the next one.
 - **Refits.** Select a designed building and press **REFIT** to change its design or parts. The ghost shows the new shape: green if it fits, red with the reason if not. A refit pays the difference in price plus a fee of 15% of the base price, and the building closes for about half a day while the work is done.
 - **Families.** Trooper files list next of kin, and the Ledger sometimes brings a Form C-01 to countersign, a family visit or the Ministry of Humanity's census of dependants. Flavour, with small morale effects.
@@ -72,11 +78,12 @@ Like a city builder, the base runs itself: you lay it out and it gets on with it
 | Move around | drag, or `W A S D` / arrows | drag |
 | Zoom | scroll | pinch |
 | Rotate | `Q` `E`, or right-drag | two-finger twist |
-| Build | pick at the bottom (`Tab` changes group), `R` turns it, click to place, `Shift`+click to keep placing | tap the building, then tap the ground |
+| Build | pick at the bottom (`Tab` changes section), `R` turns it, click to place, `Shift`+click to keep placing | tap the building, then tap the ground |
 | Select | click a building | tap it |
 | Time | `[` `]` slower and faster, `1` `2` `3` speed, `Space` pause | the arrows by the clock |
 | Photo mode | `P`, then right-drag to orbit and tilt, scroll to close in, `R` `F` tilt, SAVE PICTURE | PHOTO, then two fingers to orbit, tilt and pinch |
-| Other | `M` Ministries, `H` hide the interface, `Del` demolish, `Esc` cancel | |
+| Windows and views | `B` economy, `L` desk, `M` the last window, `C` comms log, `I` next info view | the buttons in the status bar and by the minimap |
+| Other | `H` hide the interface, `Del` demolish, `Esc` cancel | |
 
 ## The buildings
 
@@ -103,7 +110,9 @@ js/path.js          road-aware pathfinding shared by vehicles and people
 js/audio.js         positional sound, loudspeaker voices, the mixer and music
 js/site.js          landing sites: biomes, the region map, terrain, water, rock and deposits
 js/net.js           the road and wall network: snapping, junctions, gates
-js/desk.js          the Commander's desk: Ledger requests, roster files, Ministry calls
+js/desk.js          the Commander's desk: requests, roster files, Ministry calls
+js/market.js        the planet's market, rival offers, Ministry indices and commitments
+js/reports.js       after-action reports
 js/voices.js        what the loudspeakers and people say
 js/life.js          the ant farm: troopers, forklifts, pelicans, crates, inspectors, ceremonies
 js/models.js        every building, person and vehicle, built from simple shapes
@@ -114,11 +123,12 @@ js/main.js          the loop, input, HUD, Ministries panel, faction editor, save
 js/rng.js, noise.js seeded random and value noise (from Super Orbital Simulator)
 test/headless.mjs   plays a base without a browser and prints the standings week by week
 test/ui.mjs         clicks through the real page on a desktop and on a phone held sideways
+test/browser/       browser checks: landing, the HUD and economy, moving the HQ, refits, operations (npm run ui:all)
 ```
 
 **Running your own copy:** serve this folder with any local web server (`npm start`, then open <http://localhost:8080>). Opening `index.html` straight from disk won't work, because browsers block ES modules on `file://`. Add `?play` to skip the title, and `&seed=N` to fix the map.
 
-**Tests:** `npm run sim` needs only Node. It plays 14 weeks with a simple bot, and `npm run sim:idle` shows a base that builds nothing. `node test/headless.mjs 10 lapse` plays a base that is built and then left alone. For the browser test, run `npm install` and `npm start`, then `npm run ui` in another terminal.
+**Tests:** `npm run sim` needs only Node. It plays 14 weeks with a simple bot, and `npm run sim:idle` shows a base that builds nothing. `node test/headless.mjs 10 lapse` plays a base that is built and then left alone. For the browser test, run `npm install` and `npm start`, then `npm run ui` in another terminal. With `npm start` running, `npm run ui:all` runs the browser checks in `test/browser/` (set `CHROME=` to your Chrome if Playwright has none of its own); screenshots go to `test/shots/`.
 
 **Saves:** the base saves on your device every 20 seconds and when you leave. **MENU → COPY SAVE CODE** gives you the whole base as text to keep or move to another device, and **LOAD SAVE CODE** brings it back.
 

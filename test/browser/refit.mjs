@@ -1,0 +1,23 @@
+import { open } from './lib.mjs';
+const { b, p, errs } = await open(1280, 760);
+await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await p.click('#ld-go'); await p.waitForTimeout(1500); await p.keyboard.press('Escape');
+const r = await p.evaluate(() => {
+  const { sim: s } = window.__fob, m = 32; s.supplies = 99999; s.credits = 9999; s.foundedF = true; s.tech.done.push('fortworks', 'civic', 'archive', 'warroom', 'command'); s.stage = 2; s.terr.fill(0); s.rebuildNet();
+  const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
+  L(m - 13, m + 0.5, m + 14, m + 0.5, 'paved');
+  const pl = s.plotFor('mart', m + 6, m + 3, 0); const b = s.place('mart', pl.tx, pl.tz, pl.rot, false, { design: 0, parts: [] }); b.done = true; b.prog = 1;
+  const pl2 = s.plotFor('eob', m - 8, m + 3, 0); const b2 = s.place('eob', pl2.tx, pl2.tz, pl2.rot, false, { design: 0, parts: [] }); b2.done = true; b2.prog = 1;
+  return { id: b.id, x: b.x, z: b.z, w: b.w, d: b.d, id2: b2.id };
+});
+const look = (x, z, zoom) => p.evaluate(([x, z, zoom]) => { const { view } = window.__fob; view.lookAt(x, z); view.zoomT = view.zoom = zoom; }, [x, z, zoom]);
+await look(r.x + r.w / 2, r.z + r.d / 2, 12); await p.waitForTimeout(1200);
+const sc = await p.evaluate(([x, z]) => window.__fob.view.toScreen(x, z, 0.5), [r.x + r.w / 2, r.z + r.d / 2]);
+await p.mouse.click(sc[0], sc[1]); await p.waitForTimeout(400);
+await p.click('#sp-refit'); await p.waitForTimeout(300); await p.click('[data-dz="2"]'); await p.waitForTimeout(500);
+await p.screenshot({ path: 'test/shots/rf1.png' });
+const msg = await p.textContent('.dz-go span');
+await p.click('#dz-apply'); await p.waitForTimeout(300);
+await p.evaluate(() => { const { sim } = window.__fob; for (let i = 0; i < 400; i++) { sim.step(0.5); sim.drain?.(); } });
+await p.waitForTimeout(1500); await p.screenshot({ path: 'test/shots/rf2.png' });
+const after = await p.evaluate(id => { const b = window.__fob.sim.byId(id); return { x: b.x, w: b.w, design: b.design, done: b.done }; }, r.id);
+console.log(JSON.stringify({ r, msg, after })); console.log(errs.slice(0, 5).join('\n') || 'no errors'); await b.close(); if (errs.length) process.exitCode = 1;

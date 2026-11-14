@@ -885,7 +885,7 @@ $('mi-body').onclick = e => {
   if (t && sim.research(t.dataset.tech)) { audio.play('built'); renderMins(true); renderComms(); }
 };
 function openMins(tab) { if (tab) minTab = tab; $('mins').classList.remove('hidden'); $('deskpop').classList.add('hidden'); renderMins(true); }
-function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) renderMins(true); }
+function toggleMins(tab) { const m = $('mins'), open = m.classList.contains('hidden') || (tab && tab !== minTab); if (tab) minTab = tab; m.classList.toggle('hidden', !open); if (open) { $('deskpop').classList.add('hidden'); renderMins(true); } }
 $('mdock').onclick = e => { const b = e.target.closest('[data-mt]'); if (b) toggleMins(b.dataset.mt); };
 document.querySelector('#top .bigs').onclick = e => { const b = e.target.closest('[data-mt]'); if (!b) return; ecoTab = b.dataset.et || 'budget'; openMins('eco'); };
 $('mi-x').onclick = () => $('mins').classList.add('hidden');

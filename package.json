@@ -9,7 +9,8 @@
     "start": "python3 -m http.server 8080",
     "sim": "node test/headless.mjs 14 bot 7",
     "sim:idle": "node test/headless.mjs 10 idle 7",
-    "ui": "node test/ui.mjs"
+    "ui": "node test/ui.mjs",
+    "ui:all": "node test/browser/all.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0"

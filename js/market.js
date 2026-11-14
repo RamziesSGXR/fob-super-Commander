@@ -79,7 +79,7 @@ export const Market = {
     const M = this.market, day = this.time?.day || 1;
     // shocks: news that moves an index for a few days
     M.shocks = M.shocks.filter(s => s.until >= day);
-    if (this.rng.chance(0.2) && M.shocks.length < 2) {
+    if (this.rng.chance(0.1) && !M.shocks.length) {
       const s = this.rng.pick(MARKET.shocks); M.shocks.push({ ...s, until: day + s.days });
       M.bulletin = { day, text: s.text }; this.say('riv', `Market bulletin: ${s.text}`);
     }
@@ -111,7 +111,7 @@ export const Market = {
     if (!wantG.length) wantG = GK;   // a base chasing Truth buys a bit of everything
     const buys = this.rng.chance(0.5), g = this.rng.pick(buys ? wantG : sellG), d = MARKET.goods[g];
     const n = Math.round(this.rng.range(d.lot[0], d.lot[1]) / 10) * 10;
-    const p = this.price(g) * (buys ? this.rng.range(1.12, 1.4) : this.rng.range(0.7, 0.9));
+    const p = this.price(g) * (buys ? this.rng.range(1.04, 1.28) : this.rng.range(0.76, 0.94));
     M.offers.push({ id: this.nid++, from: r.name, logo: r.logo, g, n, p, buys, until: day + 2 });
     this.events.push({ t: 'offer' });
   },
@@ -138,21 +138,28 @@ export const Market = {
   commitCost(m, lvl = this.commit[m]) { const o = {}; for (const [g, v] of Object.entries(COMMIT[m].cost)) o[g] = v * lvl; return o; },
   // standing a day the level would earn at today's index (before the "harder near the top" damping)
   commitGain(m, lvl = this.commit[m]) { return COMMIT[m].gain * lvl * 100 / this.market.idx[m].v; },
+  // what a commitment may spend: never the base's own reserve (a few days of what it eats, burns and pays in upkeep),
+  // and never the overdraft. Short of that, it pays in part and buys less standing; the base itself never goes without
+  spare(g) {
+    if (g === 'cr') return Math.max(0, this.credits);
+    if (g === 'sup') { const up = this.b.reduce((a, b) => a + (b.done ? B_up(b) : 0), 0) / 7; return Math.max(0, this.supplies - Math.max(300, up * 4 + 150)); }
+    const use = this.usage()[g] || 0; return Math.max(0, this.holding(g) - use * 2.5);
+  },
   payCommitments() {
     for (const m of MKEYS_ALL) {
       const lvl = this.commit[m] || 0; if (!lvl) { this.commitLast[m] = 1; continue; }
       const cost = this.commitCost(m, lvl); let frac = 1;
-      for (const [g, n] of Object.entries(cost)) frac = Math.min(frac, (g === 'cr' ? Math.max(0, this.credits + this.OD) : this.holding(g)) / n);
+      for (const [g, n] of Object.entries(cost)) frac = Math.min(frac, this.spare(g) / n);
       frac = clamp(frac, 0, 1);
       for (const [g, n] of Object.entries(cost)) { const k = n * frac; if (g === 'cr') this.spend('commit', 0, k); else if (g === 'sup') this.spend('commit', k); else this.takeStore(g, k); }
       this.commitLast[m] = frac;
       if (frac > 0) this.gain(m, this.commitGain(m, lvl) * frac);
-      if (frac < 0.6) this.say(m, `Commitment to the ${COMMIT[m].ministry} short: ${Math.round(frac * 100)}% paid. Trade for ${Object.keys(cost).map(g => COMMIT_NAMES[g]).join(' and ')}, or lower the level.`);
+      if (frac < 0.6 && (this.time?.day || 0) % 3 === 0) this.say(m, `Commitment to the ${COMMIT[m].ministry} short: ${Math.round(frac * 100)}% paid. The base keeps a reserve of what it needs; trade for more ${Object.keys(cost).map(g => COMMIT_NAMES[g]).join(' and ')}, or lower the level.`);
     }
   },
   // the perks of a commitment, as a 0..4 number scaled by how much of it was actually paid
   commitF(m) { return (this.commit?.[m] || 0) * (this.commitLast?.[m] ?? 1); }
 };
 const COMMIT_NAMES = { sup: 'supplies', cr: 'credits', rations: 'rations', fuel: 'fuel', ammo: 'ammo' };
-let B_pad = () => false;
-export function bindMarket(B) { B_pad = b => !!B[b.type]?.pad && b.done; }
+let B_pad = () => false, B_up = () => 0;
+export function bindMarket(B) { B_pad = b => !!B[b.type]?.pad && b.done; B_up = b => B[b.type]?.up || 0; }
