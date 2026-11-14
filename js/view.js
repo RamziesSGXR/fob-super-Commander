@@ -800,7 +800,7 @@ export class View {
     const N = this.N, cols = SCRUB_COL[s.site?.biome] || SCRUB_COL.steppe, tiles = [];
     for (let i = 0; i < s.scrub.length; i++) if (s.scrub[i]) tiles.push(i);
     if (!this.scrubM) {
-      const mk = (geo, col) => { const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: col, roughness: 1, flatShading: true }), 16); im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; return im; };
+      const mk = (geo, col) => { const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: col, roughness: 1, flatShading: true }), 16); im.castShadow = false; im.receiveShadow = true; im.frustumCulled = false; return im; };
       this.scrubM = [mk(new THREE.IcosahedronGeometry(0.2, 0), cols[0]), mk(new THREE.ConeGeometry(0.16, 0.34, 5), cols[1])];
       const om = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.92, 0.92), new THREE.MeshBasicMaterial({ color: '#ffb020', transparent: true, opacity: 0.35, depthWrite: false }), 16);
       om.frustumCulled = false; this.scrubM.push(om);
