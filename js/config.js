@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.15';
+export const VERSION = '0.15.1';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -8,10 +8,13 @@ export const C = {
   WALL: 4,
   BRIDGE: 3,               // a road tile over water costs this many times as much
   // the charter: how much ground the Bureau lets you build on. box: the side of the square, centred on the landing
+  // four steps, after the design doc: a camp in an action area, a forward operating base behind a closed wall, a walled
+  // garrison town, a major installation. Each is granted for votes, Expansion standing and a fee in credits and supplies
   STAGES: [
     { name: 'Outpost', box: 36 },
-    { name: 'Fort', box: 56, troops: 40, pro: 55, cr: 1500, alloc: 0.25 },
-    { name: 'Major Base', box: 80, troops: 110, pro: 70, cr: 4000, alloc: 0.5 },
+    { name: 'Forward Operating Base', short: 'FOB', box: 46, troops: 30, pro: 50, cr: 600, sup: 600, alloc: 0.15 },
+    { name: 'Fort', box: 58, troops: 60, pro: 60, cr: 1200, sup: 1500, alloc: 0.3 },
+    { name: 'Major Base', box: 80, troops: 110, pro: 70, cr: 2000, sup: 3000, alloc: 0.5 },
   ],                  // supplies per tile of wall
   DAY: 120,                 // seconds of game time in one day at normal speed
   WEEK: 840,                // a week is seven days; the allocation comes every week
@@ -110,7 +113,7 @@ export const TECH = {
   fortworks:{ name: 'Fortification Doctrine', tier: 1, cost: 180, hrs: 24, desc: 'Unlocks Defence Turrets, Floodlight Towers and the Emergency Operations Bunker.' },
   civic:    { name: 'Civic Programme', tier: 2, cost: 260, hrs: 30, needs: ['shelving'], desc: 'Unlocks DEMOCRA-MART, the Citizens\' Casino and the Memorial Halls.' },
   archive:  { name: 'Quantum Archives', tier: 2, cost: 300, hrs: 36, needs: ['radio'], desc: 'Unlocks the Server and Storage Vault, the Security Brig and Cryopreservation Storage.' },
-  warroom:  { stage: 1, name: 'Strategic Command', tier: 3, cost: 520, hrs: 60, needs: ['archive', 'command'], desc: 'Unlocks the War Room: every front in real time, better odds and more operations to choose from.' },
+  warroom:  { stage: 2, name: 'Strategic Command', tier: 3, cost: 520, hrs: 60, needs: ['archive', 'command'], desc: 'Unlocks the War Room: every front in real time, better odds and more operations to choose from.' },
   industry: { name: 'State Industry', tier: 2, cost: 280, hrs: 36, needs: ['shelving'], desc: 'Unlocks the State Industrial Complex: your own supplies, made on the base, for fuel and power.' },
   tank:     { name: 'Armoured Doctrine', tier: 3, cost: 450, hrs: 60, needs: ['frv', 'cargo'], desc: 'Every Vehicle Bay also keeps a tank, for the really big actions.' },
 };
@@ -241,13 +244,13 @@ export const B = {
               desc: 'Luminite-core emitters that cut through fog, sandstorms and bio-acid haze. Lights the wall at night and watches seven tiles of it.' },
   turret:   { name: 'Defence Turret', group: 'military', w: 1, d: 1, cost: 220, up: 8, pw: -2, guns: 6, atWall: true, tech: 'fortworks', need: { ammo: 15 },
               desc: 'An autonomous rotary gun on Mag-Coil torque and a Guidance Core. Arms six tiles of wall either way. Walls deter; turrets destroy.' },
-  eob:      { stage: 1, name: 'Emergency Operations Bunker', group: 'military', w: 4, d: 3, cost: 900, up: 24, pw: 5, crew: 2, unique: true, tech: 'fortworks', large: true, mor: 3, weekly: { def: 2 },
+  eob:      { stage: 2, name: 'Emergency Operations Bunker', group: 'military', w: 4, d: 3, cost: 900, up: 24, pw: 5, crew: 2, unique: true, tech: 'fortworks', large: true, mor: 3, weekly: { def: 2 },
               desc: 'If the surface falls silent, the war continues below. Armoured walls, redundant comm relays and its own power grid. +2 Defence standing a week.' },
   vault:    { name: 'Server and Storage Vault', group: 'industry', w: 3, d: 3, cost: 640, up: 16, pw: -4, crew: 1, tech: 'archive', large: true, lab: 0.35, store: { rations: 60, fuel: 40, ammo: 40 },
               desc: 'Every battle log, strat-map and citizen record on quantum drives, cooled by Automaton heat plates. Research 35% faster, and a hardened store.' },
   warroom:  { name: 'War Room', group: 'military', w: 4, d: 4, cost: 1200, up: 30, pw: -6, crew: 3, unique: true, tech: 'warroom', needs: ['command'], large: true, prop: 8, odds: 0.08, offers: 1, staff: 2,
               desc: 'Illuminate holo cores cast every front in 360 degrees; Automaton servers crunch the threat. Special operations +8% odds, and one more to choose from.' },
-  halls:    { stage: 1, name: 'Memorial Halls', group: 'propaganda', w: 4, d: 3, cost: 980, up: 20, pw: -2, tech: 'civic', needs: ['memorial'], large: true, prop: 18, mor: 5, pride: 1,
+  halls:    { stage: 2, name: 'Memorial Halls', group: 'propaganda', w: 4, d: 3, cost: 980, up: 20, pw: -2, tech: 'civic', needs: ['memorial'], large: true, prop: 18, mor: 5, pride: 1,
               desc: 'One wing for legendary Helldivers, one for the battles that made them, in holographic panels lit by Luminite. Inspires every recruit who marches past.' },
   mart:     { name: 'DEMOCRA-MART', group: 'living', w: 3, d: 3, cost: 700, up: 14, pw: -3, tech: 'civic', large: true, mor: 4, sales: 14, staff: 3,
               desc: 'Rations upgrades, souvenir shrapnel mugs and liberty-approved luxuries, with self-checkout lanes run by Automaton cores. Earns credits every day.' },
@@ -257,9 +260,9 @@ export const B = {
               desc: 'A select few Helldivers kept frozen for just-in-case service, thawed when called. Special operations +5% odds.' },
   brig:     { name: 'Security Brig', group: 'military', w: 3, d: 2, cost: 560, up: 14, pw: -3, crew: 1, tech: 'archive', large: true, weekly: { tru: 2 }, inspect: 5,
               desc: 'Containment emitters and restraint bolts for prisoners, rogue AI cores, and any Helldiver who forgets what Managed Democracy means. +2 Truth a week; inspections +5.' },
-  partyhq:  { stage: 1, name: 'Party Headquarters', group: 'propaganda', w: 3, d: 3, cost: 820, up: 18, pw: -3, unique: true, needs: ['truth'], large: true, prop: 10, staff: 3, weekly: { tru: 1 }, reviews: 3,
+  partyhq:  { stage: 2, name: 'Party Headquarters', group: 'propaganda', w: 3, d: 3, cost: 820, up: 18, pw: -3, unique: true, needs: ['truth'], large: true, prop: 10, staff: 3, weekly: { tru: 1 }, reviews: 3,
               desc: 'Administrative heart of the base\'s political life. +1 Truth a week, and three more roster files a day get read.' },
-  palace:   { stage: 2, name: 'Palace of Culture and Science', group: 'propaganda', w: 5, d: 5, cost: 2600, up: 40, pw: -6, unique: true, tech: 'civic', needs: ['partyhq'], large: true, prop: 30, mor: 6, pride: 2, staff: 4,
+  palace:   { stage: 3, name: 'Palace of Culture and Science', group: 'propaganda', w: 5, d: 5, cost: 2600, up: 40, pw: -6, unique: true, tech: 'civic', needs: ['partyhq'], large: true, prop: 30, mor: 6, pride: 2, staff: 4,
               desc: 'Monumental architecture: a stepped tower with a spire, visible from orbit, or so the brochure says. A great deal of propaganda, morale and pride.' },
   club:     { name: 'Workers\' Club', group: 'living', w: 2, d: 2, cost: 160, up: 4, pw: -1, needs: ['mess'], mor: 3, staff: 1,
               desc: 'Chess, approved literature and a kettle. Morale for the evenings.' },
@@ -269,7 +272,7 @@ export const B = {
               desc: 'Built on an E-710 seep: pumps about 24 fuel a day into its tank, and the trucks carry it where it is needed. Deliveries cost less.' },
   mine:     { name: 'Ore Mine', group: 'industry', w: 2, d: 2, cost: 380, up: 10, pw: -2, crew: 2, deposit: 4, make: 30,
               desc: 'Built on an ore field: digs about 30 supplies a day while crewed and powered.' },
-  factory:  { stage: 1, name: 'State Industrial Complex', group: 'industry', w: 4, d: 3, cost: 900, up: 22, pw: -6, crew: 3, tech: 'industry', large: true, make: 45, need: { fuel: 40 },
+  factory:  { stage: 2, name: 'State Industrial Complex', group: 'industry', w: 4, d: 3, cost: 900, up: 22, pw: -6, crew: 3, tech: 'industry', large: true, make: 45, need: { fuel: 40 },
               desc: 'Turns E-710 and labour into supplies: about 45 a day while crewed, powered and fuelled. Trucks bring the fuel.' },
   memorial: { name: 'Memorial Wall', group: 'propaganda', w: 3, d: 1, cost: 180, up: 4, prop: 6, mor: 2, needs: ['barracks'],
               desc: 'A plaque for every trooper who fell. Halves the grief of each loss.' },
@@ -284,7 +287,7 @@ export const B = {
               desc: 'A reverse-osmosis unit on a trailer, drawing from a river, lake or the sea (it must stand within two tiles of water). A hundred and sixty votes\' water a day.' },
   lagoon:   { name: 'Sewage Lagoon', group: 'power', w: 3, d: 2, cost: 160, up: 4, sewer: 150, cover: { se: 8 }, smell: 4,
               desc: 'A lined pit with a berm round it. Cheap and it works, but bunks within four tiles smell it, and a well within six tiles is contaminated.' },
-  treatment:{ stage: 1, name: 'Waste Treatment Plant', group: 'power', w: 3, d: 3, cost: 620, up: 16, pw: -4, crew: 1, sewer: 400, cover: { se: 12 },
+  treatment:{ stage: 2, name: 'Waste Treatment Plant', group: 'power', w: 3, d: 3, cost: 620, up: 16, pw: -4, crew: 1, sewer: 400, cover: { se: 12 },
               desc: 'Clarifiers, aeration and a lab that tests the outflow. Four hundred votes\' waste a day, no smell, nothing in the water. Needs a Fort charter.' },
   fuelfarm: { name: 'Fuel Farm', group: 'power', w: 3, d: 3, cost: 380, up: 12, store: { fuel: 300 }, cover: { fu: 9 },
               desc: 'Bermed fuel bladders and a pump house. Holds three hundred fuel and pipes it to every generator, motor pool and vehicle bay within nine tiles, so the trucks only have to fill the farm.' },
@@ -398,7 +401,7 @@ export const STD = [
     desc: 'Canvas, poles and sandbags. Cheap and up in hours, but it holds fewer, wears out without constant upkeep and nobody is proud of it.' },
   { key: 'prefab', name: 'Prefab', doctrine: 'Temporary', cost: 0.7, time: 0.65, cap: 0.9, up: 0.9, wear: 2.5, mor: 0.8, prop: 0.75,
     desc: 'Plywood huts and shipping containers off the pelican. A proper roof, near-standard capacity, moderate upkeep.' },
-  { key: 'perm', name: 'Permanent', doctrine: 'Semi-permanent', cost: 1, time: 1, cap: 1, up: 1, wear: 1, mor: 1, prop: 1, stage: 1,
+  { key: 'perm', name: 'Permanent', doctrine: 'Semi-permanent', cost: 1, time: 1, cap: 1, up: 1, wear: 1, mor: 1, prop: 1, stage: 2,
     desc: 'Concrete and steel. Dear and slow, but it holds the most, barely wears, and the Ministry of Truth approves. Needs a Fort charter.' },
 ];
 // the buildings that come in all three standards; everything else has one (and counts as permanent)

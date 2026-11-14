@@ -439,7 +439,9 @@ const ORDERS = [
   ['Keep supplies and credits rising: the net per day is under each at the top', s => { const r = s.rates(); return s.week >= 2 && r.supNet >= 0 && r.crNet >= 0; }],
   ['Build a Patrol Office for standing patrols', s => s.has('patrol')],
   ['Pay back the Founding Charter (ECONOMY, LOANS)', s => !s.loans.some(l => l.k === 'charter')],
-  ['Be promoted to a Fort (EXPANSION, CHARTER)', s => s.stage >= 1],
+  ['Be promoted to a Forward Operating Base (EXPANSION, CHARTER)', s => s.stage >= 1],
+  ['Be promoted to a Fort: more ground, permanent buildings', s => s.stage >= 2],
+  ['Be promoted to a Major Base', s => s.stage >= 3],
   ['Score 60+ in an inspection', s => s.inspection && s.inspection.score >= 60],
   ['Reach 1st place in the standings', s => s.rank === 0],
 ];
@@ -620,6 +622,86 @@ $('tb-body').onclick = e => {
 };
 $('or-x').onclick = () => { $('orders').classList.toggle('min'); $('or-x').textContent = $('orders').classList.contains('min') ? '+' : '–'; };
 
+const MOR_NAMES = { base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals and pride', food: 'hunger', noise: 'noise near the bunks', hazard: 'fuel or generators by the bunks', crowd: 'votes without bunks', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn buildings', mood: 'desk decisions', unpaid: 'unpaid wages', water: 'water for the bunks', sewer: 'sewage from the bunks', smell: 'the lagoon smell', sick: 'sickness', commit: 'Truth commitment' };
+// ---------------------------------------------------------------- readouts: a live breakdown on hover, and a click to where it's managed
+const INFO_GO = { sup: () => { ecoTab = 'budget'; openMins('eco'); }, cr: () => { ecoTab = 'budget'; openMins('eco'); }, debt: () => { ecoTab = 'loans'; openMins('eco'); },
+  votes: () => { group = 'zones'; buildOpen = true; buildBar(); setIview('zone'); }, morale: () => openMins('tru'), power: () => setIview('util'),
+  rations: () => setIview('supply'), fuel: () => setIview('supply'), ammo: () => setIview('supply'), ready: () => openMins('def'), week: () => toggleMins('st') };
+function infoHtml(k) {
+  const s = sim, r = s.rates(), sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v)), row = (n, v, cls) => `<tr><td>${esc(n)}</td><td class="${cls ?? (v < 0 ? 'down' : 'up')}">${typeof v === 'number' ? sg(v) : v}</td></tr>`;
+  const flows = o => Object.entries(o).filter(([, v]) => Math.abs(v) >= 0.5).sort((a, b) => b[1] - a[1]).map(([c, v]) => row(CAT[c] || c, Math.round(v))).join('');
+  const t = (title, body, foot) => `<b>${title}</b><table class="tipt">${body}</table>${foot ? `<span class="fine">${foot}</span>` : ''}`;
+  if (k === 'sup') return t(`SUPPLIES ${fmt(s.supplies)} · ${sg(Math.round(r.supNet))} A DAY`, flows(r.sup), 'Averaged over the last days. Click for the budget.');
+  if (k === 'cr') return t(`CREDITS ${fmt(s.credits)} · ${sg(Math.round(r.crNet))} A DAY`, flows(r.cr), 'Click for the budget.');
+  if (k === 'debt') return t(`OWED ${fmt(s.debt())}`, s.loans.map(l => row(LOANS[l.k].name, `${fmt(l.bal)} · −${Math.min(l.bal, LOANS[l.k].pay)}/wk`, '')).join('') + (s.credits < 0 ? row('Overdraft', fmt(-s.credits), 'down') : ''), 'Click for loans.');
+  if (k === 'votes') { const home = s.troops.filter(t => t.state !== 'patrol').length, out = s.troops.length - home, by = {};
+    for (const b of s.b) if (b.done && B[b.type].beds) by[B[b.type].name] = (by[B[b.type].name] || 0) + s.cap(b, 'beds');
+    const d = s.dem; return t(`VOTES ${home} HOME · ${s.troops.length} IN ALL · ${s.beds} BUNKS`, Object.entries(by).map(([n, v]) => row(n, v + ' bunks', '')).join('') + row('Out on patrol', out, '') + row('Engineers (at their yard)', s.engineers(), '') + (d ? row('Bunks wanted', d.bunks ? `${d.bunks} more` : 'enough', d.bunks ? 'warn' : 'up') : ''), 'Recruits fill empty bunks each morning. Click for zoning.'); }
+  if (k === 'morale') return t(`MORALE ${Math.round(s.morale)} → ${Math.round(s.moraleTarget)}`, Object.entries(s.mor).filter(([, v]) => v).sort((a, b) => b[1] - a[1]).map(([n, v]) => row(MOR_NAMES[n] || n, v)).join(''), 'Morale moves slowly toward the target. Click for the Ministry of Truth.');
+  if (k === 'power') { const u = s.util; const src = {}; for (const b of s.b) if (b.done && !b.off && B[b.type].pw > 0) src[B[b.type].name] = (src[B[b.type].name] || 0) + 1;
+    return t(`POWER ${s.power.made} MADE · ${s.power.used} USED`, Object.entries(src).map(([n, c]) => row(n, '×' + c, '')).join('') + (u ? row('Water a day', `${u.water.made} / ${u.water.use}`, u.water.ratio < 1 ? 'warn' : 'up') + row('Sewage a day', `${u.sewer.cap} / ${u.sewer.use}`, u.sewer.ratio < 1 ? 'warn' : 'up') + (u.dark ? row('Dark: outside coverage', u.dark, 'down') : '') : ''), 'Click for the Utilities view.'); }
+  if (['rations', 'fuel', 'ammo'].includes(k)) { const use = s.usage()[k] || 0, have = s.amount(k);
+    return t(`${GOODS[k].name.toUpperCase()} ${Math.floor(have)}`, row('In storage', Math.floor(s.stored(k)), '') + row('Room in storage', Math.floor(s.storage(k)), '') + row('Waiting on the pads', Math.floor(s.onPad(k)), '') + row('At the buildings using it', Math.floor(s.inUse(k)), '') + row('On trucks and forklifts', Math.floor(s.carried(k)), '') + row('Used a day', Math.round(use), '') + row('Lasts', use ? `${(have / use).toFixed(1)} days` : '—', use && have / use < 1.5 ? 'down' : 'up'), 'The 07:00 pelican refills storage. Click for the Supply view.'); }
+  if (k === 'ready') { const ready = s.troops.filter(t => t.train >= 100 && t.state !== 'patrol').length, rec = s.troops.filter(t => t.train < 100), o = s.orders[0];
+    return t(`READY ${ready} · IN TRAINING ${rec.length}`, row('Training places', s.b.filter(b => b.done && B[b.type].train).reduce((a, b) => a + s.cap(b, 'slots'), 0), '') + row('Average progress', rec.length ? Math.round(rec.reduce((a, t) => a + t.train, 0) / rec.length) + '%' : '—', '') + (o ? row('Deployment order', `${o.sent} of ${o.n}, by day ${o.due}`, o.sent < o.n && o.due - s.time.day <= 1 ? 'down' : '') : ''), 'Transports leave the pad at 16:00. Click for the Ministry of Defence.'); }
+  if (k === 'week') return t(`WEEK ${s.week} · ${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4`, row('Allocation at this rank', `~${fmt(C.ALLOC.base * C.ALLOC.mult[s.rank])} SUP`, '') + row('Inspection', s.inspected ? 'done this week' : 'later this week', '') + row('Charter', C.STAGES[s.stage || 0].name, ''), 'Click for the standings.');
+  return '';
+}
+document.addEventListener('pointermove', e => { const el = e.target.closest?.('[data-info]'); if (!el || !playing) return; const h = infoHtml(el.dataset.info); if (h) { const r = el.getBoundingClientRect(); tip(h, r.left + r.width / 2, r.top < innerHeight / 2 ? r.bottom + 8 : r.top - 8, r.top >= innerHeight / 2); } });
+document.addEventListener('pointerout', e => { if (e.target.closest?.('[data-info]') && !e.relatedTarget?.closest?.('[data-info]') && flashT <= 0) hideTip(); });
+document.addEventListener('click', e => { const el = e.target.closest?.('#status [data-info]'); if (el && INFO_GO[el.dataset.info]) { INFO_GO[el.dataset.info](); audio.play('click'); } });
+// ---------------------------------------------------------------- layout: keep the floating panels out of each other's way.
+// CSS places them; this trims and shifts them as they open, close and grow, every frame
+function layout() {
+  const q = id => document.getElementById(id), shown = e => e && !e.classList.contains('hidden') && getComputedStyle(e).display !== 'none', H = innerHeight, W = innerWidth;
+  const items = q('b-items'), groups = q('b-groups'), mmRow = document.querySelector('#mmwrap .mm-row'), iv = q('iv');
+  if (!playing) return;
+  if (W <= 760 || H <= 560) {   // phones: a popup takes the top of the screen and the task board steps aside for it
+    const pop = q('deskpop'), orders = q('orders'), selp = q('selp'), up = shown(pop), card = shown(selp);
+    const t0 = q('top').getBoundingClientRect().bottom + 6, floor = card ? selp.getBoundingClientRect().top : (shown(q('b-items')) ? q('b-items') : q('b-groups')).getBoundingClientRect().top;
+    if (up) Object.assign(pop.style, { left: '4vw', right: 'auto', width: '92vw', transform: 'none', top: t0 + 'px', bottom: 'auto', maxHeight: Math.max(120, floor - t0 - 8) + 'px', overflowY: 'auto' });
+    if (orders) orders.style.visibility = up || card ? 'hidden' : '';   // the task board steps aside for a popup or a building card
+    return;
+  }
+  if (!mmRow || !mmRow.offsetParent) return;
+  const mr = mmRow.getBoundingClientRect(), right = W - mr.left + 8;
+  if (items) items.style.marginRight = right + 'px';                       // the build bar stops short of the minimap column
+  if (iv) iv.style.maxWidth = (mr.width + 4) + 'px';                       // the view buttons wrap inside that column
+  const barTop = shown(items) ? items.getBoundingClientRect().top : groups.getBoundingClientRect().top;
+  const top0 = q('top').getBoundingClientRect().bottom + 6;
+  // the left column: the task board stops above the build bar
+  const orders = q('orders'), oShown = shown(orders); if (oShown) orders.style.maxHeight = Math.max(120, barTop - orders.getBoundingClientRect().top - 8) + 'px';
+  // the right column: standings, the building card (folding the standings away when there's no room), the view buttons
+  const stand = q('stand'), selp = q('selp'), ivTop = iv ? iv.getBoundingClientRect().top : mr.top;
+  if (shown(selp)) {
+    stand.style.display = '';
+    const st = stand.getBoundingClientRect(), fold = ivTop - (st.bottom + 8) - 8 < 230, t = fold ? top0 : st.bottom + 8;
+    stand.style.display = fold ? 'none' : '';
+    selp.style.top = t + 'px'; selp.style.bottom = 'auto'; selp.style.maxHeight = Math.max(140, ivTop - t - 8) + 'px'; selp.style.overflowY = 'auto';
+  } else stand.style.display = '';
+  // the middle: a popup at the top, then the comms log or the notices under it; the info legend bottom-right, over the bar
+  let L = oShown ? orders.getBoundingClientRect().right + 8 : 8, R = W - right;
+  for (const e of [stand, selp]) if (shown(e)) R = Math.min(R, e.getBoundingClientRect().left - 8);
+  const midW = Math.max(200, R - L);
+  let y = top0;
+  const pop = q('deskpop');
+  if (shown(pop)) { Object.assign(pop.style, { left: L + 'px', top: y + 'px', right: 'auto', bottom: 'auto', transform: 'none', width: Math.min(340, midW) + 'px' }); y = pop.getBoundingClientRect().bottom + 8; }
+  const lg = q('iv-legend'); let lgTop = barTop;
+  if (lg && !lg.classList.contains('hidden')) lg.style.display = (barTop - y) < 230 && (shown(q('comms')) || shown(pop)) ? 'none' : '';   // no room: the legend steps aside for the popup and the log
+  if (shown(lg)) {
+    Object.assign(lg.style, { position: 'fixed', right: (W - R) + 'px', bottom: (H - barTop + 8) + 'px', overflowY: 'auto', width: Math.min(252, midW) + 'px' });
+    const keep = shown(q('comms')) ? 160 : 90;   // the comms log keeps room for a few lines; the legend scrolls
+    lg.style.maxHeight = Math.max(60, Math.min(lg.scrollHeight + 2, (barTop - 8) - y - keep)) + 'px';
+    lgTop = lg.getBoundingClientRect().top;
+  }
+  const lgLeft = shown(lg) ? lg.getBoundingClientRect().left : W;
+  for (const e of [q('comms'), q('notices')]) {
+    if (!e) continue;
+    Object.assign(e.style, { left: L + 'px', transform: 'none', width: Math.min(600, midW) + 'px', top: y + 'px' });
+    const r = e.getBoundingClientRect(), below = r.right > lgLeft ? lgTop : barTop;   // stop above the legend if they share columns
+    e.style.maxHeight = Math.max(80, below - y - 8) + 'px'; e.style.overflowY = e.id === 'comms' ? '' : 'hidden';
+  }
+}
 function hud() {
   const s = sim;
   { const r = s.rates(), sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
@@ -918,7 +1000,7 @@ function renderMins(force) {
     const ins = s.inspection, at = C.WEEK * C.INSPECT_AT - s.wt;
     h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${days(at)}.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
     h += `<h3>RIGHT NOW</h3><div class="kv"><span>MORALE</span><b>${Math.round(s.morale)}</b></div><div class="kv"><span>PROPAGANDA</span><b>${s.prop}</b></div><div class="kv"><span>CONDITION</span><b>${Math.round(s.avgCond)}</b></div><div class="kv"><span>LIKELY SCORE</span><b>${Math.round(0.35 * s.morale + 0.45 * s.prop + 0.2 * s.avgCond)}</b></div>`;
-    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${{ base: 'baseline', comfort: 'comfort (mess, habs, vending, domes)', prop: 'propaganda', pride: 'medals', food: 'hunger', noise: 'noise near housing', crowd: 'votes without housing', latrine: 'latrine queues and filth', power: 'power cuts', grief: 'grief', worn: 'worn-out buildings' }[k]}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
+    h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${(MOR_NAMES[k] || k)}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
     if (ins) h += `<h3>LAST REPORT, WEEK ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
     h += `<p class="fine left">Every kind of propaganda counts for less the more of it you have, so a flag, banners, a loudspeaker, a statue and a pool beat ten banners.</p>`;
   } else {
@@ -1268,6 +1350,7 @@ view.onLost = lost => trouble(lost ? 'The graphics driver dropped the 3D view. W
 function loop(now) { try { loopBody(now); oops = 0; } catch (e) { console.error(e); if (++oops === 3) trouble(String(e && e.message || e)); requestAnimationFrame(loop); } }
 function loopBody(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing) layout();   // panels keep out of each other's way, paused or not
   if (playing) {
     const fx = (held.has('d') || held.has('arrowright') ? 1 : 0) - (held.has('a') || held.has('arrowleft') ? 1 : 0);
     const fz = (held.has('w') || held.has('arrowup') ? 1 : 0) - (held.has('s') || held.has('arrowdown') ? 1 : 0);
@@ -1308,4 +1391,4 @@ function loopBody(now) {
 title();
 if (params.has('play')) { const s = stored(); start(s ? new Sim({ state: s }) : new Sim({ seed: +(params.get('seed') || 7) })); }
 requestAnimationFrame(loop);
-window.__fob = { get sim() { return sim; }, get life() { return life; }, view, audio, snd: () => ({ chatT, paT, sndT, n: bubbles.length, playing, paused }) };
+window.__fob = { get sim() { return sim; }, get life() { return life; }, view, audio, select: id => select(id), openMins: t => openMins(t), setEco: t => { ecoTab = t; }, snd: () => ({ chatT, paT, sndT, n: bubbles.length, playing, paused }) };

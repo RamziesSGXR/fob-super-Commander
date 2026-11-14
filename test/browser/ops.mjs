@@ -11,7 +11,7 @@ if (!opened) { await p.evaluate(() => { const b = [...document.querySelectorAll(
 await p.evaluate(() => { document.getElementById('opmap')?.scrollIntoView(); }); await p.waitForTimeout(300);
 await p.screenshot({ path: 'test/shots/ops1.png' });
 await p.evaluate(() => { const { sim: s } = window.__fob; for (let i = 0; i < 4000 && s.patrols.length; i++) s.step(0.5); }); await p.waitForTimeout(600);
-if (await p.$('[data-rep]')) { await p.click('[data-rep]', { timeout: 8000 }); await p.waitForTimeout(300); await p.locator('[data-rep]').first().scrollIntoViewIfNeeded().catch(() => {}); }   // the tab redraws while squads are out: look it up fresh
+if (await p.$('[data-rep]')) { await p.evaluate(() => document.querySelector('[data-rep]').click()); await p.waitForTimeout(300); await p.locator('[data-rep]').first().scrollIntoViewIfNeeded().catch(() => {}); }   // the tab redraws while squads are out: look it up fresh
 await p.screenshot({ path: 'test/shots/ops2.png' });
 console.log(JSON.stringify(await p.evaluate(() => ({ reps: window.__fob.sim.reports?.length, pop: !document.getElementById('deskpop').classList.contains('hidden'), map: !!document.getElementById('opmap') }))));
 console.log(errs.slice(0, 5).join('\n') || 'no errors'); await b.close(); if (errs.length) process.exitCode = 1;

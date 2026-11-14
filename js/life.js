@@ -427,7 +427,7 @@ export class Life {
       const a = this.person(key, hd ? 'hd' : 'civ' + ((home + i) % 3), x, z);
       a.extra = hd ? 'hd' : 'civ'; a.home = home; a.n = i; a.hidden = true; a.act = 'inside';
     }
-    for (const [id, a] of this.actors) if (a.extra && !want.has(id)) this.actors.delete(id);
+    for (const [id, a] of this.actors) if ((a.extra === 'hd' || a.extra === 'civ') && !want.has(id)) this.actors.delete(id);   // engineers are engineers()'s to keep
   }
   extra(a, dt) {
     const s = this.sim, h = s.time.hour, ph = s.time.phase, b = s.byId(a.home); if (!b) return;

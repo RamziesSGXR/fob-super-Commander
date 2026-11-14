@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.15">
+<link rel="stylesheet" href="css/style.css?v=0.15.1">
 </head>
 <body>
 <div id="app">
@@ -115,7 +115,7 @@
       </ul>
       <p><b>Commitments.</b> You can also buy standing: ECONOMY, COMMITMENTS sets what the base gives each Ministry every day, from NONE to ALL OUT. Defence takes ammo and rations, Expansion supplies and fuel, Truth credits and supplies. Each Ministry has a planet-wide index, like a share price (it shows under the standings): when every base is chasing a Ministry its favour costs more. No base can afford ALL OUT on everything, so pick what to chase and trade for what you lack.</p>
       <p><b>The desk.</b> Between deliveries there is always paperwork. Citizens and officials file requests. The Ministries call for goods by a deadline: set them aside or pay for ignoring them. Trooper files need grading. All of it shows on the task board and in DESK. None of it is required, but it all pays.</p>
-      <p><b>Growing.</b> A Comms Tower lets you run more landing pads, and a Science Lab researches upgrades. A Fort charter and then a Major Base charter (EXPANSION) widen the ground you may build on and unlock the largest buildings.</p>
+      <p><b>Growing.</b> A Comms Tower lets you run more landing pads, and a Science Lab researches upgrades. Four charters (EXPANSION): an <b>Outpost</b> (36 tiles across), a <b>Forward Operating Base</b> (46: 30 votes, Expansion 50, 600 credits and 600 supplies), a <b>Fort</b> (58: 60 votes, Expansion 60, 1,200 credits and 1,500 supplies; permanent buildings and the larger ones) and a <b>Major Base</b> (the whole map: 110 votes, Expansion 70, 2,000 credits and 3,000 supplies). Each widens the ground you may build on and raises the weekly allocation.</p>
       <p><b>Controls.</b> Drag to move, scroll or pinch to zoom, <kbd>Q</kbd> <kbd>E</kbd> or right-drag to rotate. <kbd>R</kbd> turns a building, <kbd>Shift</kbd>-click places several. <kbd>Space</kbd> pauses, <kbd>[</kbd> <kbd>]</kbd> or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> set the speed. <kbd>Tab</kbd> steps through the build toolbar, <kbd>I</kbd> through the info views. <kbd>B</kbd> opens ECONOMY, <kbd>L</kbd> the DESK, <kbd>M</kbd> the last window, <kbd>C</kbd> the comms log. <kbd>P</kbd> is photo mode, <kbd>H</kbd> hides the interface. Sound and volume are in the MENU.</p>
       <div class="btns"><button id="ht-x" class="btn primary" type="button">UNDERSTOOD</button></div>
     </div>
@@ -139,11 +139,11 @@
     <header id="top">
       <div class="who"><canvas id="h-logo" width="56" height="56"></canvas><div><b id="h-name"></b><span id="h-base"></span></div></div>
       <div class="bigs">
-        <button class="big sup" type="button" data-mt="eco" title="Supplies: what you build, pave and pay upkeep and the morning deliveries with. Under it, the change per day. Click for the economy."><b id="r-sup">0</b><span>SUPPLIES</span><i id="r-sup-d"></i></button>
-        <button class="big cr" type="button" data-mt="eco" title="Credits: money. Earned by shipping troopers, operations, franchises and trade; spent on wages, research and the market. Click for the economy."><b id="r-cr">0</b><span>CREDITS</span><i id="r-cr-d"></i></button>
-        <button class="big debt" type="button" data-mt="eco" data-et="loans" title="What the base owes the Bureau: loans plus any overdraft. Click for loans."><b id="r-debt">0</b><span>OWED</span><i id="r-debt-d"></i></button>
+        <button class="big sup" type="button" data-mt="eco" data-info="sup"><b id="r-sup">0</b><span>SUPPLIES</span><i id="r-sup-d"></i></button>
+        <button class="big cr" type="button" data-mt="eco" data-info="cr"><b id="r-cr">0</b><span>CREDITS</span><i id="r-cr-d"></i></button>
+        <button class="big debt" type="button" data-mt="eco" data-et="loans" data-info="debt"><b id="r-debt">0</b><span>OWED</span><i id="r-debt-d"></i></button>
       </div>
-      <button id="b-week" class="week" type="button" title="Standings (S)"><b id="w-title">WEEK 1</b><span class="wbar"><span id="w-fill"></span><span id="w-insp" title="Inspection"></span></span><span id="w-rank"></span></button>
+      <button id="b-week" class="week" type="button" data-info="week"><b id="w-title">WEEK 1</b><span class="wbar"><span id="w-fill"></span><span id="w-insp" title="Inspection"></span></span><span id="w-rank"></span></button>
       <div class="menu">
         <button id="b-rl" class="btn icon" type="button" title="Rotate left (Q)">⟲</button>
         <button id="b-rr" class="btn icon" type="button" title="Rotate right (E)">⟳</button>
@@ -191,13 +191,13 @@
         <span class="ck-txt"><b id="ck-day">DAY 1</b> <b id="ck-time">06:00</b> <span id="ck-phase"></span></span>
       </div>
       <div class="res">
-        <span class="ri" title="Votes on the base / all votes / votes housed"><i>VOTES</i><b id="r-trp"></b></span>
-        <span class="ri" title="Morale"><i>MORALE</i><b id="r-mrl"></b></span>
-        <span class="ri" title="Power made / used"><i>POWER</i><b id="r-pw"></b></span>
-        <span class="ri" title="Rations on the base"><i>RAT</i><b id="r-rat"></b></span>
-        <span class="ri" title="E-710 fuel on the base"><i>FUEL</i><b id="r-fuel"></b></span>
-        <span class="ri" title="Ammo on the base"><i>AMMO</i><b id="r-ammo"></b></span>
-        <span class="ri" title="Trained troopers ready to ship / recruits in training"><i>READY</i><b id="r-ready"></b></span>
+        <span class="ri" data-info="votes"><i>VOTES</i><b id="r-trp"></b></span>
+        <span class="ri" data-info="morale"><i>MORALE</i><b id="r-mrl"></b></span>
+        <span class="ri" data-info="power"><i>POWER</i><b id="r-pw"></b></span>
+        <span class="ri" data-info="rations"><i>RAT</i><b id="r-rat"></b></span>
+        <span class="ri" data-info="fuel"><i>FUEL</i><b id="r-fuel"></b></span>
+        <span class="ri" data-info="ammo"><i>AMMO</i><b id="r-ammo"></b></span>
+        <span class="ri" data-info="ready"><i>READY</i><b id="r-ready"></b></span>
       </div>
       <div id="mdock">
         <button class="md" data-mt="eco" type="button"><b class="c-pro">ECONOMY</b><span id="md-eco"></span></button>
@@ -247,31 +247,31 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.15",
-  "./js/build.js": "./js/build.js?v=0.15",
-  "./js/config.js": "./js/config.js?v=0.15",
-  "./js/demo.js": "./js/demo.js?v=0.15",
-  "./js/desk.js": "./js/desk.js?v=0.15",
-  "./js/life.js": "./js/life.js?v=0.15",
-  "./js/logo.js": "./js/logo.js?v=0.15",
-  "./js/main.js": "./js/main.js?v=0.15",
-  "./js/market.js": "./js/market.js?v=0.15",
-  "./js/models.js": "./js/models.js?v=0.15",
-  "./js/net.js": "./js/net.js?v=0.15",
-  "./js/noise.js": "./js/noise.js?v=0.15",
-  "./js/path.js": "./js/path.js?v=0.15",
-  "./js/reports.js": "./js/reports.js?v=0.15",
-  "./js/rng.js": "./js/rng.js?v=0.15",
-  "./js/sim.js": "./js/sim.js?v=0.15",
-  "./js/site.js": "./js/site.js?v=0.15",
-  "./js/utils.js": "./js/utils.js?v=0.15",
-  "./js/view.js": "./js/view.js?v=0.15",
-  "./js/voices.js": "./js/voices.js?v=0.15",
-  "./js/zones.js": "./js/zones.js?v=0.15",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.15"
+  "./js/audio.js": "./js/audio.js?v=0.15.1",
+  "./js/build.js": "./js/build.js?v=0.15.1",
+  "./js/config.js": "./js/config.js?v=0.15.1",
+  "./js/demo.js": "./js/demo.js?v=0.15.1",
+  "./js/desk.js": "./js/desk.js?v=0.15.1",
+  "./js/life.js": "./js/life.js?v=0.15.1",
+  "./js/logo.js": "./js/logo.js?v=0.15.1",
+  "./js/main.js": "./js/main.js?v=0.15.1",
+  "./js/market.js": "./js/market.js?v=0.15.1",
+  "./js/models.js": "./js/models.js?v=0.15.1",
+  "./js/net.js": "./js/net.js?v=0.15.1",
+  "./js/noise.js": "./js/noise.js?v=0.15.1",
+  "./js/path.js": "./js/path.js?v=0.15.1",
+  "./js/reports.js": "./js/reports.js?v=0.15.1",
+  "./js/rng.js": "./js/rng.js?v=0.15.1",
+  "./js/sim.js": "./js/sim.js?v=0.15.1",
+  "./js/site.js": "./js/site.js?v=0.15.1",
+  "./js/utils.js": "./js/utils.js?v=0.15.1",
+  "./js/view.js": "./js/view.js?v=0.15.1",
+  "./js/voices.js": "./js/voices.js?v=0.15.1",
+  "./js/zones.js": "./js/zones.js?v=0.15.1",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.15.1"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.15"></script>
+<script type="module" src="js/main.js?v=0.15.1"></script>
 </body>
 </html>

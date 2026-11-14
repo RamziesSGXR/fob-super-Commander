@@ -57,7 +57,7 @@ export class Sim {
     this.planet = this.faction.planet || this.rng.pick(PLANETS);
     // the landing site: chosen on the planet map, or the best open spot near the middle if none was chosen
     const biome = biomeOf(this.planet), site = opts.flat ? null : opts.site || bestSite(this.seed, biome, this.N);
-    this.site = site ? { seed: this.seed, biome, u: site.u, v: site.v } : null; this.stage = opts.flat ? 2 : 0; if (opts.flat) this.foundedF = true;
+    this.site = site ? { seed: this.seed, biome, u: site.u, v: site.v } : null; this.stage = opts.flat ? C.STAGES.length - 1 : 0; if (opts.flat) this.foundedF = true;
     this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null, today: this.newDay(), days: [] };
     this.loans = [{ k: 'charter', bal: this.D.charter }]; this.calls = []; this.supplies = this.D.sup;
     this.morale = C.START.morale; this.grief = 0; this.pride = 0; this.hunger = 0;
@@ -131,12 +131,12 @@ export class Sim {
   nextStage() { return C.STAGES[(this.stage || 0) + 1] || null; }
   stageCheck() {
     const n = this.nextStage(); if (!n) return null;
-    return [{ ok: this.heads() >= n.troops, text: `${n.troops} votes on the base (${this.heads()})` }, { ok: this.stand.pro >= n.pro, text: `Expansion standing ${n.pro} (${Math.round(this.stand.pro)})` }, { ok: this.credits >= n.cr, text: `${n.cr.toLocaleString('en-US')} credits for the charter fee (${Math.round(this.credits).toLocaleString('en-US')})` }];
+    return [{ ok: this.heads() >= n.troops, text: `${n.troops} votes on the base (${this.heads()})` }, { ok: this.stand.pro >= n.pro, text: `Expansion standing ${n.pro} (${Math.round(this.stand.pro)})` }, { ok: this.credits >= n.cr, text: `${n.cr.toLocaleString('en-US')} credits for the charter fee (${Math.round(this.credits).toLocaleString('en-US')})` }, { ok: this.supplies >= (n.sup || 0), text: `${(n.sup || 0).toLocaleString('en-US')} supplies for the charter works (${Math.round(this.supplies).toLocaleString('en-US')})` }].filter(c => !/^0 supplies/.test(c.text));
   }
   promote() {
     const n = this.nextStage(), ck = this.stageCheck(); if (!n || ck.some(c => !c.ok)) return false;
-    this.spend('charter', 0, n.cr); this.stage++; this.rebuildNet(); this.gain('pro', 6); this.pride += 4;
-    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. The ground you may build on has grown to ${Math.min(this.N, n.box)} tiles a side, the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken.`);
+    this.spend('charter', n.sup || 0, n.cr); this.stage++; this.rebuildNet(); this.gain('pro', 6); this.pride += 4;
+    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. The ground you may build on has grown to ${Math.min(this.N, n.box)} tiles a side, the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken: ${n.cr.toLocaleString('en-US')} credits and ${(n.sup || 0).toLocaleString('en-US')} supplies.`);
     this.events.push({ t: 'stage', stage: this.stage }); return true;
   }
   inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
@@ -1351,7 +1351,7 @@ export class Sim {
   save() {
     const o = {};
     for (const k of Object.keys(this)) if (!['zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 9; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
+    o.rngS = this.rng.s; o.v = 10; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -1380,6 +1380,7 @@ export class Sim {
     this.credits ??= C.START.credits; this.mood ||= 0; this.desk ||= []; this.flow ||= { cur: this.newFlow(), last: null };
     if (this.b.length > 10 || this.week > 2) this.foundedF = true;   // bases from before the foundation rule
     this.flow.today ||= this.newDay(); this.flow.days ||= []; this.loans ||= []; this.calls ||= []; this.diff ||= 'veteran'; this.stage ??= 2;   // bases from before charters keep all their ground
+    if (!s.v || s.v < 10) { if (this.stage >= 1) this.stage++; this.rebuildNet(); }   // 0.15.1 added the FOB charter between Outpost and Fort
     for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
     this.adjacency(); this.recalc(); this.tick(); this.marketInit();

@@ -70,10 +70,12 @@ function bot() {
   for (const c of s.calls) if (!c.acc && s.have(c.g) > c.n * 1.5) s.answer(c.id, true);
   for (const r of [...s.desk]) s.decide(r.id, 0) || s.decide(r.id, REQUESTS[r.k].opts.length - 1);
   for (const t of s.toReview().slice(0, 2)) s.gradeTroop(t.id, trueGrade(t));
-  if (s.credits > 700) s.buySupplies();
-  while (s.credits < 150 && s.supplies > 2500 && s.sellSupplies());
-  if (s.credits > 900 && s.loans[0]) s.repay(0, s.credits - 600);
-  if (!s.tech.cur) for (const k of ['drill', 'fortworks', 'radio', 'shelving', 'civic', 'archive', 'frv', 'cargo', 'highrise', 'warroom', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.credits >= TECH[k].cost && s.research(k)) break;
+  // saving for the next charter: once the votes and standing are there, keep credits and sell surplus supplies for them
+  const ns = s.nextStage(), saving = ns && s.stageCheck().filter(c => !c.ok).every(c => /credits|supplies for the charter/.test(c.text)), short = ns && s.stageCheck().some(c => !c.ok && /credits/.test(c.text));
+  if (!saving && s.credits > 700 && s.supplies < 1500) s.buySupplies();
+  while ((s.credits < 150 || (saving && short)) && s.supplies > 1200 + (ns?.sup || 0) && s.sellSupplies());
+  if (!saving && s.credits > 900 && s.loans[0]) s.repay(0, s.credits - 600);
+  if (!saving && !s.tech.cur) for (const k of ['drill', 'fortworks', 'radio', 'shelving', 'civic', 'archive', 'frv', 'cargo', 'highrise', 'warroom', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.credits >= TECH[k].cost && s.research(k)) break;
   if (s.patrols.length < 3) for (const o of s.offers) { const kinds = ['frv', 'tank'].filter(k => s.armourFree(k)); if (s.chance({ ...o, veh: kinds }) >= 0.65) { s.send(o.id, kinds); break; } }
   for (const b of s.b) if (b.cond < 55 && s.supplies > 500) s.repair(b.id);
   // utilities: a substation by anything dark, a well by bunks without water, a lagoon (downwind, a little off) for sewage
@@ -84,9 +86,9 @@ function bot() {
     else if (foul || s.util.sewer.ratio < 0.9) { const h = foul || s.b.find(b => B[b.type].beds && b.type !== 'hq') || s.b[0]; build('lagoon', [h.x - 7, h.z + 3]); }
   }
   // construction standards: tents to found the base, prefabs once it pays, permanent at Fort; housing and food upgraded first
-  if (s.founded() && s.week >= 2) s.setStd(s.stage >= 1 ? 2 : 1);
+  if (s.founded() && s.week >= 2) s.setStd(s.stage >= 2 ? 2 : 1);
   if (!s.b.some(b => b.upg)) {
-    const order = ['barracks', 'mess', 'hq', 'range', 'depot', 'medbay', 'course', 'patrol'], keep = s.stage >= 1 ? 1800 : 900;
+    const order = ['barracks', 'mess', 'hq', 'range', 'depot', 'medbay', 'course', 'patrol'], keep = s.stage >= 2 ? 1800 : 900;
     const next = s.b.filter(b => s.upgradeInfo(b).ok).sort((a, b) => ((order.indexOf(a.type) + 1) || 99) - ((order.indexOf(b.type) + 1) || 99) || s.stdOf(a) - s.stdOf(b))[0];
     if (next && s.supplies > keep + s.upgradeInfo(next).cost) s.upgrade(next.id);
   }
@@ -106,9 +108,10 @@ for (let i = 0; i < weeks * C.WEEK * 10; i++) {
     const best = s.rivals.reduce((a, r) => s.total(r.stand) > s.total(a.stand) ? r : a);
     console.log(`${pad(s.week - 1, 4)} ${pad(s.rank + 1, 4)} ${pad(Math.round(s.supplies), 7)} ${pad(s.troops.length, 5)} ${pad(s.troops.filter(t => t.train >= 100).length, 5)} ${pad(Math.round(s.morale), 6)}`
       + ` ${pad(Math.round(s.stand.def), 4)} ${pad(Math.round(s.stand.pro), 4)} ${pad(Math.round(s.stand.tru), 4)} ${pad(s.total(s.stand), 6)} | ${pad(s.total(best.stand), 5)} |`
-      + ` ${pad(s.b.length, 4)} ${pad(s.stats.deployed, 7)} ${pad(s.stats.trained, 7)} ${pad(s.hunger.toFixed(2), 7)} ${pad(s.audit ? s.audit.lines : '-', 5)}  ${GKEYS.map(g => Math.round(s.amount(g))).join('/').padStart(13)} ${s.power.made}/${s.power.used}`);
+      + ` ${pad(s.b.length, 4)} ${pad(s.stats.deployed, 7)} ${pad(s.stats.trained, 7)} ${pad(s.hunger.toFixed(2), 7)} ${pad(s.audit ? s.audit.lines : '-', 5)}  ${GKEYS.map(g => Math.round(s.amount(g))).join('/').padStart(13)} ${s.power.made}/${s.power.used}` + ` st${s.stage} cr${Math.round(s.credits)} p${s.price("sup").toFixed(2)}`);
   }
 }
+if (process.env.DUMP) console.log("stage", s.stage, JSON.stringify(s.stageCheck?.()), "credits", Math.round(s.credits), "heads", s.heads(), "debt", Math.round(s.debt()));
 if (process.env.DUMP) console.log(JSON.stringify(s.util), 'risk', s.risk, 'sick', s.stats.sick, 'piped', Math.round(s.stats.piped || 0));
 if (process.env.DUMP) console.log(s.b.map(b => b.type + (b.done ? "" : "*") + (b.grown ? "@" + b.grown : "")).join(" "), JSON.stringify(s.growNote), JSON.stringify(s.dem));
 const j = JSON.stringify(s.save());

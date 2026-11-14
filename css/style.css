@@ -403,7 +403,7 @@ body.ui-scifi .c-sci { color: #c9a8ff; }
 #iv-legend { width: 252px; padding: 6px 9px; font-size: 11px; line-height: 1.4; }
 #iv-legend b { color: var(--cy, var(--g)); letter-spacing: 0.14em; } #iv-legend p { margin: 3px 0 5px; color: var(--g-dim); }
 #iv-legend .keys { display: flex; flex-wrap: wrap; gap: 4px 10px; } #iv-legend .keys span { font-size: 10px; letter-spacing: 0.08em; } #iv-legend .keys i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; }
-#iv { display: flex; gap: 3px; }
+#iv { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
 .ivb { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid var(--cy-d, var(--line)); background: rgba(12, 16, 14, 0.88); color: var(--cy, var(--g)); cursor: pointer; }
 .ivb:hover { border-color: var(--cy, var(--g)); } .ivb.on { border-color: var(--yellow); color: var(--yellow); background: rgba(40, 36, 10, 0.95); }
 .mm-row { display: flex; align-items: flex-end; gap: 6px; }
@@ -477,6 +477,7 @@ table.acct tr.net td { border-top: 1px solid var(--cy-d, var(--line)); padding-t
   #b-items { margin-right: 8px; max-width: none; } .bi { width: 104px; height: 112px; } .bi .th { height: 46px; } .bi .th img { max-height: 46px; }
   #orders { width: 220px; max-height: 40vh; } #selp { top: auto; bottom: calc(var(--sb) + var(--tb) + 8px); max-height: 40vh; }
   #status .md span { display: none; } #status .md { padding: 1px 5px; }
+  #status #mdock { min-width: 0; max-width: calc(100vw - 16px); overflow-x: auto; scrollbar-width: none; }
 }
 #hud #build { background: none; border: 0; }
 body.ui-scifi .bi { clip-path: var(--cut); background-color: rgba(12, 16, 14, 0.92); }
@@ -490,3 +491,6 @@ body.ui-scifi .bi.on { border-color: var(--yellow); background-color: rgba(40, 3
 #top .week { min-width: 230px; } #w-rank { white-space: nowrap; }
 @media (max-width: 760px), (max-height: 560px) { #deskpop { left: 50%; transform: translateX(-50%); top: auto; bottom: calc(var(--sb) + var(--tb) + 130px); } #mmwrap #comms { width: 92vw; } }
 #selp { top: calc(266px + env(safe-area-inset-top)); max-height: calc(100vh - 266px - var(--sb) - var(--tb) - 240px); }
+
+/* readout breakdowns */
+.tipt { border-collapse: collapse; margin: 3px 0 2px; font-size: 11px; } .tipt td { padding: 1px 6px 1px 0; } .tipt td:last-child { text-align: right; padding-right: 0; } #tip .fine { display: block; color: var(--g-dim); font-size: 10px; } #status [data-info] { cursor: pointer; pointer-events: auto; }
