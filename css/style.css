@@ -530,3 +530,7 @@ body.ui-scifi .bi.on { border-color: var(--yellow); background-color: rgba(40, 3
 #top .who { flex: 0 1 190px; min-width: 96px; overflow: hidden; } #top .who * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #top .menu { flex: 0 0 auto; margin-left: auto; } #top .week { flex: 0 1 190px; min-width: 96px; overflow: hidden; } #top .bigs { flex: 0 0 auto; } #top .res { flex: 0 1 300px; width: auto; min-width: 250px; }
 #hud.calling #top { bottom: 0 !important; }
+
+/* 0.23: the planet from orbit on the landing screen; the flat region map is the fallback when there is no 3D */
+.ld-left { position: relative; } #ld-globe { display: block; width: 100%; aspect-ratio: 1.25; background: radial-gradient(ellipse at 50% 45%, #0b1420, #020406 75%); border: 1px solid var(--line); cursor: grab; touch-action: none; }
+#s-land:not(.flat) .ld-map { display: none; } #s-land.flat #ld-globe { display: none; }

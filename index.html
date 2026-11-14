@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.22.0">
+<link rel="stylesheet" href="css/style.css?v=0.23.0">
 </head>
 <body>
 <div id="app">
@@ -76,19 +76,19 @@
   <!-- ===================================================== how to play -->
   <section id="s-land" class="screen">
     <div class="card land">
-      <div class="eyebrow">CHOOSE YOUR LANDING SITE</div>
+      <div class="eyebrow">CHOOSE WHERE TO LAND</div>
       <h2 id="ld-planet">PLANET</h2>
       <div class="ld-body">
-        <div class="ld-map"><canvas id="ld-map" width="240" height="150"></canvas><canvas id="ld-mark" width="240" height="150"></canvas></div>
+        <div class="ld-left"><canvas id="ld-globe"></canvas><div class="ld-map"><canvas id="ld-map" width="240" height="150"></canvas><canvas id="ld-mark" width="240" height="150"></canvas></div></div>
         <div class="ld-info">
-          <p class="fine left">Click the map to pick your section of the planet: the square, about 14 km across, cut into 600 m parcels. You call the HQ down anywhere on it and start with the 3 × 3 parcels round it; more are bought as the base grows. Water and cliffs can't be built on, but they shut the base in like a wall. Violet ground is E-710; rust is ore.</p>
+          <p class="fine left">This is the planet from orbit. Drag to turn it, scroll to close in. The blue marks are the areas the survey likes best. Click anywhere to pick your section: about 14 km across, cut into 600 m parcels. Next you choose the drop point inside it, and the first pelican sets your crew down there.</p>
           <div id="ld-survey"></div>
         </div>
       </div>
       <div class="btns">
         <button id="ld-back" class="btn" type="button">BACK</button>
-        <button id="ld-best" class="btn" type="button">SUGGEST A SECTION</button>
-        <button id="ld-go" class="btn primary" type="button">TAKE THIS SECTION</button>
+        <button id="ld-best" class="btn" type="button">SHOW A GOOD AREA</button>
+        <button id="ld-go" class="btn primary" type="button">LAND HERE</button>
       </div>
     </div>
   </section>
@@ -249,10 +249,10 @@
           <label for="mx-music">MUSIC</label><input id="mx-music" type="range" min="0" max="1" step="0.05">
           <label for="mx-pa">LOUDSPEAKERS SPEAK</label><span><input id="mx-pa" type="checkbox"> <span id="mx-track" class="fine"></span></span>
         </div>
-        <button class="btn" id="me-export" type="button">COPY SAVE CODE</button>
-        <button class="btn" id="me-import" type="button">LOAD SAVE CODE</button>
+        <button class="btn" id="me-export" type="button">SAVE TO FILE</button>
+        <button class="btn" id="me-import" type="button">LOAD FROM FILE</button>
         <button class="btn danger" id="me-new" type="button">FOUND A NEW FACTION</button>
-        <textarea id="me-code" class="hidden" spellcheck="false" placeholder="Paste a save code here, then press LOAD SAVE CODE again."></textarea>
+        <input id="me-file" type="file" accept=".fob,.txt" class="hidden">
         <p class="fine" id="me-msg"></p>
       </div>
     </div>
@@ -261,34 +261,35 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.22.0",
-  "./js/build.js": "./js/build.js?v=0.22.0",
-  "./js/config.js": "./js/config.js?v=0.22.0",
-  "./js/demo.js": "./js/demo.js?v=0.22.0",
-  "./js/desk.js": "./js/desk.js?v=0.22.0",
-  "./js/land.js": "./js/land.js?v=0.22.0",
-  "./js/life.js": "./js/life.js?v=0.22.0",
-  "./js/logo.js": "./js/logo.js?v=0.22.0",
-  "./js/main.js": "./js/main.js?v=0.22.0",
-  "./js/market.js": "./js/market.js?v=0.22.0",
-  "./js/models.js": "./js/models.js?v=0.22.0",
-  "./js/net.js": "./js/net.js?v=0.22.0",
-  "./js/noise.js": "./js/noise.js?v=0.22.0",
-  "./js/path.js": "./js/path.js?v=0.22.0",
-  "./js/raids.js": "./js/raids.js?v=0.22.0",
-  "./js/reports.js": "./js/reports.js?v=0.22.0",
-  "./js/rng.js": "./js/rng.js?v=0.22.0",
-  "./js/sim.js": "./js/sim.js?v=0.22.0",
-  "./js/site.js": "./js/site.js?v=0.22.0",
-  "./js/terrain.js": "./js/terrain.js?v=0.22.0",
-  "./js/utils.js": "./js/utils.js?v=0.22.0",
-  "./js/view.js": "./js/view.js?v=0.22.0",
-  "./js/voices.js": "./js/voices.js?v=0.22.0",
-  "./js/zones.js": "./js/zones.js?v=0.22.0",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.22.0"
+  "./js/audio.js": "./js/audio.js?v=0.23.0",
+  "./js/build.js": "./js/build.js?v=0.23.0",
+  "./js/config.js": "./js/config.js?v=0.23.0",
+  "./js/demo.js": "./js/demo.js?v=0.23.0",
+  "./js/desk.js": "./js/desk.js?v=0.23.0",
+  "./js/globe.js": "./js/globe.js?v=0.23.0",
+  "./js/land.js": "./js/land.js?v=0.23.0",
+  "./js/life.js": "./js/life.js?v=0.23.0",
+  "./js/logo.js": "./js/logo.js?v=0.23.0",
+  "./js/main.js": "./js/main.js?v=0.23.0",
+  "./js/market.js": "./js/market.js?v=0.23.0",
+  "./js/models.js": "./js/models.js?v=0.23.0",
+  "./js/net.js": "./js/net.js?v=0.23.0",
+  "./js/noise.js": "./js/noise.js?v=0.23.0",
+  "./js/path.js": "./js/path.js?v=0.23.0",
+  "./js/raids.js": "./js/raids.js?v=0.23.0",
+  "./js/reports.js": "./js/reports.js?v=0.23.0",
+  "./js/rng.js": "./js/rng.js?v=0.23.0",
+  "./js/sim.js": "./js/sim.js?v=0.23.0",
+  "./js/site.js": "./js/site.js?v=0.23.0",
+  "./js/terrain.js": "./js/terrain.js?v=0.23.0",
+  "./js/utils.js": "./js/utils.js?v=0.23.0",
+  "./js/view.js": "./js/view.js?v=0.23.0",
+  "./js/voices.js": "./js/voices.js?v=0.23.0",
+  "./js/zones.js": "./js/zones.js?v=0.23.0",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.23.0"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.22.0"></script>
+<script type="module" src="js/main.js?v=0.23.0"></script>
 </body>
 </html>

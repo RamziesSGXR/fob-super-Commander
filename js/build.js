@@ -30,7 +30,7 @@ export const Build = {
   stdLock(k) { const s = STD[k], q = this.equipLock('std' + k); return s.stage && (this.stage ?? 0) < s.stage ? `${s.name} needs a ${C.STAGES[s.stage].name} charter` : q ? `${s.name}: ${q.toLowerCase()}` : null; },
   setStd(k) { if (STD[k] && !this.stdLock(k)) this.std = k; return this.std; },
   // a capacity number (beds, eat, slots, ward, sales...) at the building's standard. Upgrades work at the old one until done
-  capF(b) { return STD[this.stdOf(b)].cap; },
+  capF(b) { return STD[this.stdOf(b)].cap * (this.wallBonus().out); },
   cap(b, k) {
     const v = B[b.type][k]; if (!v) return 0; const m = this.capF(b);
     return k === 'beds' || k === 'eat' || k === 'slots' || k === 'ward' ? Math.max(1, Math.round(v * m)) : v * m;

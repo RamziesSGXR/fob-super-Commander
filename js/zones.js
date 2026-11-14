@@ -30,14 +30,14 @@ export const Zones = {
     if (k) { this.zoneV = (this.zoneV || 0) + 1; this.events.push({ t: 'zones' }); this.stats.zoned = (this.stats.zoned || 0) + k; }
     return { ok: k > 0, n: k };
   },
-  // one click fills a block: the roadside strip under the pointer, out to four tiles from the road, as far as it runs
+  // one click fills a block: the roadside strip under the pointer, out to six cells from the road, as far as it runs
   // without crossing a road (so one side of a street, round to the next street). zk null clears it instead
   zoneFill(x, z, zk) {
     const N = this.N, n = zk ? ZONES[zk].n : 0, ok = new Uint8Array(N * N);
     for (const [px, pz] of this.plotTiles()) { const i = pz * N + px, t = this.terr?.[i]; if (t !== GROUND.WATER && t !== GROUND.ROCK && this.ownedTile(px, pz)) ok[i] = 1; }
-    const i0 = z * N + x; if (x < 0 || z < 0 || x >= N || z >= N || !ok[i0]) return { ok: false, why: 'Click next to a road: a zone fills the strip along it, four tiles deep' };
+    const i0 = z * N + x; if (x < 0 || z < 0 || x >= N || z >= N || !ok[i0]) return { ok: false, why: 'Click next to a road: a zone fills the block along it, six cells (48 m) deep' };
     const q = [i0], seen = new Uint8Array(N * N); seen[i0] = 1; let k = 0;
-    for (let h = 0; h < q.length && q.length < 900; h++) {
+    for (let h = 0; h < q.length && q.length < 2400; h++) {
       const i = q[h], xx = i % N;
       for (const j of [xx > 0 ? i - 1 : -1, xx < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && ok[j] && !seen[j]) { seen[j] = 1; q.push(j); }
     }

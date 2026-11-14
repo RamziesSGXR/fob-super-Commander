@@ -136,7 +136,7 @@ test/browser/       browser checks: landing, the HUD and economy, moving the HQ,
 
 **Tests:** `npm run sim` needs only Node. It plays 14 weeks with a simple bot, and `npm run sim:idle` shows a base that builds nothing. `node test/headless.mjs 10 lapse` plays a base that is built and then left alone. For the browser test, run `npm install` and `npm start`, then `npm run ui` in another terminal. With `npm start` running, `npm run ui:all` runs the browser checks in `test/browser/` (set `CHROME=` to your Chrome if Playwright has none of its own); screenshots go to `test/shots/`.
 
-**Saves:** the base saves on your device every 20 seconds and when you leave. **MENU → COPY SAVE CODE** gives you the whole base as text to keep or move to another device, and **LOAD SAVE CODE** brings it back.
+**Saves:** the base saves on your device every 20 seconds and when you leave. **MENU → SAVE TO FILE** downloads the whole base as a `.fob` file; **LOAD FROM FILE** reads one back. There are no save codes.
 
 ## Credits and disclaimer
 

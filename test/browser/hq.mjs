@@ -2,7 +2,7 @@
 // zones tab flips the view, a click beside the track fills a zone block, the menu pauses the clock, and F3 opens debug
 import { open } from './lib.mjs';
 const { b, p, errs } = await open(1280, 760);
-await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await p.click('#ld-go'); await p.waitForTimeout(1500);
+await p.click('#b-new'); await p.click('#fx-rand'); await p.click('#fx-go'); await p.waitForTimeout(600); await p.click('#ld-best'); await p.waitForTimeout(400); await p.click('#ld-go'); await p.waitForTimeout(1500);
 const st = () => p.evaluate(() => { const s = window.__fob.sim, sh = id => !document.getElementById(id).classList.contains('hidden') && getComputedStyle(document.getElementById(id)).display !== 'none';
   return { callIn: s.callIn, blds: s.b.map(b => b.type).join(','), held: s.held(), card: sh('callin'), build: sh('build'), t: Math.round(s.t), track: Math.round(s.trackLen()), sweep: !!(s.sweep && !s.sweep.done) }; });
 const xy = (x, z) => p.evaluate(([x, z]) => window.__fob.view.toScreen(x, z), [x, z]);
@@ -16,6 +16,8 @@ const landed = await st(); await p.waitForTimeout(600);
 const tracked = await st(); await p.waitForFunction(() => window.__fob.life.actors.size > 0, null, { timeout: 90000 }).catch(() => {}); const lz = await p.evaluate(() => { const L = window.__fob.life; return { actors: L.actors.size, crates: (L.lzCrates || []).length, flights: L.flights.length }; }); await p.screenshot({ path: 'test/shots/hq-lz.png' }); await p.screenshot({ path: 'test/shots/hq1.png' });
 await click(x + 3, z + 1.5);
 const posted = await st();
+await click(x + 8, z + 2);
+const padded = await st();
 await click(x - 2 + 0.5, z + 1 + 0.5);
 const after = await st(); await p.waitForTimeout(1200); await p.screenshot({ path: 'test/shots/hq2.png' });
 await p.evaluate(() => { window.__fob.sim.supplies += 3000; });
@@ -30,8 +32,8 @@ await p.click('#b-menu'); await p.waitForTimeout(200); const t0 = await p.evalua
 await p.click('#me-resume'); await p.waitForTimeout(200);
 await p.keyboard.press('F3'); await p.waitForTimeout(600); const dbg = await p.evaluate(() => !document.getElementById('debug').classList.contains('hidden') && document.getElementById('debug').textContent.includes('FPS'));
 const ok = before.callIn === 'flag' && before.blds === '' && landed.callIn === 'road' && landed.held === 9 && landed.blds === '' && tracked.callIn === 'hq' && tracked.track >= 6
-  && posted.callIn === 'flagpost' && /hq/.test(posted.blds) && /pad/.test(posted.blds) && after.callIn === false && /seflag/.test(after.blds) && !after.card && after.build && !after.sweep && zoned > 0 && t0 === t1 && dbg;
+  && posted.callIn === 'pad' && posted.blds === 'hq' && padded.callIn === 'flagpost' && /pad/.test(padded.blds) && after.callIn === false && /seflag/.test(after.blds) && !after.card && after.build && !after.sweep && zoned > 0 && t0 === t1 && dbg;
 if (!(lz.actors > 0 && lz.crates > 0)) { errs.push('the first pelican did not land during the call-in: ' + JSON.stringify(lz)); }
-console.log(JSON.stringify({ lz, before, landed, tracked, posted, after, iv, zoned, menuPaused: t0 === t1, dbg }));
+console.log(JSON.stringify({ lz, before, landed, tracked, posted, padded, after, iv, zoned, menuPaused: t0 === t1, dbg }));
 console.log(ok ? 'landing, zoning, menu and debug work' : 'SOMETHING FAILED');
 console.log(errs.slice(0, 5).join('\n') || 'no errors'); await b.close(); if (errs.length || !ok) process.exitCode = 1;

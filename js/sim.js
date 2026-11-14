@@ -134,6 +134,8 @@ export class Sim {
   nextStage() { return C.STAGES[(this.stage || 0) + 1] || null; }
   // the engineers' equipment: null if they have what a kind of work needs, otherwise why not. what: a road kind, 'std1',
   // 'std2' or 'landscape'
+  // inside a closed wall the base works and sleeps better, and better again with a tower watching it
+  wallBonus() { const closed = this.open === false && (this.gates?.length || 0) > 0, tower = closed && this.b.some(b => b.done && (b.type === 'lookout' || b.type === 'tower')); return { closed, tower, mor: closed ? (tower ? 6 : 3) : 0, out: closed ? (tower ? 1.1 : 1.05) : 1 }; }
   equipLock(what) { const t = EQUIP[what]; return !t || this.equipFree || this.has(t) ? null : `Needs a ${B[t].name}`; }
   stageCheck() {
     const n = this.nextStage(); if (!n) return null;
@@ -407,16 +409,25 @@ export class Sim {
     }
     return best;
   }
-  // the roadside strips buildings can go on: free ground inside the wall within four tiles of a road
+  // the roadside blocks buildings can go on: free ground inside the wall, alongside a road and up to six cells (48 m)
+  // back from its edge. Only the sides of a road count: nothing fans out past where a road ends
   plotTiles() {
-    const N = this.N, dist = new Int8Array(N * N).fill(-1), q = [], W = this.win();
-    for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (this.roads[i] && this.inMask[i]) { dist[i] = 0; q.push(i); }
-    for (let h = 0; h < q.length; h++) {
-      const i = q[h], x = i % N; if (dist[i] >= 4) continue;
-      for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && dist[j] < 0 && this.inMask[j] && !this.roads[j] && !this.occ[j] && !this.walls[j]) { dist[j] = dist[i] + 1; q.push(j); }
+    const N = this.N, dist = new Map(), W = this.win(), DEPTH = 6, nodes = new Map(this.net.nodes.map(n => [n.id, n]));
+    for (const sg of this.net.segs) {
+      if (sg.k === 'wall' || sg.k === 'bridge') continue;
+      const A = nodes.get(sg.a), B2 = nodes.get(sg.b); if (!A || !B2) continue;
+      const L = Math.hypot(B2.x - A.x, B2.z - A.z); if (L < 0.5) continue;
+      const ux = (B2.x - A.x) / L, uz = (B2.z - A.z) / L, hw = sg.k === 'paved' ? (sg.w || 2) / 2 : 0.5, R = hw + DEPTH + 1;
+      const x0 = Math.max(W[0], Math.floor(Math.min(A.x, B2.x) - R)), x1 = Math.min(W[2] - 1, Math.ceil(Math.max(A.x, B2.x) + R)), z0 = Math.max(W[1], Math.floor(Math.min(A.z, B2.z) - R)), z1 = Math.min(W[3] - 1, Math.ceil(Math.max(A.z, B2.z) + R));
+      for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+        const px = x + 0.5 - A.x, pz = z + 0.5 - A.z, t = px * ux + pz * uz; if (t < 0 || t > L) continue;
+        const lat = Math.abs(pz * ux - px * uz) - hw; if (lat <= 0 || lat > DEPTH) continue;
+        const i = z * N + x; if (!this.inMask[i] || this.roads[i] || this.occ[i] || this.walls[i]) continue;
+        const d = Math.max(1, Math.ceil(lat - 0.01)), o = dist.get(i); if (!o || d < o) dist.set(i, d);
+      }
     }
     const pf = this.b.find(b => b.type === 'seflag'), plz = (x, z) => pf && x >= pf.x - PLAZA && x < pf.x + 2 + PLAZA && z >= pf.z - PLAZA && z < pf.z + 2 + PLAZA;
-    const out = []; for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (dist[i] > 0 && !plz(x, z)) out.push([x, z, dist[i]]); return out;
+    const out = []; for (const [i, d] of dist) { const x = i % N, z = (i - x) / N; if (!plz(x, z)) out.push([x, z, d]); } return out;
   }
   fits(type, x, z, rot, dz = 0, self = 0) {
     const [w, dd] = dims(type, rot, dz), pf = type !== 'seflag' && this.b.find(b => b.type === 'seflag');
@@ -622,6 +633,7 @@ export class Sim {
       grief: -Math.round(this.grief),
       mood: Math.round(this.mood || 0),
       unpaid: this.unpaidDays ? -Math.min(10, 4 + this.unpaidDays) : 0,
+      wall: this.wallBonus().mor,
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
       noise: -Math.round(8 * (this.adj?.noise || 0)),

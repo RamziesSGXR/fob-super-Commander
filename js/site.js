@@ -87,11 +87,12 @@ export function survey(seed, biome, cx, cy, Nfull, S = 120) {
   const kk = SCALE * 0.9 / TPP * k;
   for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) { const u = cx * SCALE * 0.9 + (x + 0.5 - N / 2) * kk, v = cy * SCALE * 0.9 + (z + 0.5 - N / 2) * kk; terr[z * N + x] = classify(b, f.h(u, v), f.dep(u, v)); }
   for (let i = 0; i < n; i++) cnt[terr[i]]++;
+  const open = (cnt[0] + cnt[3] + cnt[4]) / n;   // before the deposits are scaled up to full-size tiles
   cnt[3] = Math.round(cnt[3] * k * k); cnt[4] = Math.round(cnt[4] * k * k);
   // natural cover: how much of the ring round the landing zone is water or rock
   let ring = 0, rc = 0;
   for (let a = 0; a < 64; a++) for (const r of [16, 20, 24]) { const x = Math.round(N / 2 + Math.cos(a / 64 * Math.PI * 2) * r), z = Math.round(N / 2 + Math.sin(a / 64 * Math.PI * 2) * r); if (x < 0 || z < 0 || x >= N || z >= N) continue; rc++; if (terr[z * N + x] === 1 || terr[z * N + x] === 2) ring++; }
-  const open = (cnt[0] + cnt[3] + cnt[4]) / n, cover = rc ? ring / rc : 0;
+  const cover = rc ? ring / rc : 0;
   return { open, water: cnt[1] / n, rock: cnt[2] / n, seeps: cnt[3], ore: cnt[4], cover,
     notes: [open > 0.8 ? 'Wide open ground: room to grow, little natural cover.' : open < 0.55 ? 'Cramped: water and rock limit how big the base can get.' : 'A fair amount of buildable ground.',
       cover > 0.35 ? 'Good natural defences: cliffs and water close much of the perimeter for free.' : cover > 0.15 ? 'Some natural cover on the approaches.' : 'Exposed on every side: the wall will be long.',

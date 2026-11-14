@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.22.0';
+export const VERSION = '0.23.0';
 
 export const C = {
   N: 1725,                  // the map is N x N cells of 8 m: a 13.8 km section of the planet, GRID x GRID parcels of PARCEL cells each
@@ -138,14 +138,16 @@ export const GROUPS = [
   ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
   ['zones', 'ZONES', 'Paint zones along roads: bunks, mess halls, latrines, storage and shops grow in them by themselves as the base needs them, at the standard picked here.', []],
   ['landscape', 'LANDSCAPE', 'Shape the ground and paint its surface, for supplies. Buildings level their own footprint as they go down; roads need a gentle grade; dig below the waterline and it floods.', []],
-  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'batch', 'comms', 'mast']],
-  ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
-  ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
-  ['income', 'INCOME', 'Buildings that earn credits or make supplies.', ['vend', 'burger', 'chicken', 'cola', 'mart', 'casino', 'extractor', 'mine', 'factory']],
+  // buildings, by the zone they belong in (the tab carries the zone's colour); then the services that are not zoned
+  ['living', 'LIFE SUPPORT', 'Life Support zone: house, feed and look after your people. Empty bunks are what bring recruits in. Barracks, mess halls and latrines also grow by themselves in the zone.', ['barracks', 'hab', 'block', 'mess', 'potty', 'dome'], 'life'],
+  ['logistics', 'LOGISTICS', 'Logistics zone: bring supplies and recruits in and store them. Depots also grow by themselves in the zone.', ['pad', 'depot', 'fueldepot', 'shed'], 'logi'],
+  ['income', 'CIVIC', 'Civic and Commerce zone: shops and clubs that earn credits and keep people content.', ['vend', 'club', 'burger', 'chicken', 'cola', 'mart', 'casino'], 'comm'],
+  ['training', 'TRAINING', 'Training zone: turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture'], 'train'],
+  ['command', 'OPERATIONS', 'Operations zone: patrols, command, medicine, research and records.', ['patrol', 'medbay', 'comms', 'mast', 'armory', 'vbay', 'command', 'warroom', 'lab', 'vault', 'truth', 'hdbarracks', 'brig', 'cryo', 'eob'], 'ops'],
+  ['industry', 'INDUSTRY', 'Industry zone: the engineers and their plant, and whatever digs, pumps or makes. Noisy: keep it clear of Life Support.', ['yard', 'batch', 'motorpool', 'extractor', 'mine', 'factory'], 'ind'],
   ['power', 'UTILITIES', 'Power, water, sewage and fuel. Each covers a circle round it: a building outside power coverage goes dark, and bunks without water or sewage lose morale and fall sick.', ['gen', 'solar', 'substation', 'well', 'tower', 'rowpu', 'lagoon', 'treatment', 'fuelfarm']],
-  ['defence', 'DEFENCE', 'Close the wall, watch it and arm it, and send patrols out.', ['patrol', 'lookout', 'flood', 'turret', 'shelter', 'armory', 'vbay', 'hdbarracks', 'brig', 'cryo', 'eob']],
-  ['truth', 'TRUTH', 'Morale and propaganda, for the Ministry of Truth.', ['flag', 'banner', 'hdbanner', 'speaker', 'billboard', 'truth', 'pool', 'plaque', 'statue', 'memorial', 'halls', 'partyhq', 'palace', 'monument']],
-  ['command', 'COMMAND', 'Research, operations and records.', ['command', 'warroom', 'lab', 'vault']],
+  ['defence', 'DEFENCE', 'Close the wall, watch it and light it. Inside a closed wall everything works 5% better and morale is +3; with a Lookout Tower, 10% and +6.', ['lookout', 'flood', 'turret', 'shelter']],
+  ['truth', 'TRUTH', 'Morale and propaganda, for the Ministry of Truth.', ['flag', 'banner', 'hdbanner', 'speaker', 'billboard', 'pool', 'plaque', 'statue', 'memorial', 'halls', 'partyhq', 'palace', 'monument']],
 ];
 // what a new base builds before anything else: these are what bring money in. Everything else waits for them
 export const FOUNDATION = ['pad', 'depot', 'barracks', 'mess', 'range'];

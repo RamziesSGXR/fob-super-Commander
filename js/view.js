@@ -119,30 +119,27 @@ export class View {
     x.putImageData(im, 0, 0); const url = cv.toDataURL(); this.thumbs.set(tk, url); return url;
   }
 
-  // ---------------------------------------------------------------- info views: the base as coloured blocks, one colour per
+  // ---------------------------------------------------------------- info views: every building tinted, one colour per
   // building, like a city builder's data overlay. cols: Map of building id -> colour, or null to go back to the base itself
   setInfo(cols, ghost = false) {
     this.info = cols || null;
-    for (const g of this.bm.values()) g.visible = !this.info;
-    for (const c of this.chunks?.values() || []) c.group.visible = !this.info;
     if (!this.info) { if (this.infoMesh) this.infoMesh.visible = false; return; }
     const n = cols.size;
     if (!this.infoMesh || this.infoMesh.userData.cap < n) {
       if (this.infoMesh) { this.world.remove(this.infoMesh); this.infoMesh.dispose(); }
       const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
-      this.infoMesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true }), Math.max(64, n * 2));
-      this.infoMesh.userData.cap = Math.max(64, n * 2); this.infoMesh.castShadow = true; this.infoMesh.receiveShadow = true; this.infoMesh.frustumCulled = false;
+      this.infoMesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false }), Math.max(64, n * 2)); this.infoMesh.renderOrder = 3;
+      this.infoMesh.userData.cap = Math.max(64, n * 2); this.infoMesh.castShadow = false; this.infoMesh.frustumCulled = false;
       this.world.add(this.infoMesh);
     }
     const im = this.infoMesh, o = new THREE.Object3D(), col = new THREE.Color(); let i = 0;
     for (const [id, c] of cols) {
       const b = this.sim.byId(id), g = this.bm.get(id); if (!b) continue;
-      o.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2)); o.scale.set(Math.max(0.3, b.w - 0.12), Math.max(0.25, (g?.userData.top || 0.8) * (b.done ? 1 : b.prog)), Math.max(0.3, b.d - 0.12)); o.updateMatrix();
+      o.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2)); o.scale.set(Math.max(0.3, b.w - 0.04), Math.max(0.25, (g?.userData.top || 0.8) * (b.done ? 1 : b.prog)) + 0.04, Math.max(0.3, b.d - 0.04)); o.updateMatrix();
       im.setMatrixAt(i, o.matrix); im.setColorAt(i, col.set(c)); i++;
     }
     im.count = i; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.visible = true;
-    im.material.opacity = ghost ? 0.22 : 1; im.material.depthWrite = !ghost; im.castShadow = !ghost;
-    this.r.shadowMap.needsUpdate = true;
+    im.material.opacity = ghost ? 0.2 : 0.5;   // a tint over the real building, not a block in its place
   }
   setElev(on) { (this.uElev ||= { value: 0 }).value = on ? 1 : 0; }
   // the RESOURCES view: E-710 seeps (violet), ore (rust), water and rock marked on the ground, crystals showing
@@ -209,7 +206,9 @@ export class View {
   // one parcel's mesh at a level of detail: positions on the heights, normals from the height field, skirts round it
   chunkGeo(px, pz, step) {
     const s = this.sim, P = LAND.PARCEL, n = Math.ceil(P / step) + 1, x0 = px * P, z0 = pz * P, N = this.N;
-    const cx = i => Math.min(x0 + i * step, x0 + P), H = (x, z) => s.hgt ? s.hv(x, z) : 0;
+    const cx = i => Math.min(x0 + i * step, x0 + P), H1 = (x, z) => s.hgt ? s.hv(Math.max(0, Math.min(N, x)), Math.max(0, Math.min(N, z))) : 0;
+    // a coarse chunk takes the mean of the ground each vertex stands for: picking single points made hills vanish and the sea spread when zoomed out
+    const r = step > 1 ? 2 : 0, H = r ? (x, z) => { let a = 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) a += H1(x + i, z + j); return a / 25; } : H1;
     const pos = [], nor = [], idx = [];
     const vert = (x, z, y) => { pos.push(x - N / 2, y, z - N / 2); const dx = H(x + 1, z) - H(x - 1, z), dz = H(x, z + 1) - H(x, z - 1), l = Math.hypot(dx, 2, dz); nor.push(-dx / l, 2 / l, -dz / l); return pos.length / 3 - 1; };
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) vert(cx(i), cx(j) - x0 + z0, H(cx(i), cx(j) - x0 + z0));
@@ -688,9 +687,9 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   // the roadside plots, like zoning cells: brightest next to the road
   showPlots(tiles) {
     this.plotG.clear(); if (!tiles || !tiles.length) return;
-    const mats = [0.3, 0.22, 0.15, 0.09].map(o => new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: o, depthWrite: false }));
+    const mats = [0.3, 0.19, 0.19, 0.19, 0.19, 0.19].map(o => new THREE.MeshBasicMaterial({ color: '#59ff8a', transparent: true, opacity: o, depthWrite: false }));
     const geo = new THREE.PlaneGeometry(0.86, 0.86); geo.rotateX(-Math.PI / 2);
-    for (let k = 1; k <= 4; k++) {
+    for (let k = 1; k <= 6; k++) {
       const t = tiles.filter(q => q[2] === k); if (!t.length) continue;
       const im = new THREE.InstancedMesh(geo, mats[k - 1], t.length), mx = new THREE.Matrix4();
       t.forEach(([x, z], i) => { mx.makeTranslation(this.wx(x + 0.5), 0.025, this.wx(z + 0.5)); im.setMatrixAt(i, mx); });
@@ -736,7 +735,9 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   camUpdate(dt) {
     this.yaw += (this.yawT - this.yaw) * Math.min(1, dt * 8);
     this.zoom += (this.zoomT - this.zoom) * Math.min(1, dt * 10);
-    const h = this.N / 2 + 6; this.target.x = Math.max(-h, Math.min(h, this.target.x)); this.target.z = Math.max(-h, Math.min(h + 8, this.target.z));
+    // the camera keeps far enough from the edge of the section that the edge is never in view, and the distance fades into haze
+    const wide = this.sim?.callIn === 'flag', h = wide ? this.N / 2 + 6 : Math.max(40, this.N / 2 - 30 - this.zoom * 2.7); this.target.x = Math.max(-h, Math.min(h, this.target.x)); this.target.z = Math.max(-h, Math.min(h, this.target.z));
+    if (!wide && this.zoomT > 230) this.zoomT = 230;
     if (this.photo) {
       this.dist += (this.distT - this.dist) * Math.min(1, dt * 8); this.tilt += (this.tiltT - this.tilt) * Math.min(1, dt * 8);
       const c = this.persp, cp = Math.cos(this.tilt), d = this.dist;
@@ -753,7 +754,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     if (this.shift) c.setViewOffset(this.w, this.h, this.shift * this.w / 2, 0, this.w, this.h); else if (c.view) c.clearViewOffset();
     c.updateProjectionMatrix();
     c.position.set(this.target.x + Math.sin(this.yaw) * cp * d, gy + Math.sin(this.pitch) * d, this.target.z + Math.cos(this.yaw) * cp * d);
-    c.lookAt(this.target.x, gy, this.target.z); this.scene.fog.near = d * 1.1 + 40; this.scene.fog.far = d * 3.2 + 500;
+    c.lookAt(this.target.x, gy, this.target.z); if (wide) { this.scene.fog.near = d * 1.1 + 40; this.scene.fog.far = d * 3.2 + 500; } else { this.scene.fog.near = d * 1.02 + 30; this.scene.fog.far = d * 1.75 + 160; }
     this.shadowFit(z);
     this.sun.target.position.copy(this.target);
   }
@@ -766,7 +767,9 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   tiltBy(d) { this.tiltT = Math.max(0.03, Math.min(1.5, this.tiltT + d)); }
   dolly(f) { this.distT = Math.max(1.2, Math.min(90, this.distT * f)); }
   spin(dx) { this.yawT += dx; this.yaw = this.yawT; }
-  zMax() { return Math.max(30, Math.round(this.N * 0.5)); }   // far enough out to see the whole section
+  // out to about two kilometres across, never far enough to see the edge of the section (choosing the landing zone is
+  // the one time the whole section is on show)
+  zMax() { return this.sim?.callIn === 'flag' ? Math.max(30, Math.round(this.N * 0.5)) : 230; }
   zoomBy(f) { this.zoomT = Math.max(4, Math.min(this.zMax(), this.zoomT * f)); }
   // the sun's shadow box follows the zoom; zoomed right out, nothing is big enough to need one
   shadowFit(z) {
@@ -873,7 +876,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     this.camUpdate(dt);
     this.syncRoads(); this.syncPlaza(); this.syncLz();
     this.syncBuildings(dt);
-    this.syncScrub(); this.syncZones();
+    this.syncScrub(); this.syncZones(); this.syncFlora(dt);
     this.syncPeople(dt);
     this.syncVehicles(dt);
     this.smokeUpdate(dt); this.routeTick(dt);
@@ -929,7 +932,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;
         const d = B[b.type];
         if (d.crew || d.pw < 0) { const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), this.m.glowG); lamp.position.set(0, box.max.y + 0.25, 0); lamp.userData.bid = b.id; g.add(lamp); g.userData.lamp = lamp; }
-        g.visible = !this.info; this.world.add(g); this.bm.set(b.id, g);
+        this.world.add(g); this.bm.set(b.id, g);
       }
       const model = g.userData.model, ud = model.userData;
       // under construction (or being upgraded): scaffolding round it, and a new building rises inside
@@ -995,7 +998,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     if (!mm.length) { g.userData.ck = 'none'; return; }
     const ck = `${Math.floor(g.position.x / 32)},${Math.floor(g.position.z / 32)}`;
     this.chunks ||= new Map();
-    let c = this.chunks.get(ck); if (!c) { c = { members: new Set(), group: new THREE.Group(), dirty: true }; c.group.visible = !this.info; this.world.add(c.group); this.chunks.set(ck, c); }
+    let c = this.chunks.get(ck); if (!c) { c = { members: new Set(), group: new THREE.Group(), dirty: true }; this.world.add(c.group); this.chunks.set(ck, c); }
     c.members.add(g); c.dirty = true; g.userData.ck = ck;
   }
   unbatch(g) {
@@ -1132,6 +1135,47 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   }
 
   // scrub and debris on the ground, a few low shapes per tile, and the patches ordered cleared, outlined in amber
+  // ---------------------------------------------------------------- the wild: plants and rocks on the open ground round
+  // the camera, by biome. Decoration only: they never block building, and they give way to roads, buildings and zones
+  syncFlora(dt) {
+    const s = this.sim; if (!s?.terr || !this.m) return;
+    this.floraT = (this.floraT || 0) - dt; if (this.floraT > 0) return; this.floraT = 0.35;
+    const N = this.N, cx = Math.round(this.target.x + N / 2), cz = Math.round(this.target.z + N / 2), far = this.zoom > 110, R = Math.round(Math.min(120, Math.max(36, this.zoom * 2.4)));
+    const key = far ? 'far' : `${Math.round(cx / 8)},${Math.round(cz / 8)},${R},${s.net?.segs.length || 0},${s.b.length},${s.zoneV || 0},${s.ownV || 0},${s.terrV || 0},${s.site?.biome}`;
+    if (key === this.floraKey && this.floraSim === s) return; this.floraKey = key; this.floraSim = s;
+    const bio = s.site?.biome || 'steppe';
+    if (!this.flora || this.floraBio !== bio) {
+      for (const im of this.flora || []) { this.world.remove(im); im.geometry.dispose(); im.material.dispose(); }
+      const F = { desert: { tree: ['#7d8a4a', '#6b5a3c', 0.25], bush: '#8a7550', rock: '#9a8468', tuft: '#b09a62' }, steppe: { tree: ['#55703a', '#5a4630', 0.6], bush: '#6b7a3e', rock: '#8a8778', tuft: '#93a05a' },
+        ice: { tree: ['#3f5f52', '#4a3c30', 0.45], bush: '#a8b6c0', rock: '#9aa4ae', tuft: '#dfe6ea' }, jungle: { tree: ['#2f6a2c', '#4a3a26', 1.5], bush: '#3f7a34', rock: '#6f7468', tuft: '#5f9a44' }, ash: { tree: ['#3a3432', '#2a2422', 0.3], bush: '#4a4442', rock: '#55504e', tuft: '#6a5a52' } }[bio] || {};
+      const mk = (geo, col, cast = true) => { const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: col, roughness: 1, flatShading: true }), 3000); im.castShadow = cast; im.receiveShadow = true; im.frustumCulled = false; im.count = 0; this.world.add(im); return im; };
+      const crown = bio === 'desert' ? new THREE.CylinderGeometry(0.07, 0.08, 0.55, 6) : bio === 'ash' ? new THREE.ConeGeometry(0.05, 0.6, 4) : bio === 'ice' || bio === 'steppe' ? new THREE.ConeGeometry(0.22, 0.6, 6) : new THREE.IcosahedronGeometry(0.3, 0);
+      crown.translate(0, bio === 'desert' ? 0.28 : bio === 'jungle' ? 0.62 : 0.52, 0);
+      const trunk = new THREE.CylinderGeometry(0.035, 0.05, 0.4, 5); trunk.translate(0, 0.2, 0);
+      const rock = new THREE.DodecahedronGeometry(0.2, 0); rock.scale(1, 0.7, 1); rock.translate(0, 0.08, 0);
+      const bush = new THREE.IcosahedronGeometry(0.16, 0); bush.scale(1, 0.75, 1); bush.translate(0, 0.1, 0);
+      const tuft = new THREE.ConeGeometry(0.07, 0.2, 4); tuft.translate(0, 0.1, 0);
+      this.flora = [mk(crown, F.tree[0]), mk(trunk, F.tree[1]), mk(rock, F.rock), mk(bush, F.bush), mk(tuft, F.tuft, false)]; this.floraBio = bio; this.floraDens = F.tree[2];
+    }
+    const [crown, trunk, rock, bush, tuft] = this.flora, n = [0, 0, 0, 0, 0], o = new THREE.Object3D(), seed = (s.seed | 0) || 7;
+    if (!far) {
+      const put = (im, k, x, z, sc, ry) => { if (n[k] >= 3000) return; o.position.set(this.wx(x), 0, this.wx(z)); o.rotation.set(0, ry, 0); o.scale.setScalar(sc); o.updateMatrix(); im.setMatrixAt(n[k]++, o.matrix); };
+      const dens = this.floraDens, P = LAND.PARCEL, G = LAND.GRID;
+      for (let z = Math.max(1, cz - R); z < Math.min(N - 1, cz + R); z++) for (let x = Math.max(1, cx - R); x < Math.min(N - 1, cx + R); x++) {
+        const i = z * N + x; if (s.terr[i] === 1 || s.terr[i] === 2 || s.roads?.[i] || s.occ[i] || s.walls?.[i] || s.zone?.[i]) continue;
+        let h = Math.imul(x * 73856093 ^ z * 19349663 ^ seed, 2654435761) >>> 0; const r = h / 4294967296; if (r > 0.16) continue;
+        // groves: a slow field makes the trees gather instead of spreading evenly; your own parcels are mostly cleared ground
+        const grove = 0.5 + 0.5 * Math.sin(x * 0.045 + Math.sin(z * 0.031) * 2.1) * Math.cos(z * 0.052 + Math.sin(x * 0.027) * 1.7), mine = s.own?.[Math.floor(z / P) * G + Math.floor(x / P)] ? 0.2 : 1;
+        h = Math.imul(h ^ 0x9e3779b9, 2246822519) >>> 0; const q = h / 4294967296, a = q * 6.283, jx = x + 0.2 + q * 0.6, jz = z + 0.2 + ((h >>> 8) & 255) / 425;
+        if (r < 0.02 * dens * grove * grove * 2.2 * mine) { const sc = 0.9 + q * 0.9; put(crown, 0, jx, jz, sc, a); put(trunk, 1, jx, jz, sc, a); }
+        else if (r < 0.05 * mine) put(rock, 2, jx, jz, 0.5 + q * 1.3, a);
+        else if (r < 0.05 + 0.04 * dens * mine) put(bush, 3, jx, jz, 0.7 + q * 0.9, a);
+        else if (mine === 1 || q < 0.3) put(tuft, 4, jx, jz, 0.7 + q, a);
+      }
+    }
+    [crown, trunk, rock, bush, tuft].forEach((im, k) => { im.count = n[k]; im.instanceMatrix.needsUpdate = true; im.visible = n[k] > 0; });
+    if (this.r.shadowMap) this.r.shadowMap.needsUpdate = true;
+  }
   syncScrub() {
     const s = this.sim; if (!s.scrub) return;
     const key = `${s.scrubV || 0}:${(s.clr || []).map(o => o.id + '.' + o.tiles.length).join()}`;

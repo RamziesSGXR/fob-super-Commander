@@ -111,23 +111,27 @@ export const Land = {
   },
   // where the Command Post's two halves go for a rotation: [hq x, hq z, pad x, pad z]
   starterParts(x, z, rot) { return [[x, z, x + 3, z], [x, z + 3, x, z], [x + 3, z, x, z], [x, z, x, z + 3]][rot & 3]; },
-  canStarter(x, z, rot = 0) {
+  // by hand the Command Post goes down alone and the pad is placed separately; both together is for the bot and tests
+  canStarter(x, z, rot = 0, both = false) {
+    if (!both) return this.fits('hq', x, z, rot);
     const [hx, hz, px, pz] = this.starterParts(x, z, rot);
     const a = this.fits('hq', hx, hz, rot), b = this.fits('pad', px, pz, rot);
     if (!a.ok) return a; if (!b.ok) return { ok: false, why: 'No room for the landing pad: ' + b.why.toLowerCase() };
     return { ok: true };
   },
   placeStarter(x, z, rot = 0, opts = {}) {
-    const c = opts.force ? { ok: true } : this.canStarter(x, z, rot); if (!c.ok) return c;
-    const [hx, hz, px, pz] = this.starterParts(x, z, rot);
+    const both = !!(opts.force || opts.both), c = opts.force ? { ok: true } : this.canStarter(x, z, rot, both); if (!c.ok) return c;
+    const [hx, hz, px, pz] = both ? this.starterParts(x, z, rot) : [x, z, 0, 0];
     const hq = this.place('hq', hx, hz, rot, true, { std: this.std });
-    this.place('pad', px, pz, rot, true);
+    if (both) this.place('pad', px, pz, rot, true);
     hq.stock = { ...B.hq.store }; for (const g in hq.stock) hq.stock[g] = this.storeCap(hq, g);
-    this.callIn = 'flagpost'; this.hqSet = true;
+    this.callIn = both ? 'flagpost' : 'pad'; this.hqSet = true;
     this.rebuildNet();
     return { ok: true };
   },
   // last, the colours: the Super Earth flag goes up wherever the Commander wants it on the new ground
+  canPadPost(x, z) { return this.fits('pad', x, z, 0); },
+  placePad(x, z) { const c = this.canPadPost(x, z); if (!c.ok) return c; this.place('pad', x, z, 0, true); this.callIn = 'flagpost'; this.rebuildNet(); return { ok: true }; },
   canFlagPost(x, z) { return this.fits('seflag', x, z, 0); },
   placeFlag(x, z, opts = {}) {
     const c = opts.force ? { ok: true } : this.canFlagPost(x, z); if (!c.ok) return c;
