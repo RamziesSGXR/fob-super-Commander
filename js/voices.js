@@ -36,5 +36,6 @@ export const SAY = {
   troop: ['Ten more laps and I\'ll feel free.', 'My rifle and I are in a committed relationship.', 'Is it Tuesday? Feels like a Tuesday.', 'Heard we ship out soon.', 'Sir, yes sir. Sorry, wrong person.'],
   hd: ['Another day, another liberation.', 'Coffee. Then democracy.', 'Cape\'s been ironed. Twice.', 'For Super Earth. And for lunch.'],
   civ: ['Lovely day for productivity.', 'I applied for leave. I\'m told it\'s being considered.', 'Did you see the broadcast? So inspiring. Again.', 'My cousin\'s a Helldiver. Was.', 'I\'ve been promoted to slightly higher clearance.'],
+  eng: ['Measure twice, pour concrete once.', 'Who moved my level? It was level.', 'This tent is load-bearing. Emotionally.', 'Requisition says "build a fort". With what? Ambition?', 'Mind the hole. It is a planned hole.', 'Another bush cleared for democracy.'],
   wounded: ['Just a scratch. A large one.', 'The medic says I\'m brave. I asked for painkillers.'],
 };

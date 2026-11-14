@@ -1,6 +1,6 @@
 {
   "name": "fob-super-commander",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "FOB Super Commander - build and run your faction's base for Super Earth (unofficial fan project, prototype)",
   "type": "module",
   "private": true,

@@ -3,7 +3,7 @@ import * as THREE from './vendor/three.js';
 import { B } from './config.js';
 import { dims, wingOf } from './sim.js';
 import { BIOMES } from './site.js';
-import { makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
+import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
 const VMAKE = { lift: makeForklift, truck: makeTruck, frv: makeFRV, tank: makeTank };
 import { Noise } from './noise.js';
 
@@ -44,7 +44,7 @@ export class View {
     this.sim = sim; this.life = life; this.N = sim.N;
     this.world.clear();
     this.chunks = new Map(); this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
-    this.ghostKey = '';
+    this.ghostKey = ''; this.scrubKey = null; this.scrubM = null;
     this.buildGround();
     this.setFaction(sim.faction);
   }
@@ -63,8 +63,8 @@ export class View {
 
   // ---------------------------------------------------------------- pictures of buildings for the build menu: each type is
   // drawn once, from the game's own angle, into an image
-  thumb(type) {
-    this.thumbs ||= new Map(); if (this.thumbs.has(type)) return this.thumbs.get(type);
+  thumb(type, std = 2) {
+    const tk = type + ':' + std; this.thumbs ||= new Map(); if (this.thumbs.has(tk)) return this.thumbs.get(tk);
     if (!this.m || this.lost) return null;
     const W = 160, H = 112;
     if (!this.th) {
@@ -74,7 +74,7 @@ export class View {
       this.th = { sc, rt, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100), px: new Uint8Array(W * H * 4), cv: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
     }
     const { sc, rt, cam, px, cv } = this.th;
-    const g = buildModel(type, this.m, false, null); sc.add(g);
+    const g = buildModel(type, this.m, false, std < 2 ? { std, w: B[type].w, d: B[type].d } : null); sc.add(g);
     const box = new THREE.Box3().setFromObject(g), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2 || 1;
     const dir = new THREE.Vector3(Math.sin(Math.PI / 4), 0.82, Math.cos(Math.PI / 4)).normalize();
     cam.position.copy(c).addScaledVector(dir, 30); cam.lookAt(c);
@@ -85,7 +85,7 @@ export class View {
     sc.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     const x = cv.getContext('2d'), im = x.createImageData(W, H);
     for (let y = 0; y < H; y++) im.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);   // the GPU's rows run bottom-up
-    x.putImageData(im, 0, 0); const url = cv.toDataURL(); this.thumbs.set(type, url); return url;
+    x.putImageData(im, 0, 0); const url = cv.toDataURL(); this.thumbs.set(tk, url); return url;
   }
 
   // ---------------------------------------------------------------- info views: the base as coloured blocks, one colour per
@@ -533,6 +533,7 @@ export class View {
     this.camUpdate(dt);
     this.syncRoads();
     this.syncBuildings(dt);
+    this.syncScrub();
     this.syncPeople(dt);
     this.syncVehicles(dt);
     this.smokeUpdate(dt); this.routeTick(dt);
@@ -577,11 +578,12 @@ export class View {
     const s = this.sim, t = this.t;
     for (const b of s.b) {
       let g = this.bm.get(b.id);
-      const key = `${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}@${b.x},${b.z}`;
+      const key = `${b.std ?? ''}:${b.design || 0}:${(b.parts || []).join()}:${b.w}x${b.d}@${b.x},${b.z}`;
       if (g && g.userData.key !== key) { if (g.userData.ck) this.unbatch(g); this.world.remove(g); this.bm.delete(b.id); g = null; }   // refitted: build it again
       if (!g) {
         g = new THREE.Group(); g.userData.b = b.id; g.userData.key = key;
-        const model = buildModel(b.type, this.m, true, b.design || b.parts?.length ? { design: b.design, parts: b.parts, wing: wingOf(b) } : null); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
+        const std = b.std != null && b.std < 2 ? { std: b.std, w: b.rot % 2 ? b.d : b.w, d: b.rot % 2 ? b.w : b.d } : null;
+        const model = buildModel(b.type, this.m, true, std || (b.design || b.parts?.length ? { design: b.design, parts: b.parts, wing: wingOf(b) } : null)); model.rotation.y = b.rot * Math.PI / 2; g.add(model); g.userData.model = model;
         g.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2));
         g.traverse(o => { o.userData.bid = b.id; });
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;
@@ -590,13 +592,14 @@ export class View {
         g.visible = !this.info; this.world.add(g); this.bm.set(b.id, g);
       }
       const model = g.userData.model, ud = model.userData;
-      // under construction: it rises inside scaffolding
-      if (!b.done) {
+      // under construction (or being upgraded): scaffolding round it, and a new building rises inside
+      const busy = !b.done || !!b.upg;
+      if (busy) {
         if (!g.userData.scaf) {
           const h = Math.max(0.8, g.userData.top + 0.2), sc = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(b.w - 0.1, h, b.d - 0.1, Math.max(1, b.w), 2, Math.max(1, b.d))), this.m.scaffold);
           sc.position.y = h / 2; g.add(sc); g.userData.scaf = sc;
         }
-        model.scale.y = 0.06 + 0.94 * b.prog;
+        model.scale.y = b.done ? 1 : 0.06 + 0.94 * b.prog;
       } else if (g.userData.scaf) { g.remove(g.userData.scaf); g.userData.scaf = null; model.scale.y = 1; }
       // wear: grime on the roof as the condition drops, and it leans a little when it's really bad
       const worn = b.cond < 60 ? (b.cond < 35 ? 2 : 1) : 0;
@@ -609,7 +612,7 @@ export class View {
           g.add(gr); g.userData.grime = gr;
         }
       }
-      if (!b.done) { if (g.userData.ck) this.unbatch(g); continue; }
+      if (busy) { if (g.userData.ck) this.unbatch(g); continue; }
       if (!g.userData.ck && !this.noBatch) this.batch(g);
       const w = s.work(b);
       if (g.userData.lamp) {
@@ -788,6 +791,38 @@ export class View {
     return (this.crowd[kind] = { cap, ims });
   }
 
+  // scrub and debris on the ground, a few low shapes per tile, and the patches ordered cleared, outlined in amber
+  syncScrub() {
+    const s = this.sim; if (!s.scrub) return;
+    const key = `${s.scrubV || 0}:${(s.clr || []).map(o => o.id + '.' + o.tiles.length).join()}`;
+    if (this.scrubKey === key && this.scrubSim === s) return;
+    this.scrubKey = key; this.scrubSim = s;
+    const N = this.N, cols = SCRUB_COL[s.site?.biome] || SCRUB_COL.steppe, tiles = [];
+    for (let i = 0; i < s.scrub.length; i++) if (s.scrub[i]) tiles.push(i);
+    if (!this.scrubM) {
+      const mk = (geo, col) => { const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: col, roughness: 1, flatShading: true }), 16); im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; return im; };
+      this.scrubM = [mk(new THREE.IcosahedronGeometry(0.2, 0), cols[0]), mk(new THREE.ConeGeometry(0.16, 0.34, 5), cols[1])];
+      const om = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.92, 0.92), new THREE.MeshBasicMaterial({ color: '#ffb020', transparent: true, opacity: 0.35, depthWrite: false }), 16);
+      om.frustumCulled = false; this.scrubM.push(om);
+    }
+    for (const im of this.scrubM) if (im.parent !== this.world) this.world.add(im);
+    this.scrubM[0].material.color.set(cols[0]); this.scrubM[1].material.color.set(cols[1]);
+    const grow = (k, n) => { let im = this.scrubM[k]; if (im.count !== undefined && im.instanceMatrix.count >= n) return im; const nm = new THREE.InstancedMesh(im.geometry, im.material, Math.max(16, n * 1.5 | 0)); nm.castShadow = im.castShadow; nm.receiveShadow = im.receiveShadow; nm.frustumCulled = false; this.world.remove(im); im.dispose(); this.world.add(nm); return (this.scrubM[k] = nm); };
+    const a = grow(0, tiles.length), b2 = grow(1, tiles.length), M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    const h = i => { let x = (i * 2654435761) >>> 0; x ^= x >>> 13; x = Math.imul(x, 1274126177) >>> 0; return (x >>> 8) / 16777216; };
+    tiles.forEach((i, n) => {
+      const x = i % N, z = (i / N) | 0, r1 = h(i), r2 = h(i + 7919), r3 = h(i + 104729);
+      e.set(r1 * 0.6, r2 * TAU, r3 * 0.4); q.setFromEuler(e); sc.setScalar(0.7 + r3 * 0.7); sc.y *= 0.55 + r1 * 0.5;
+      M.compose(v.set(this.wx(x + 0.25 + r1 * 0.5), 0.06, this.wx(z + 0.25 + r2 * 0.5)), q, sc); a.setMatrixAt(n, M);
+      e.set(0, r3 * TAU, 0); q.setFromEuler(e); sc.setScalar(0.6 + r2 * 0.8);
+      M.compose(v.set(this.wx(x + 0.15 + r3 * 0.7), 0.16 * sc.y, this.wx(z + 0.15 + r1 * 0.7)), q, sc); b2.setMatrixAt(n, M);
+    });
+    a.count = b2.count = tiles.length; a.instanceMatrix.needsUpdate = b2.instanceMatrix.needsUpdate = true;
+    const ord = (s.clr || []).flatMap(o => o.tiles), om = grow(2, ord.length);
+    e.set(-Math.PI / 2, 0, 0); q.setFromEuler(e); sc.setScalar(1);
+    ord.forEach((i, n) => { M.compose(v.set(this.wx(i % N + 0.5), 0.025, this.wx(((i / N) | 0) + 0.5)), q, sc); om.setMatrixAt(n, M); });
+    om.count = ord.length; om.instanceMatrix.needsUpdate = true;
+  }
   syncVehicles(dt) {
     const L = this.life, t = this.t;
     for (const v of this.sim.veh) {

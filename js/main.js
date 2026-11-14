@@ -1,5 +1,5 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
-import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT } from './config.js';
+import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB } from './config.js';
 import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
 import { REQUESTS, GRADES, fileOf, CALLS } from './desk.js';
 import { Life } from './life.js';
@@ -179,7 +179,8 @@ $('ht-x').onclick = () => show(playing ? null : 's-title');
 const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', why: 'One tile wide, cheap, a bit faster', desc: 'Drag to draw. One tile wide and cheap. Vehicles go 1.6 times as fast as off-road, people a little faster.' },
   road2: { name: 'Paved Road', k: 'paved', why: 'Two tiles wide, vehicles 2.4× faster', desc: 'Drag to draw. Two tiles wide, with a centre line. Vehicles go 2.4 times as fast, so supplies reach their buildings sooner.' },
   wall: { name: 'Wall', k: 'wall', why: 'Encloses the base; a road through it is a gate', desc: 'Drag to draw perimeter wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
-  unroad: { name: 'Bulldoze', k: null, why: 'Take out a road or a wall', desc: 'Click a road or a wall to take it out. Half the cost back.' } };
+  unroad: { name: 'Bulldoze', k: null, why: 'Take out a road or a wall', desc: 'Click a road or a wall to take it out. Half the cost back.' },
+  clear: { name: 'Clear Scrub', k: null, area: true, why: `Engineers clear a patch, +${SCRUB.yield} SUP a tile`, desc: `Click scrub or debris to have the next free engineer crew clear that patch (up to ${SCRUB.patch} tiles). Each tile cleared brings in ${SCRUB.yield} supplies of salvage. Click an ordered patch to cancel it. Anything you build on scrub is cleared first anyway.` } };
 const SNAPS = ['grid', '45', 'free'], SNAPNAME = { grid: 'GRID', 45: '45°', free: 'FREE' };
 let snapMode = 'grid';
 const lineCost = k => k ? sim.linePrice(k) : 0;
@@ -197,25 +198,26 @@ const icon = k => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path 
 function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[3]; return subs.filter(k => B[k] && !B[k].fixed).map(k => [k, B[k]]); }
 // what a building is for, in a few words, from what it does
 function whyOf(k) {
-  const d = B[k], m = [];
+  const d = B[k], m = [], cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
   if (d.pad) m.push('supplies and recruits in, troopers out');
   if (C.SALES[k] || d.sales) m.push(`+${C.SALES[k] || d.sales} CR a day`);
   if (d.make) m.push(`+${d.make} supplies a day`);
   if (d.pump) m.push(`+${d.pump} fuel a day`);
-  if (d.slots) m.push(`trains ${d.slots} recruits`);
-  if (d.beds) m.push(`houses ${d.beds}`);
-  if (d.eat) m.push(`feeds ${d.eat}`);
+  if (d.slots) m.push(`trains ${cp(d.slots)} recruits`);
+  if (d.beds) m.push(`houses ${cp(d.beds)}`);
+  if (d.eat) m.push(`feeds ${cp(d.eat)}`);
   if (d.pw > 0) m.push(`+${d.pw} power`);
-  if (d.store) m.push(`stores ${Object.values(d.store).reduce((a, b) => a + b, 0)} goods`);
+  if (d.store) m.push(`stores ${Math.floor(Object.values(d.store).reduce((a, b) => a + b, 0) * cf)} goods`);
   if (d.trucks) m.push(`${d.trucks} supply trucks`);
-  if (d.ward) m.push(`${d.ward} beds for the wounded`);
+  if (d.ward) m.push(`${cp(d.ward)} beds for the wounded`);
   if (d.watch) m.push(`watches ${d.watch} tiles of wall`);
   if (d.guns) m.push(`arms ${d.guns} tiles of wall`);
   if (d.squads) m.push('sends standing patrols');
   if (d.lab) m.push('research');
   if (d.weekly) m.push(Object.entries(d.weekly).map(([s, v]) => `${v > 0 ? '+' : ''}${v} ${{ def: 'Defence', pro: 'Expansion', tru: 'Truth' }[s]} a week`).join(', '));
-  if (d.prop) m.push(`+${d.prop} propaganda`);
-  if (d.mor) m.push(`+${d.mor} morale`);
+  const sk = sim.hasStd(k) ? STD[sim.std] : null;
+  if (d.prop) m.push(`+${Math.round(d.prop * (sk?.prop ?? 1))} propaganda`);
+  if (d.mor) m.push(`+${Math.round(d.mor * (sk?.mor ?? 1))} morale`);
   return m.slice(0, 2).join(' · ') || d.desc.split('. ')[0];
 }
 const perDay = v => Math.round(v / 7 * 10) / 10;
@@ -225,32 +227,33 @@ function buildBar() {
   $('b-items').classList.toggle('hidden', !buildOpen);
   if (!buildOpen) return;
   const items = groupItems(group), G = GROUPS.find(x => x[0] === group);
-  const lines = group === 'roads' ? ['road1', 'road2', 'unroad'] : group === 'defence' ? ['wall', 'unroad'] : [];
+  const lines = group === 'roads' ? ['road1', 'road2', 'unroad', 'clear'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
-  const head = `<div class="bi-head"><b>${G[1]}</b><span>${esc(G[2])}</span>${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are placed.</em>` : ''}</div>`;
+  const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
+  const head = `<div class="bi-head"><b>${G[1]}</b><span>${esc(G[2])}</span><span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are placed.</em>` : ''}</div>`;
   $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
-    + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : 'HALF BACK'}</span></button>`; }).join('')
+    + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
-      const lk = sim.locked(k), poor = sim.supplies < d.cost, fnd = !found && FOUNDATION.includes(k) && fm.includes(k);
-      return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${d.cost} SUP${d.up ? ` · <i>−${perDay(d.up)}/d</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
+      const lk = sim.locked(k), cost = sim.costOf(k, specOf(k)), poor = sim.supplies < cost, fnd = !found && FOUNDATION.includes(k) && fm.includes(k);
+      return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}" data-std="${sim.hasStd(k) ? sim.std : 2}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${cost} SUP${d.up ? ` · <i>−${perDay(d.up * (sim.hasStd(k) ? STD[sim.std].up : 1))}/d</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
     }).join('') + `</div>`;
   // pictures of the buildings, drawn once each by the 3D view
-  for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, sim.faction); if (u) im.src = u; }
+  for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; }
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); audio.play('click'); };
-$('b-items').onclick = e => { if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
+$('b-items').onclick = e => { const sd = e.target.closest('[data-std]'); if (sd && !sd.closest('.bi')) { const k = +sd.dataset.std, lk = sim.stdLock(k); if (lk) { flash(lk + '.'); audio.play('deny'); return; } sim.setStd(k); buildBar(); audio.play('click'); return; } if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
   if (b.dataset.snap) return tip('<b>Snapping</b><br>GRID: ends on tile centres. 45°: straight lines at 45-degree steps, whole tiles long. FREE: anywhere. Ends always join existing roads and walls. G switches.', e.clientX, e.clientY - 12, true);
   const k = b.dataset.b; if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
-  const d = B[k], lk = sim.locked(k);
-  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${d.beds} votes` : '', d.eat ? `feeds ${d.eat}` : '', d.slots ? `trains ${d.slots} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a day`].filter(Boolean);
+  const d = B[k], lk = sim.locked(k), cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
+  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${cp(d.beds)} votes` : '', d.eat ? `feeds ${cp(d.eat)}` : '', d.slots ? `trains ${cp(d.slots)} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a day`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
 });
 $('b-items').addEventListener('pointerleave', hideTip);
 // ---------------------------------------------------------------- the design desk: large buildings are designed before placing
 const specs = {};   // the last design chosen for each building type
-const specOf = k => sim.designable(k) ? (specs[k] ||= { design: 0, parts: [] }) : null;
+const specOf = k => sim.designable(k) ? (specs[k] ||= { design: 0, parts: [] }) : sim.hasStd(k) ? { std: sim.std } : null;
 const PARTFX = { make: v => `+${v} supplies a day`, prop: v => `+${v} propaganda`, mor: v => `+${v} morale`, sales: v => `+${v} CR a day`, watch: v => `watches ${v} tiles`, guns: v => `arms ${v} tiles of wall`, odds: v => `+${Math.round(v * 100)}% operation odds`, lab: v => `+${Math.round(v * 100)}% research`, pw: v => `+${v} power`, pride: () => 'pride' };
 let refit = null;   // { id, sp }: refitting a building that is already up
 function refitShow() {
@@ -298,6 +301,20 @@ function hideTip() { $('tip').classList.add('hidden'); }
 let flashT = 0;
 function flash(text) { const top = $('build').getBoundingClientRect().top || innerHeight - 170; tip(`<span class="warn">${esc(text)}</span>`, innerWidth / 2, top - 10, true); flashT = 2.2; }
 
+// ---------------------------------------------------------------- engineers: what a job or a crew is doing, in words
+function buildState(b) {
+  if (!sim.secure()) return 'waiting: the landing zone is being swept';
+  const c = sim.crewOn(b.id);
+  if (!c) { const n = sim.waitingAhead(b.id); return `waiting for a free engineer crew${n > 0 ? ` (${n} job${n > 1 ? 's' : ''} ahead)` : ''}`; }
+  if (b.clr?.length) return `${c.name} clearing ${sim.scrubName()}, ${b.clr.length} tile${b.clr.length > 1 ? 's' : ''} to go`;
+  return `${c.name} at work, ${Math.round((b.done ? b.upg.prog : b.prog) * 100)}%`;
+}
+function crewState(c) {
+  if (c.wait > 0) return `in training, ${days(c.wait)} left`;
+  if (c.job == null) return 'free';
+  if (c.job < 0) { const o = (sim.clr || []).find(o => o.id === c.job); return `clearing scrub, ${o?.tiles.length || 0} tiles to go`; }
+  const b = sim.byId(c.job); return b ? `${b.done ? 'upgrading' : 'building'} the ${B[b.type].name}` : 'free';
+}
 // ---------------------------------------------------------------- selection
 let selId = null;
 function select(id) { if (refit && refit.id !== id) { refit = null; view.setGhost(null); designPanel(); } selId = id; const b = id ? sim.byId(id) : null; view.select(b); view.showPlaza(b && b.type === 'seflag' ? sim.plaza().tiles : null); selPanel(); }
@@ -305,17 +322,20 @@ function selPanel() {
   const b = selId && sim.byId(selId), p = $('selp');
   if (!b) { p.classList.add('hidden'); p._html = ''; return; }
   const d = B[b.type], bits = [];
-  if (!b.done) bits.push(`<div class="kv"><span>CONSTRUCTION</span><b>${Math.round(b.prog * 100)}%</b></div><div class="meter"><i style="width:${b.prog * 100}%;background:var(--yellow)"></i></div>`);
+  if (sim.hasStd(b.type)) { const k = sim.stdOf(b); bits.push(`<div class="kv"><span>STANDARD</span><b>${STD[k].name} <small>(${STD[k].doctrine.toLowerCase()})</small></b></div>`); }
+  if (!b.done || b.upg) { const pr = b.done ? b.upg.prog : b.prog; bits.push(`<div class="kv"><span>${b.done ? 'UPGRADE TO ' + STD[b.upg.to].name.toUpperCase() : 'CONSTRUCTION'}</span><b>${Math.round(pr * 100)}%</b></div><div class="meter"><i style="width:${pr * 100}%;background:var(--yellow)"></i></div><div class="kv"><span>ENGINEERS</span><b>${esc(buildState(b))}</b></div>`); }
+  if (b.type === 'yard') { const cs = sim.crews.filter(c => c.yard === b.id); bits.push(`<div class="kv"><span>CREW</span><b>${cs.length ? cs.map(c => `${c.name}: ${crewState(c)}`).join('; ') : b.done ? `waiting for ${3} recruits` : 'none yet'}</b></div>`); }
+  if (!b.done) { /* construction shown above */ }
   else {
     bits.push(`<div class="kv"><span>CONDITION</span><b class="${b.cond < 40 ? 'down' : ''}">${Math.round(b.cond)}%</b></div><div class="meter"><i style="width:${b.cond}%;background:${b.cond < 40 ? 'var(--red)' : b.cond < 70 ? 'var(--amber)' : 'var(--g)'}"></i></div>`);
     if (d.crew) bits.push(`<div class="kv"><span>CREW</span><b class="${b.crew < d.crew ? 'warn' : ''}">${b.crew} / ${d.crew}</b></div>`);
     if (d.pw) bits.push(`<div class="kv"><span>POWER</span><b>${d.pw > 0 ? '+' : ''}${b.type === 'gen' ? Math.round(d.pw * sim.crewFrac(b) * (b.stock.fuel > 0 ? 1 : 0)) : d.pw}</b></div>`);
     const bar = (g, n, cap, label) => `<div class="kv"><span>${label || GOODS[g].name.toUpperCase()}</span><b class="${n < cap * 0.15 ? 'down' : ''}">${Math.floor(n)} / ${cap}</b></div><div class="meter"><i style="width:${Math.min(100, n / cap * 100)}%;background:${GOODS[g].color}"></i></div>`;
-    if (d.store) for (const g in d.store) bits.push(bar(g, b.stock[g], d.store[g]));
+    if (d.store) for (const g in d.store) bits.push(bar(g, b.stock[g], sim.storeCap(b, g)));
     if (d.need) for (const g in d.need) bits.push(bar(g, b.stock[g], d.need[g], 'NEEDS ' + GOODS[g].name.toUpperCase()));
     if (d.pad) { const n = GKEYS.reduce((a, g) => a + b.stock[g], 0); bits.push(`<div class="kv"><span>WAITING TO BE MOVED</span><b>${Math.floor(n)}</b></div>`); }
-    if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${d.eat} votes a day</b></div>`);
-    if (d.slots) { const n = sim.troops.filter(t => t.at === b.id).length; bits.push(`<div class="kv"><span>TRAINING NOW</span><b>${n} / ${d.slots}</b></div>`); }
+    if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${sim.cap(b, 'eat')} votes a day</b></div>`);
+    if (d.slots) { const n = sim.troops.filter(t => t.at === b.id).length; bits.push(`<div class="kv"><span>TRAINING NOW</span><b>${n} / ${sim.cap(b, 'slots')}</b></div>`); }
     if (d.trucks || d.lifts) { const vs = sim.veh.filter(v => v.home === b.id); bits.push(`<div class="kv"><span>${d.trucks ? 'TRUCKS' : 'FORKLIFT'}</span><b>${vs.filter(v => v.job).length} of ${vs.length} on a run</b></div>`); }
     if (d.ward) { const w = sim.troops.filter(t => t.hurt > 0); bits.push(`<div class="kv"><span>PATIENTS</span><b>${Math.min(w.length, d.ward)} of ${d.ward} beds</b></div>` + w.slice(0, 6).map(t => `<div class="kv"><span>${esc(t.name)}</span><b>${days(t.hurt)}</b></div>`).join('')); }
     if (d.cryo) bits.push(`<div class="kv"><span>HELLDIVERS</span><b>four thawed, on a Marine's day: PT 05:30, Colors 08:00</b></div>`);
@@ -327,7 +347,7 @@ function selPanel() {
       if (v || w) bits.push(`<div class="kv"><span>${VEHICLES[k].name.toUpperCase()}</span><b>${v ? (v.mission ? 'on an operation' : 'ready') : `replacement in ${days(w)}`}</b></div>`);
     }
     if (d.squads) { const out = sim.patrols.filter(p => p.office === b.id).length; bits.push(`<div class="kv"><span>SQUADS KEPT OUT</span><b><button class="btn icon" id="sq-dn" type="button">-</button> ${b.squads} <button class="btn icon" id="sq-up" type="button">+</button></b></div><div class="kv"><span>IN THE FIELD NOW</span><b>${out}</b></div>`); }
-    if (d.beds) bits.push(`<div class="kv"><span>VOTES HOUSED</span><b>${d.beds}</b></div>`);
+    if (d.beds) bits.push(`<div class="kv"><span>VOTES HOUSED</span><b>${sim.cap(b, 'beds')}</b></div>`);
     if (d.potty) bits.push(`<div class="kv"><span>CLEANLINESS</span><b class="${(b.clean ?? 100) < 25 ? 'down' : ''}">${Math.round(b.clean ?? 100)}%</b></div><div class="meter"><i style="width:${b.clean ?? 100}%;background:${(b.clean ?? 100) < 25 ? 'var(--red)' : 'var(--blue)'}"></i></div><div class="kv"><span>VOTES PER POTTY</span><b>${Math.round(sim.potties.perPotty)}</b></div>`);
     if (b.type === 'seflag') { const pz = sim.plaza(); bits.push(`<div class="kv"><span>PLAZA HOLDS</span><b class="${pz.need > pz.cap ? 'down' : ''}">${pz.cap} votes</b></div><div class="kv"><span>VOTES TO SALUTE</span><b>${pz.need}</b></div>`); }
     if (b.type === 'memorial') bits.push(`<div class="kv"><span>NAMES ON THE WALL</span><b>${sim.fallen.length}</b></div>`);
@@ -336,19 +356,20 @@ function selPanel() {
   const crew = sim.troops.filter(t => t.job === b.id).map(t => `${rankOf(t.missions)} ${esc(t.name)}`).join(', ');
   // one line on how it is doing, and what it earns or costs, like a city builder's building card
   const out = d.need && Object.keys(d.need).find(g => (b.stock[g] || 0) < 0.5);
-  const st = !b.done ? ['warn', `Under construction, ${Math.round(b.prog * 100)}%`] : b.off ? ['warn', 'Switched off'] : out ? ['bad', `Out of ${GOODS[out].name.toLowerCase()}`]
+  const st = !b.done ? ['warn', `Under construction: ${buildState(b)}`] : b.upg ? ['warn', `Upgrading, half pace: ${buildState(b)}`] : b.off ? ['warn', 'Switched off'] : out ? ['bad', `Out of ${GOODS[out].name.toLowerCase()}`]
     : d.crew && b.crew < 1 ? ['bad', 'No crew'] : d.pw < 0 && sim.power.ratio < 1 ? ['bad', 'Short of power'] : d.crew && b.crew < d.crew ? ['warn', `Short of crew, ${b.crew} of ${d.crew}`]
     : b.cond < 40 ? ['bad', 'Falling apart: repair it'] : ['ok', d.store ? 'Stocked and running' : 'Running'];
   const mv = b.done ? moneyOf(b) : 0;
-  const top = `<div class="sp-status ${st[0]}">${st[1]}</div><div class="sp-money"><span>UPKEEP <b class="down">−${fmt(perDay(d.up || 0))}</b>/d</span><span>NET <b class="${mv < 0 ? 'down' : 'up'}">${mv >= 0 ? '+' : '−'}${fmt(Math.abs(mv))}</b> SUP/d</span><span class="role" style="color:${ROLE_COL[roleOf(b.type)]}">${GROUPS.find(g => g[0] === roleOf(b.type))?.[1] || 'COMMAND'}</span></div>`;
+  const top = `<div class="sp-status ${st[0]}">${st[1]}</div><div class="sp-money"><span>UPKEEP <b class="down">−${fmt(perDay(sim.upkeepOf(b)))}</b>/d</span><span>NET <b class="${mv < 0 ? 'down' : 'up'}">${mv >= 0 ? '+' : '−'}${fmt(Math.abs(mv))}</b> SUP/d</span><span class="role" style="color:${ROLE_COL[roleOf(b.type)]}">${GROUPS.find(g => g[0] === roleOf(b.type))?.[1] || 'COMMAND'}</span></div>`;
   const html = `<div class="ph"><span>${d.name.toUpperCase()}</span><button class="x" id="sp-x" type="button">×</button></div>${top}<div class="sp-body">${bits.join('')}<p>${d.desc}</p>${crew ? `<p>On duty: ${crew}</p>` : ''}</div>
-    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.type === 'hq' && sim.unsettled() ? `<button class="btn primary" id="sp-hq" type="button">MOVE HQ (free until your first road)</button>` : ''}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round(d.cost * C.REFUND) : 'CANCEL +' + d.cost}</button>`}</div>`;
+    <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.type === 'hq' && sim.unsettled() ? `<button class="btn primary" id="sp-hq" type="button">MOVE HQ (free until your first road)</button>` : ''}${(() => { if (!sim.hasStd(b.type) || sim.stdOf(b) >= 2 || b.upg || !b.done) return ''; const u = sim.upgradeInfo(b); return `<button class="btn ${u.ok ? 'primary' : ''}" id="sp-upg" type="button" title="${esc(u.ok ? STD[u.to].desc : u.why)}" ${u.ok ? '' : 'disabled'}>UPGRADE TO ${STD[u.to].name.toUpperCase()} ${u.cost}</button>`; })()}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round((b.cost ?? d.cost) * C.REFUND) : 'CANCEL +' + (b.cost ?? d.cost)}</button>`}</div>`;
   p.classList.remove('hidden');
   if (p._html === html) return;
   p.innerHTML = p._html = html;
   $('sp-x').onclick = () => select(null);
   if ($('sp-rep')) $('sp-rep').onclick = () => { if (!sim.repair(b.id)) flash('Not enough supplies.'); selPanel(); };
   if ($('sp-off')) $('sp-off').onclick = () => { sim.toggle(b.id); selPanel(); };
+  if ($('sp-upg')) $('sp-upg').onclick = () => { const u = sim.upgrade(b.id); if (!u.ok) { flash(u.why); audio.play('deny'); } else audio.playAt('place', b.x + b.w / 2, b.z + b.d / 2); selPanel(); };
   if ($('sq-up')) $('sq-up').onclick = () => { sim.setSquads(b.id, b.squads + 1); selPanel(); };
   if ($('sq-dn')) $('sq-dn').onclick = () => { sim.setSquads(b.id, b.squads - 1); selPanel(); };
   if ($('sp-del')) $('sp-del').onclick = () => { sim.demolish(b.id); select(null); audio.playAt('demolish', b.x + b.w / 2, b.z + b.d / 2); };
@@ -370,9 +391,13 @@ function logoImg(logo) {
 function startMoveHQ() { select(null); tool = 'movehq'; flash('Pick where the HQ stands, inside the dashed charter line. The flag goes beside it.'); }
 const ORDERS = [
   ['Choose where the HQ stands: select it and press MOVE HQ, or just start building here', s => s.hqSet || !s.unsettled()],
+  ['Wait for the security detachment to sweep the landing zone: the engineers start building once it is secure', s => s.secure()],
   ['Draw a road from your HQ (ROADS, drag). Stay inside the dashed charter line', s => s.net.segs.some(q => q.k !== 'wall')],
   ['Lay the foundation along it: Landing Pad, Supply Depot, Barracks, Mess Hall and Firing Range', s => s.founded()],
+  ['Have the engineers clear a patch of scrub for salvage (ROADS, CLEAR SCRUB)', s => (s.stats.cleared || 0) >= 6],
+  ['Build an Engineer Yard (LOGISTICS): a third crew means three jobs at once', s => s.crews.some(c => c.yard)],
   ['Close a wall round the base (DEFENCE, Wall), with a road through it for a gate', s => !s.open && s.gates.length > 0],
+  ['Upgrade a tent to a prefab: select it and press UPGRADE', s => s.b.some(b => b.done && s.hasStd(b.type) && b.type !== 'hq' && s.stdOf(b) >= 1)],
   ['Ship trained troopers to the front: transports leave the pad at 16:00', s => s.stats.deployed > 0],
   ['Deal with the desk: answer a request or grade a trooper\'s file (here, or DESK)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
   ['Answer a Ministry call: set aside what they ask for', s => (s.stats.calls || 0) > 0],
@@ -408,8 +433,8 @@ function moneyOf(b) {
   const s = sim, d = B[b.type], crp = 1 / Math.max(0.2, s.price('sup'));   // credits counted as supplies
   if (!b.done) return 0;
   const w = s.work(b);
-  let v = -(d.up || 0) / 7 - (d.staff || 0) * C.WAGE * crp;
-  v += ((C.SALES[b.type] || 0) + s.stat(b, 'sales')) * crp * (b.off ? 0 : 1);
+  let v = -s.upkeepOf(b) / 7 - (d.staff || 0) * C.WAGE * crp;
+  v += ((C.SALES[b.type] || 0) * s.capF(b) + s.stat(b, 'sales')) * crp * (b.off ? 0 : 1);
   v += s.stat(b, 'make') * w + (d.pump || 0) * w * GOODS.fuel.cost;
   if (d.burn) for (const g in d.burn) v -= d.burn[g] * GOODS[g].cost;
   if (d.pad) { const r = s.rates(); v += ((r.sup.deploy || 0) + (r.cr.deploy || 0) * crp) / Math.max(1, s.count('pad')); }
@@ -566,6 +591,7 @@ function hud() {
   for (const g of GKEYS) { const n = Math.floor(s.amount(g)), u = use[g], el = $('r-' + (g === 'rations' ? 'rat' : g)); el.textContent = n; el.parentElement.classList.toggle('bad', u > 0 && n < u * 0.5); }
   const readyN = s.troops.filter(t => t.train >= 100 && t.state !== 'patrol').length, rec = s.troops.filter(t => t.train < 100).length;
   $('r-ready').textContent = `${readyN}/${rec}`;
+  { const el = document.getElementById('bi-crews'); if (el) { const cs = s.crews || [], busy = cs.filter(c => c.job != null && !c.wait).length, q = s.jobQueue().length; el.textContent = `CREWS ${busy}/${cs.length} AT WORK · ${q} JOB${q === 1 ? '' : 'S'} OPEN${!s.secure() ? ' · SWEEP UNDER WAY' : ''}`; el.classList.toggle('bad', q > cs.length + 2); el.title = `Engineer crews do every building job, one each. ${cs.some(c => c.wait) ? 'A crew is in training. ' : ''}More crews: an Engineer Yard (Logistics).`; } }
   $('w-title').textContent = `WEEK ${s.week}`; $('w-fill').style.width = (s.wt / C.WEEK * 100) + '%'; $('w-insp').style.left = (C.INSPECT_AT * 100) + '%';
   const left = Math.ceil((C.WEEK - s.wt) / C.DAY);
   $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${left} DAY${left === 1 ? '' : 'S'}`;
@@ -581,7 +607,7 @@ function hud() {
   rows.forEach((r, i) => { const c = $('stand').querySelector(`[data-logo="${i}"]`); c.outerHTML = `<img src="${logoImg(r.logo)}" width="22" height="22" alt="">`; });
   taskBoard();
   // the build bar's affordability, and the selection
-  for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < B[k].cost); b.classList.toggle('lock', !!s.locked(k)); }
+  for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < s.costOf(k, specOf(k))); b.classList.toggle('lock', !!s.locked(k)); }
   if (selId) selPanel();
   if (!$('mins').classList.contains('hidden')) renderMins();
   // info views follow the base as it changes
@@ -672,7 +698,7 @@ function reportPop(id) {
 let ecoTab = 'budget', tradeQ = 50;
 const CAT = { industry: 'Industry', calls: 'Calls answered', alloc: 'Weekly allocation', deploy: 'Troopers shipped', ops: 'Operations and patrols', roster: 'Roster review', sales: 'Franchise sales', ledger: 'Desk decisions',
   deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
-  bought: 'Bought', sold: 'Sold', fees: 'Fees', market: 'Market trades', trade: 'Trades with other bases', commit: 'Ministry commitments' };
+  bought: 'Bought', sold: 'Sold', fees: 'Fees', salvage: 'Salvage and clearing', market: 'Market trades', trade: 'Trades with other bases', commit: 'Ministry commitments' };
 // a 14-day line, for the tickers
 function spark(hist, col, w = 96, h = 26) {
   const lo = Math.min(...hist), hi = Math.max(...hist), r = hi - lo || 1;
@@ -947,7 +973,7 @@ $('me-import').onclick = async () => {
 // ---------------------------------------------------------------- pointer and touch
 const cv = $('view'), ptrs = new Map();
 let drag = null, pinch = null, roadDrag = null;
-const isRoad = t => !!RTOOLS[t];
+const isRoad = t => !!RTOOLS[t] && !RTOOLS[t].area;
 function lineEnd(e) {   // the snapped end of the line under the pointer
   const p = view.pick(e.clientX, e.clientY), k = RTOOLS[tool].k || 'dirt';
   return sim.snapLine({ x: p.x, z: p.z }, snapMode, k, roadDrag);
@@ -1000,13 +1026,15 @@ cv.addEventListener('pointermove', e => {
     }
   }
   if (photo) return;
+  if (tool === 'clear') { const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), i = tz * sim.N + tx, o = sim.clearOrderAt(i);
+    if (e.pointerType === 'mouse') tip(o ? `Ordered: ${o.tiles.length} tiles. Click to cancel` : sim.scrub?.[i] ? `Clear this patch of ${sim.scrubName()}` : 'Nothing to clear here', e.clientX, e.clientY); return; }
   if (isRoad(tool)) roadPreview(e);
   else if (tool === 'movehq') { const t = tileAt(e); hover = t; const ok = sim.canMoveHQ(t.tx, t.tz); view.setGhost('hq', t.tx, t.tz, 0, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool) { const t = tileAt(e); hover = t; const ok = sim.canPlace(tool, t.tx, t.tz, t.rot, specOf(tool)); view.setGhost(tool, t.tx, t.tz, t.rot, ok.ok, specOf(tool)); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (e.pointerType === 'mouse' && !p0) {
     const p = view.pick(e.clientX, e.clientY);
-    if (p.bid) { const b = sim.byId(p.bid); tip(`<b>${B[b.type].name}</b>${b.done ? '' : ` · ${Math.round(b.prog * 100)}% built`}`, e.clientX, e.clientY); cv.style.cursor = 'pointer'; }
+    if (p.bid) { const b = sim.byId(p.bid); tip(`<b>${B[b.type].name}</b>${b.done ? (b.upg ? ' · upgrading' : '') : ` · ${buildState(b)}`}`, e.clientX, e.clientY); cv.style.cursor = 'pointer'; }
     else { if (flashT <= 0) hideTip(); cv.style.cursor = ''; }
   }
 });
@@ -1027,6 +1055,12 @@ function up(e) {
   if (photo) return;
   if (d.moved) return;
   if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else select(null); return; }
+  if (tool === 'clear') {
+    const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), o = sim.clearOrderAt(tz * sim.N + tx);
+    if (o) { sim.cancelClear(o.id); audio.play('click'); return; }
+    const r = sim.orderClear(tx, tz); if (!r.ok) { flash(r.why + '.'); audio.play('deny'); return; }
+    flash(`${r.n} tiles ordered cleared. ${sim.crews.some(c => c.job == null && !c.wait) ? 'A crew is on its way.' : 'The next free crew will take it.'}`); audio.play('place'); return;
+  }
   if (tool === 'movehq') {
     const t = tileAt(e), r = sim.moveHQ(t.tx, t.tz);
     if (!r.ok) { flash(r.why); audio.play('deny'); return; }
@@ -1140,9 +1174,9 @@ function soundscape() {
       const near = [...life.actors.values()].filter(a => !a.hidden && a.kind !== 'inspector' && Math.hypot(a.x - ex, a.z - ez) < eh * 0.9 && !['plan', 'salute', 'heart', 'run', 'lie'].includes(a.act));
       if (near.length) {
         const a = near[(Math.random() * near.length) | 0], t = a.extra === 'civ' ? sim.byId(a.home)?.type : null;
-        const pool = a.extra === 'hd' ? SAY.hd : t && SAY[t] ? SAY[t] : a.extra === 'civ' ? SAY.civ : sim.troop?.(a.id)?.hurt > 0 ? SAY.wounded : SAY.troop;
+        const pool = a.extra === 'eng' ? SAY.eng : a.extra === 'hd' ? SAY.hd : t && SAY[t] ? SAY[t] : a.extra === 'civ' ? SAY.civ : sim.troop?.(a.id)?.hurt > 0 ? SAY.wounded : SAY.troop;
         bubble(a, pool[(Math.random() * pool.length) | 0]);
-        audio.chatter(a.x, a.z, a.extra === 'civ' ? 170 + (a.n || 0) * 25 : a.extra === 'hd' ? 115 : 130 + (a.id % 4) * 12);
+        audio.chatter(a.x, a.z, a.extra === 'civ' ? 170 + (a.n || 0) * 25 : a.extra === 'hd' || a.extra === 'eng' ? 115 + (a.n || 0) * 10 : 130 + ((+a.id || 0) % 4) * 12);
       }
     }
   }
