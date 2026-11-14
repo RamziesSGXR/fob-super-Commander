@@ -977,7 +977,7 @@ function reportPop(id) {
 // ---------------------------------------------------------------- the economy window: budget, market, commitments, loans, production
 let ecoTab = 'budget', tradeQ = 50;
 const CAT = { industry: 'Industry', calls: 'Calls answered', alloc: 'Daily allocation', deploy: 'Troopers shipped', ops: 'Operations and patrols', roster: 'Roster review', sales: 'Franchise sales', ledger: 'Desk decisions',
-  deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', raid: 'Lost to raids', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
+  deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', raid: 'Perimeter repairs', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
   bought: 'Bought', sold: 'Sold', fees: 'Fees', salvage: 'Salvage and clearing', market: 'Market trades', trade: 'Trades with other bases', commit: 'Ministry commitments' };
 // a 14-day line, for the tickers
 function spark(hist, col, w = 96, h = 26) {
@@ -1074,7 +1074,7 @@ function renderIntel(s) {
   h += `<h3>INCOMING</h3>` + (inc.length ? `<ul class="rep">${inc.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="fine left">Nothing due.</p>');
   { const ri = s.raidInfo(), lr = s.lastRaid, ears = ['No lookout and no comms array: the base will only hear a raid when it is at the wire.', 'Lookouts give a day of warning. A Comms Array would give the hour, the size and the side.', 'The Comms Array gives the hour, the size and the side.'][ri.intel];
     h += `<h3>THREATS</h3><div class="kv"><span>THREAT LEVEL</span><b class="${ri.threat > 60 ? 'down' : ''}">${ri.threat} of 100</b></div><div class="kv"><span>BASE STRENGTH</span><b>${ri.strength}</b></div>`
-      + (ri.known ? `<div class="card2"><div class="l"><b class="down">${esc(ri.what)}${ri.dir ? ' from the ' + ri.dir : ''}</b><span>Expected ${esc(ri.when)}.${ri.attack != null ? ` Its strength is about ${ri.attack}; yours is ${ri.strength}. ${ri.strength >= ri.attack + 12 ? 'The wall should hold.' : ri.strength >= ri.attack - 6 ? 'It will be close: man the gates, arm the wall, keep troopers home.' : 'As things stand it gets in: close and watch the wall, add turrets, train more troopers.'}` : ' Size unknown.'}</span></div></div>` : s.week < 4 ? '<p class="fine left">Quiet. Nothing has found the base yet; that will not last past the first few days.</p>' : '<p class="fine left">No contact reported.</p>')
+      + (ri.known ? `<div class="card2"><div class="l"><b class="down">${esc(ri.what)}${ri.dir ? ' from the ' + ri.dir : ''}</b><span>Expected ${esc(ri.when)}.${ri.attack != null ? ` Its strength is about ${ri.attack}; yours is ${ri.strength}. ${ri.strength >= ri.attack + 12 ? 'The wall should hold.' : ri.strength >= ri.attack - 6 ? 'It will be close. Nothing is at risk; a manned gate would settle it.' : 'As things stand they will wander in and give everyone a fright. No real harm, but a closed, watched wall earns standing instead.'}` : ' Size unknown.'}</span></div></div>` : s.week < 4 ? '<p class="fine left">Quiet. Nothing has found the base yet; it will, in time, and it is nothing to lose sleep over.</p>' : '<p class="fine left">No contact reported.</p>')
       + `<p class="fine left">${ears}</p>` + (lr ? `<p class="fine left">Last raid, day ${lr.week}: ${lr.out} (their ${lr.atk} against your ${lr.str}).</p>` : ''); }
   return h;
 }
@@ -1590,8 +1590,8 @@ function loopBody(now) {
         if (ev.t === 'patrolBack' && ev.hero) { const f = sim.b.find(b => b.type === 'seflag'); audio.callAt('medal', f ? [[f.x + 1, f.z + 1]] : []); }
         if (ev.t === 'phase') { const c = { reveille: 'reveille', retreat: 'retreat', night: 'taps' }[ev.phase]; if (c) audio.callAt(c, horns()); }
         if (ev.t === 'moved') select(selId);
-        if (ev.t === 'raidAlarm') { audio.play('deny'); flash('ALERT: raid at the wire. See INTELLIGENCE.'); }
-        if (ev.t === 'raid') { audio.play(ev.out === 'breached' ? 'deny' : 'place'); flash(ev.text); }
+        if (ev.t === 'raidAlarm') { audio.play('ping'); flash('Movement at the wire. See INTELLIGENCE.'); }
+        if (ev.t === 'raid') { audio.play('place'); flash(ev.text); }
         if (ev.t === 'desk') { audio.play('ping'); $('orders').classList.remove('min'); }   // requests land on the task board
         if (ev.t === 'call') callPop(ev.id);
         if (ev.t === 'report') reportPop(ev.id);

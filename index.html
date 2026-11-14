@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.21.0">
+<link rel="stylesheet" href="css/style.css?v=0.21.1">
 </head>
 <body>
 <div id="app">
@@ -123,7 +123,7 @@
       <p><b>Time.</b> At 1× a game hour takes three real minutes (2× and 4× with keys 2 and 3). A day is six four-hour watches: upkeep, food, fuel and pay are settled every watch, while the allocation, the standings, the inspection and the Bureau run once a day. Troopers keep the Army's day, with a night watch on duty so the base never quite sleeps.</p>
       <p><b>Growing.</b> A Comms Tower lets you run more landing pads, and a Science Lab researches upgrades. Four charters (EXPANSION): an <b>Outpost</b> (12 parcels), a <b>Forward Operating Base</b> (20 parcels: 30 votes, Expansion 50, 600 credits and 600 supplies), a <b>Fort</b> (36 parcels: 60 votes, Expansion 60, 1,200 credits and 1,500 supplies; permanent buildings and the larger ones) and a <b>Major Base</b> (every parcel: 110 votes, Expansion 70, 2,000 credits and 3,000 supplies). Each raises the land you may hold and the daily allocation.</p>
       <p><b>Equipment and charters.</b> The engineers can only build what they have the plant for. Dirt roads and tents need nothing. An <b>Engineer Yard</b> opens earthworks (LANDSCAPE) and prefab buildings; a <b>Concrete Batch Plant</b> opens paved roads, footpaths, bridges and permanent buildings. Each charter also asks for certain buildings and enough storage before the Bureau will grant it: INTELLIGENCE lists what is still missing, along with warnings, payments due and what to do next. Short of supplies? <b>BUY SUPPLIES</b> on the bottom bar buys 100 at the market price. The ground round the Super Earth flag is the <b>plaza</b>: it stays open, and is dressed better with each charter.</p>
-      <p><b>Raids.</b> From day 4 something out there probes the wire. Threat builds each day and now and then becomes a raid a day or two out. How much warning you get depends on what the base can hear with: nothing until it is at the wire, a day from a lookout or patrol hut, the hour, size and side from a Comms Array. A closed, watched, armed wall and trained troopers at home drive it off; a weak perimeter costs supplies, wounded and damaged buildings. INTELLIGENCE shows the threat level, your strength and what is coming.</p>
+      <p><b>Threats.</b> This is a base builder, not a siege. From day 6 something out there now and then probes the wire. INTELLIGENCE tells you what is coming (more precisely with a lookout or a Comms Array) and how your perimeter compares. A closed, watched wall turns it away and earns Defence standing and salvage; an open base gets a fright and a small bill for sandbags. Nobody is hurt and nothing is knocked down.</p>
       <p><b>Controls.</b> Drag to move, scroll or pinch to zoom, <kbd>Q</kbd> <kbd>E</kbd> or right-drag to rotate. <kbd>R</kbd> turns a building, <kbd>Shift</kbd>-click places several. <kbd>Space</kbd> pauses, <kbd>[</kbd> <kbd>]</kbd> or <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> set the speed. <kbd>Tab</kbd> steps through the build toolbar, <kbd>I</kbd> through the info views. <kbd>B</kbd> opens ECONOMY, <kbd>L</kbd> the DESK, <kbd>M</kbd> the last window, <kbd>C</kbd> the comms log. <kbd>P</kbd> is photo mode, <kbd>H</kbd> hides the interface. Sound and volume are in the MENU.</p>
       <div class="btns"><button id="ht-x" class="btn primary" type="button">UNDERSTOOD</button></div>
     </div>
@@ -261,34 +261,34 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.21.0",
-  "./js/build.js": "./js/build.js?v=0.21.0",
-  "./js/config.js": "./js/config.js?v=0.21.0",
-  "./js/demo.js": "./js/demo.js?v=0.21.0",
-  "./js/desk.js": "./js/desk.js?v=0.21.0",
-  "./js/land.js": "./js/land.js?v=0.21.0",
-  "./js/life.js": "./js/life.js?v=0.21.0",
-  "./js/logo.js": "./js/logo.js?v=0.21.0",
-  "./js/main.js": "./js/main.js?v=0.21.0",
-  "./js/market.js": "./js/market.js?v=0.21.0",
-  "./js/models.js": "./js/models.js?v=0.21.0",
-  "./js/net.js": "./js/net.js?v=0.21.0",
-  "./js/noise.js": "./js/noise.js?v=0.21.0",
-  "./js/path.js": "./js/path.js?v=0.21.0",
-  "./js/raids.js": "./js/raids.js?v=0.21.0",
-  "./js/reports.js": "./js/reports.js?v=0.21.0",
-  "./js/rng.js": "./js/rng.js?v=0.21.0",
-  "./js/sim.js": "./js/sim.js?v=0.21.0",
-  "./js/site.js": "./js/site.js?v=0.21.0",
-  "./js/terrain.js": "./js/terrain.js?v=0.21.0",
-  "./js/utils.js": "./js/utils.js?v=0.21.0",
-  "./js/view.js": "./js/view.js?v=0.21.0",
-  "./js/voices.js": "./js/voices.js?v=0.21.0",
-  "./js/zones.js": "./js/zones.js?v=0.21.0",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.21.0"
+  "./js/audio.js": "./js/audio.js?v=0.21.1",
+  "./js/build.js": "./js/build.js?v=0.21.1",
+  "./js/config.js": "./js/config.js?v=0.21.1",
+  "./js/demo.js": "./js/demo.js?v=0.21.1",
+  "./js/desk.js": "./js/desk.js?v=0.21.1",
+  "./js/land.js": "./js/land.js?v=0.21.1",
+  "./js/life.js": "./js/life.js?v=0.21.1",
+  "./js/logo.js": "./js/logo.js?v=0.21.1",
+  "./js/main.js": "./js/main.js?v=0.21.1",
+  "./js/market.js": "./js/market.js?v=0.21.1",
+  "./js/models.js": "./js/models.js?v=0.21.1",
+  "./js/net.js": "./js/net.js?v=0.21.1",
+  "./js/noise.js": "./js/noise.js?v=0.21.1",
+  "./js/path.js": "./js/path.js?v=0.21.1",
+  "./js/raids.js": "./js/raids.js?v=0.21.1",
+  "./js/reports.js": "./js/reports.js?v=0.21.1",
+  "./js/rng.js": "./js/rng.js?v=0.21.1",
+  "./js/sim.js": "./js/sim.js?v=0.21.1",
+  "./js/site.js": "./js/site.js?v=0.21.1",
+  "./js/terrain.js": "./js/terrain.js?v=0.21.1",
+  "./js/utils.js": "./js/utils.js?v=0.21.1",
+  "./js/view.js": "./js/view.js?v=0.21.1",
+  "./js/voices.js": "./js/voices.js?v=0.21.1",
+  "./js/zones.js": "./js/zones.js?v=0.21.1",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.21.1"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.21.0"></script>
+<script type="module" src="js/main.js?v=0.21.1"></script>
 </body>
 </html>
