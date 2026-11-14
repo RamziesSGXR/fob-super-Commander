@@ -20,6 +20,7 @@ r.plaza = await p.evaluate(() => { const s = window.__fob.sim, f = s.b.find(b =>
 const top = await p.evaluate(() => { const a = document.getElementById('top').getBoundingClientRect(); return [Math.round(a.top), innerHeight]; });
 r.top = top;
 r.res = await p.evaluate(() => [...document.querySelectorAll('#top .ri')].every(e => { const b = e.getBoundingClientRect(), t = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2); return b.width > 0 && e.contains(t); })); if (!r.res) errs.push('a readout is covered'); await shot(p, 'bar');
+r.menuIn = await p.evaluate(() => document.getElementById('b-menu').getBoundingClientRect().right <= innerWidth + 1); if (!r.menuIn) errs.push('MENU is off the screen');
 const ok = !r.stand && !r.map0 && r.map1 && r.build0 && !r.build1 && r.build2 && r.bought === 100 && r.paid > 0 && r.intel && /PROSPERITY,HUMANITY/.test(r.tabs) && /INTELLIGENCE,UNITY/.test(r.tabs) && /plaza/.test(r.plaza[0]) && r.plaza[1] && top[0] > top[1] - 120;
 if (!ok) errs.push('bar check failed');
 await done(b, errs, JSON.stringify(r) + '\n');

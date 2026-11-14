@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.21.1';
+export const VERSION = '0.21.2';
 
 export const C = {
   N: 1725,                  // the map is N x N cells of 8 m: a 13.8 km section of the planet, GRID x GRID parcels of PARCEL cells each

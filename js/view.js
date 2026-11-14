@@ -710,7 +710,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
   // ---------------------------------------------------------------- day and night
   setTime(h) {
     const ramp = (a, b, v) => Math.max(0, Math.min(1, (v - a) / (b - a)));
-    const d = ramp(4.5, 7, h) * (1 - ramp(18, 20.5, h)), warm = 1 - Math.min(1, Math.abs(h - 12.5) / 6.5);
+    const d = ramp(4, 6, h) * (1 - ramp(18.5, 21, h)), warm = 1 - Math.min(1, Math.abs(h - 12.5) / 6.5);
     this.dayLight = d;
     const ang = (h - 12.5) / 12 * Math.PI;
     this.sun.position.set(this.target.x - Math.sin(ang) * 26, 8 + 26 * Math.max(0.15, Math.cos(ang * 0.8)), this.target.z + 12);

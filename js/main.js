@@ -1608,7 +1608,7 @@ function loopBody(now) {
     view.spin(dt * 0.06);
     if (sim) { sim.step(dt); for (const ev of sim.drain()) life.event(ev); life.update(dt); }
   }
-  if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
+  if (sim && sim.time) { view.setTime(sim.callIn ? 11 : sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
   if (playing && sim && tfDrag) tfStroke(Math.min(0.05, dt));
   if (playing && view.brush?.visible && !tool?.startsWith('tf:') && !sim?.callIn) view.showBrush(null);
   if (playing && sim) { view.showParcels(tool === 'land' ? 'land' : tool === 'callin' ? 'callin' : null, tool === 'land' ? landHover : null, tool === 'callin' ? ciStart : null); if (tool !== 'land' && landSel) landCard(null); else if (landSel) landCard(landSel); }

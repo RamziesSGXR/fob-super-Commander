@@ -884,6 +884,15 @@ function stdModel(type, k, w, d, m) {
     }
     default: rows(g, m, w, d, k); signPost(g, m, -w / 2 + 0.3, fz); if (k === 0) sandbags(g, m, w / 2 - 0.45, fz, 0.6);
   }
+  // the prefab years: an asphalt hardstand with parking bays painted along the front and chain-link round the back and sides
+  if (k === 1 && type !== 'range' && type !== 'course' && w >= 2 && d >= 2) {
+    const post = tm('#8a8f8c', { metalness: 0.6, roughness: 0.5 }), mesh = tm('#aab0ad', { transparent: true, opacity: 0.28, side: THREE.DoubleSide }), paint = tm('#d9d9d2'), H = 0.34;
+    const run = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(z0 - z1, x1 - x0), n = Math.max(1, Math.round(L / 0.5));
+      box(g, L, H, 0.006, mesh, (x0 + x1) / 2, H / 2 + 0.03, (z0 + z1) / 2, { ry, cast: false }); box(g, L, 0.012, 0.012, post, (x0 + x1) / 2, H + 0.03, (z0 + z1) / 2, { ry, cast: false });
+      for (let i = 0; i <= n; i++) box(g, 0.02, H + 0.04, 0.02, post, x0 + (x1 - x0) * i / n, H / 2 + 0.03, z0 + (z1 - z0) * i / n); };
+    const a = w / 2 - 0.06, b = d / 2 - 0.06; run(-a, -b, a, -b); run(-a, -b, -a, b * 0.35); run(a, -b, a, b * 0.35);
+    for (let x = -a + 0.3; x <= a - 0.29; x += 0.3) box(g, 0.015, 0.004, 0.26, paint, x, 0.033, b - 0.14, { cast: false });
+  }
   return g;
 }
 // the debris a site is cleared of, for the picture of the ground: a few low shapes per tile, coloured by biome
