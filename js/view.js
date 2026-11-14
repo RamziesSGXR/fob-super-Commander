@@ -1,6 +1,6 @@
 // The 3D view: a near-isometric camera you can rotate, the ground, the wire, every building and everyone walking about.
 import * as THREE from './vendor/three.js';
-import { B } from './config.js';
+import { B, ZONES, ZKEYS } from './config.js';
 import { dims, wingOf } from './sim.js';
 import { BIOMES } from './site.js';
 import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
@@ -44,7 +44,7 @@ export class View {
     this.sim = sim; this.life = life; this.N = sim.N;
     this.world.clear();
     this.chunks = new Map(); this.bm = new Map(); this.pm = new Map(); this.fm = new Map(); this.cm = []; this.vm = new Map(); this.smoke = []; this.roadsV = -1;
-    this.ghostKey = ''; this.scrubKey = null; this.scrubM = null;
+    this.ghostKey = ''; this.scrubKey = null; this.scrubM = null; this.zoneKey = null; this.zoneM = null;
     this.buildGround();
     this.setFaction(sim.faction);
   }
@@ -533,7 +533,7 @@ export class View {
     this.camUpdate(dt);
     this.syncRoads();
     this.syncBuildings(dt);
-    this.syncScrub();
+    this.syncScrub(); this.syncZones();
     this.syncPeople(dt);
     this.syncVehicles(dt);
     this.smokeUpdate(dt); this.routeTick(dt);
@@ -822,6 +822,27 @@ export class View {
     e.set(-Math.PI / 2, 0, 0); q.setFromEuler(e); sc.setScalar(1);
     ord.forEach((i, n) => { M.compose(v.set(this.wx(i % N + 0.5), 0.025, this.wx(((i / N) | 0) + 0.5)), q, sc); om.setMatrixAt(n, M); });
     om.count = ord.length; om.instanceMatrix.needsUpdate = true;
+  }
+  // painted zones: a faint wash of colour on every zoned tile nothing stands on, stronger while zoning or in the Zoning view
+  syncZones() {
+    const s = this.sim; if (!s.zone) return;
+    const key = `${s.zoneV || 0}:${s.roadsV || 0}:${s.b.length}:${this.zoneStrong ? 1 : 0}`;
+    if (this.zoneKey === key && this.zoneSim === s) return;
+    this.zoneKey = key; this.zoneSim = s;
+    const N = this.N, tiles = [];
+    for (let i = 0; i < s.zone.length; i++) if (s.zone[i] && !s.occ[i] && !s.roads[i]) tiles.push(i);
+    let im = this.zoneM;
+    if (!im || im.instanceMatrix.count < tiles.length) {
+      if (im) { this.world.remove(im); im.dispose(); }
+      const geo = new THREE.PlaneGeometry(0.94, 0.94); geo.rotateX(-Math.PI / 2);
+      im = this.zoneM = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.2, depthWrite: false }), Math.max(64, tiles.length * 1.5 | 0));
+      im.frustumCulled = false; im.renderOrder = 1;
+    }
+    if (im.parent !== this.world) this.world.add(im);
+    const M = new THREE.Matrix4(), c = new THREE.Color(), cols = ZKEYS.map(k => new THREE.Color(ZONES[k].col));
+    tiles.forEach((i, n) => { M.makeTranslation(this.wx(i % N + 0.5), 0.02, this.wx(((i / N) | 0) + 0.5)); im.setMatrixAt(n, M); im.setColorAt(n, c.copy(cols[s.zone[i] - 1])); });
+    im.count = tiles.length; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.material.opacity = this.zoneStrong ? 0.5 : 0.2;
   }
   syncVehicles(dt) {
     const L = this.life, t = this.t;

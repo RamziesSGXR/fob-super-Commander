@@ -1,5 +1,5 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
-import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB } from './config.js';
+import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB, ZONES, ZKEYS, GROWS, CHAINS, GROW } from './config.js';
 import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
 import { REQUESTS, GRADES, fileOf, CALLS } from './desk.js';
 import { Life } from './life.js';
@@ -190,12 +190,12 @@ const ICON = {
   training: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18M12 8a4 4 0 1 0 0 8 4 4 0 1 0 0-8M12 11.5v1', living: 'M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5',
   income: 'M4 20h16M7 17v-4M12 17V9M17 17V5', power: 'M13 2 5 14h6l-1 8 8-12h-6z', defence: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   truth: 'M3 10v4h3l7 4V6l-7 4zM16 9c1.5 1.5 1.5 4.5 0 6M19 7c3 3 3 7 0 10', command: 'M12 21V9M8 21h8M5 7c4-4 10-4 14 0M8 10c2-2 6-2 8 0M12 9V3',
-  role: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', money: 'M12 3v18M16 7c0-2-8-2-8 1s8 2 8 5-8 3-8 1', supply: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5',
+  role: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', zones: 'M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8M3 13h8v8', zone: 'M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8M3 13h8v8', money: 'M12 3v18M16 7c0-2-8-2-8 1s8 2 8 5-8 3-8 1', supply: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5',
   cond: 'M14 6a4 4 0 0 0 4 6l-8 8-4-4 8-8a4 4 0 0 0 6-4l-3 3-3-1-1-3z', crew: 'M12 4a3 3 0 1 0 0 6 3 3 0 1 0 0-6M5 20c0-4 3-7 7-7s7 3 7 7', watch: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6',
   none: 'M5 5l14 14M19 5 5 19', res: 'M12 3l6 8-6 10-6-10zM6 11h12', routes: 'M4 18c3-9 13-9 16 0M4 18a1.5 1.5 0 1 0 0 .1M20 18a1.5 1.5 0 1 0 0 .1M12 11v.1',
 };
 const icon = k => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[k] || ''}"/></svg>`;
-function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[3]; return subs.filter(k => B[k] && !B[k].fixed).map(k => [k, B[k]]); }
+function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[3]; return subs.filter(k => B[k] && !B[k].fixed && !GROWS.has(k)).map(k => [k, B[k]]); }   // everyday buildings only grow in zones
 // what a building is for, in a few words, from what it does
 function whyOf(k) {
   const d = B[k], m = [], cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
@@ -229,8 +229,9 @@ function buildBar() {
   const items = groupItems(group), G = GROUPS.find(x => x[0] === group);
   const lines = group === 'roads' ? ['road1', 'road2', 'unroad', 'clear'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
+  if (group === 'zones') { zonesBar(G, found, fm); return; }
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
-  const head = `<div class="bi-head"><b>${G[1]}</b><span>${esc(G[2])}</span><span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are placed.</em>` : ''}</div>`;
+  const head = `<div class="bi-head"><b>${G[1]}</b><span>${esc(G[2])}</span><span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
   $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
     + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
@@ -241,11 +242,12 @@ function buildBar() {
   for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; }
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); audio.play('click'); };
-$('b-items').onclick = e => { const sd = e.target.closest('[data-std]'); if (sd && !sd.closest('.bi')) { const k = +sd.dataset.std, lk = sim.stdLock(k); if (lk) { flash(lk + '.'); audio.play('deny'); return; } sim.setStd(k); buildBar(); audio.play('click'); return; } if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
+$('b-items').onclick = e => { const chn = e.target.closest('[data-chain]'); if (chn) { sim.setChain(chn.dataset.chain || null); buildBar(); audio.play('click'); return; } const sd = e.target.closest('[data-std]'); if (sd && !sd.closest('.bi')) { const k = +sd.dataset.std, lk = sim.stdLock(k); if (lk) { flash(lk + '.'); audio.play('deny'); return; } sim.setStd(k); buildBar(); audio.play('click'); return; } if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
   if (b.dataset.snap) return tip('<b>Snapping</b><br>GRID: ends on tile centres. 45°: straight lines at 45-degree steps, whole tiles long. FREE: anywhere. Ends always join existing roads and walls. G switches.', e.clientX, e.clientY - 12, true);
-  const k = b.dataset.b; if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
+  const k = b.dataset.b; if (k.startsWith('zone:')) return tip(k === 'zone:' ? '<b>Unzone</b><br>Drag over the ground to clear zoning.' : `<b>${ZONES[k.slice(5)].name}</b><br>${esc(ZONES[k.slice(5)].desc)}`, e.clientX, e.clientY - 12, true);
+  if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
   const d = B[k], lk = sim.locked(k), cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
   const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${cp(d.beds)} votes` : '', d.eat ? `feeds ${cp(d.eat)}` : '', d.slots ? `trains ${cp(d.slots)} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a day`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
@@ -289,6 +291,7 @@ $('design').onclick = e => {
   if (d || p) { audio.play('click'); designPanel(); if (hover) view.setGhost(tool, hover.tx, hover.tz, hover.rot, sim.canPlace(tool, hover.tx, hover.tz, hover.rot, sp).ok, sp); }
 };
 function pickTool(k) {
+  if (k.startsWith('zone:')) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showPlots(null); buildBar(); if (tool) flash(`Drag over the ground to ${k === 'zone:' ? 'clear zoning' : 'paint ' + ZONES[k.slice(5)].name}. Along roads is where things grow.`); return; }
   if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
@@ -301,6 +304,25 @@ function hideTip() { $('tip').classList.add('hidden'); }
 let flashT = 0;
 function flash(text) { const top = $('build').getBoundingClientRect().top || innerHeight - 170; tip(`<span class="warn">${esc(text)}</span>`, innerWidth / 2, top - 10, true); flashT = 2.2; }
 
+// ---------------------------------------------------------------- zones: the brushes, what each zone grows, and the demand
+const DEMAND = [['bunks', 'BUNKS'], ['seats', 'MESS SEATS'], ['latrines', 'LATRINES'], ['storage', 'STORAGE'], ['shops', 'SHOPS']];
+function demandBars(d) {
+  if (!d) return '<span class="fine">Demand is worked out every hour.</span>';
+  return DEMAND.map(([k, n]) => `<span class="dm" title="${d[k] ? `Short by ${d[k]}${k === 'bunks' ? ` (jobs for ${d.jobs})` : ''}` : 'Enough for now'}"><i>${n}</i><b><u style="width:${Math.round(d.bars[k] * 100)}%"></u></b></span>`).join('');
+}
+function zonesBar(G, found, fm) {
+  const d = sim.dem, ch = sim.chainNow(), lockedChain = sim.b.some(b => B[b.type].chain);
+  const stdRow = `<span class="bi-std"><span>GROW AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>`;
+  const chainSel = lockedChain ? `<span class="bi-chain">FRANCHISE <b>${B[ch].name}</b></span>` : `<span class="bi-chain">FRANCHISE <select id="z-chain" title="The one chain your Commerce zone grows (one per base)">${['', ...CHAINS].map(k => `<option value="${k}" ${ch === (k || null) ? 'selected' : ''}>${k ? B[k].name : 'None'}</option>`).join('')}</select></span>`;
+  const head = `<div class="bi-head" title="${esc(G[2])}"><b>${G[1]}</b><span class="bi-dem">${demandBars(d)}</span>${chainSel}${stdRow}</div>`;
+  const card = k => {
+    const z = ZONES[k], note = sim.growNote?.[k], n = sim.zoneCount(k);
+    const what = z.grows.length ? 'Grows ' + z.grows.map(t => t === 'chain' ? (ch ? B[ch].name : 'your franchise') : B[t].name).join(', ') : z.fits ? 'Placed here, works 5% better' : 'Kept clear';
+    return `<button class="bi zone ${tool === 'zone:' + k ? 'on' : ''}" data-b="zone:${k}" type="button" title="${esc(z.desc)}"><span class="th ic-th" style="background:${z.col}33;border-color:${z.col}"><i class="zsw" style="background:${z.col}"></i></span><b>${z.name}</b><span class="why">${esc(what)}</span><span class="cost">${n ? n + ' tiles' : 'none painted'}${note && z.grows.length ? ' · ' + esc(note) : ''}</span></button>`;
+  };
+  $('b-items').innerHTML = head + `<div class="bi-row">${ZKEYS.map(card).join('')}<button class="bi zone ${tool === 'zone:' ? 'on' : ''}" data-b="zone:" type="button"><span class="th ic-th">${icon('none')}</span><b>Unzone</b><span class="why">Drag to clear zoning. Buildings already up stay.</span><span class="cost">FREE</span></button></div>`;
+  const sel = $('z-chain'); if (sel) sel.onchange = () => { sim.setChain(sel.value || null); sim.growStep(); buildBar(); audio.play('click'); };
+}
 // ---------------------------------------------------------------- engineers: what a job or a crew is doing, in words
 function buildState(b) {
   if (!sim.secure()) return 'waiting: the landing zone is being swept';
@@ -324,6 +346,7 @@ function selPanel() {
   const d = B[b.type], bits = [];
   if (sim.hasStd(b.type)) { const k = sim.stdOf(b); bits.push(`<div class="kv"><span>STANDARD</span><b>${STD[k].name} <small>(${STD[k].doctrine.toLowerCase()})</small></b></div>`); }
   if (!b.done || b.upg) { const pr = b.done ? b.upg.prog : b.prog; bits.push(`<div class="kv"><span>${b.done ? 'UPGRADE TO ' + STD[b.upg.to].name.toUpperCase() : 'CONSTRUCTION'}</span><b>${Math.round(pr * 100)}%</b></div><div class="meter"><i style="width:${pr * 100}%;background:var(--yellow)"></i></div><div class="kv"><span>ENGINEERS</span><b>${esc(buildState(b))}</b></div>`); }
+  { const notes = []; if (b.grown) notes.push(`Grew in ${ZONES[b.grown].name}`); if (B[b.type].beds && b.noisy) notes.push('<span class="warn">Noisy neighbours: morale suffers</span>'); if (B[b.type].beds && b.hazard) notes.push('<span class="warn">Fuel or a generator next door: a hazard</span>'); if (b.nearPad) notes.push(`Near a landing pad: holds ${Math.round((GROW.padBonus - 1) * 100)}% more`); if (sim.zoneFit(b) > 1) notes.push('In its own zone: works 5% better'); if (notes.length) bits.push(`<div class="kv"><span>ZONE</span><b>${notes.join('<br>')}</b></div>`); }
   if (b.type === 'yard') { const cs = sim.crews.filter(c => c.yard === b.id); bits.push(`<div class="kv"><span>CREW</span><b>${cs.length ? cs.map(c => `${c.name}: ${crewState(c)}`).join('; ') : b.done ? `waiting for ${3} recruits` : 'none yet'}</b></div>`); }
   if (!b.done) { /* construction shown above */ }
   else {
@@ -393,10 +416,12 @@ const ORDERS = [
   ['Choose where the HQ stands: select it and press MOVE HQ, or just start building here', s => s.hqSet || !s.unsettled()],
   ['Wait for the security detachment to sweep the landing zone: the engineers start building once it is secure', s => s.secure()],
   ['Draw a road from your HQ (ROADS, drag). Stay inside the dashed charter line', s => s.net.segs.some(q => q.k !== 'wall')],
-  ['Lay the foundation along it: Landing Pad, Supply Depot, Barracks, Mess Hall and Firing Range', s => s.founded()],
+  ['Paint a Life Support zone and a Logistics zone along the road (ZONES, drag): barracks, a mess, latrines and a depot grow there', s => s.zoneCount('life') > 0 && s.zoneCount('logi') > 0],
+  ['Lay the foundation: place a Landing Pad and a Firing Range; the zones grow the Supply Depot, Barracks and Mess Hall', s => s.founded()],
   ['Have the engineers clear a patch of scrub for salvage (ROADS, CLEAR SCRUB)', s => (s.stats.cleared || 0) >= 6],
   ['Build an Engineer Yard (LOGISTICS): a third crew means three jobs at once', s => s.crews.some(c => c.yard)],
   ['Close a wall round the base (DEFENCE, Wall), with a road through it for a gate', s => !s.open && s.gates.length > 0],
+  ['Paint a Civic and Commerce zone and pick a franchise: shops grow as the base fills up', s => s.zoneCount('comm') > 0],
   ['Upgrade a tent to a prefab: select it and press UPGRADE', s => s.b.some(b => b.done && s.hasStd(b.type) && b.type !== 'hq' && s.stdOf(b) >= 1)],
   ['Ship trained troopers to the front: transports leave the pad at 16:00', s => s.stats.deployed > 0],
   ['Deal with the desk: answer a request or grade a trooper\'s file (here, or DESK)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
@@ -424,8 +449,9 @@ const IVIEWS = [
   ['supply', 'SUPPLY', 'Goods a building runs on, full (green) to empty (red). Storage is blue, deeper the fuller.'],
   ['cond', 'CONDITION', 'Repair: green is sound, red is falling apart. Upkeep keeps it up.'],
   ['crew', 'CREW', 'Crew at their posts: green full, amber short, red none. Grey needs no crew.'],
+  ['zone', 'ZONING', 'Zones painted on the ground, and buildings in the colour of the zone they grew in or stand in. Red outline: bunks next to noise or fuel.'],
 ];
-let iview = 'none', ivT = 0;
+let iview = 'none', ivT = 0, ivT2 = 0;
 const mix = (a, b, t) => { const p = x => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16)), A = p(a), Bc = p(b); return '#' + A.map((v, i) => Math.round(v + (Bc[i] - v) * Math.max(0, Math.min(1, t))).toString(16).padStart(2, '0')).join(''); };
 const ramp = t => t < 0.5 ? mix('#ff4d3a', '#f5c447', t * 2) : mix('#f5c447', '#3fe07a', (t - 0.5) * 2);
 // a building's direct money per day, in supplies: earnings less upkeep, wages and the goods it burns
@@ -447,6 +473,7 @@ function ivColor(b, mode) {
   if (mode === 'power') return d.pw > 0 ? '#ffd23a' : d.pw < 0 ? (s.power.ratio >= 1 && !b.off ? '#7fe9e0' : '#ff4d3a') : '#5a625e';
   if (mode === 'supply') { if (d.need) return ramp(Math.min(...Object.keys(d.need).map(g => (b.stock[g] || 0) / d.need[g]))); if (d.store) { const cap = Object.values(d.store).reduce((a, x) => a + x, 0), n = Object.keys(d.store).reduce((a, g) => a + (b.stock[g] || 0), 0); return mix('#24364a', '#5aa8ff', n / cap); } return '#5a625e'; }
   if (mode === 'cond') return ramp(b.cond / 100);
+  if (mode === 'zone') { if ((b.noisy || b.hazard) && B[b.type].beds) return '#ff4d3a'; const k = b.grown || sim.zoneKey(sim.zoneAt(Math.floor(b.x + b.w / 2), Math.floor(b.z + b.d / 2))); return k ? ZONES[k].col : '#5a625e'; }
   if (mode === 'crew') return d.crew ? (b.crew >= d.crew ? '#3fe07a' : b.crew > 0 ? '#f5c447' : '#ff4d3a') : '#5a625e';
   return null;
 }
@@ -455,6 +482,7 @@ function ivLegend() {
   if (iview === 'none') { el.classList.add('hidden'); return; }
   let keys = '';
   if (iview === 'res') keys = [['#aa50ff', 'E-710 SEEP'], ['#e6783c', 'ORE'], ['#4696ff', 'WATER'], ['#3a3a40', 'ROCK']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
+  if (iview === 'zone') keys = ZKEYS.map(k => `<span><i style="background:${ZONES[k].col}"></i>${ZONES[k].short}</span>`).join('') + `<span><i style="background:#ff4d3a"></i>NOISY OR HAZARDOUS BUNKS</span><p>Demand: ${esc(sim.demandText())}.</p>`;
   if (iview === 'routes') keys = GKEYS.map(g => `<span><i style="background:${GOODS[g].color}"></i>${GOODS[g].name.toUpperCase()}</span>`).join('');
   if (iview === 'role') keys = GROUPS.filter(g => g[0] !== 'roads').map(g => `<span><i style="background:${ROLE_COL[g[0]]}"></i>${g[1]}</span>`).join('');
   if (iview === 'money') { const list = sim.b.filter(b => b.done).map(b => [b, moneyOf(b)]).sort((a, b) => a[1] - b[1]); const top = list.slice(-3).reverse(), bot = list.slice(0, 3);
@@ -606,6 +634,8 @@ function hud() {
     + `<div class="sfoot">Allocation for ${['1st', '2nd', '3rd', '4th'][s.rank]}: ~${fmt(C.ALLOC.base * C.ALLOC.mult[s.rank])} SUP<br><span title="Planet market indices: how hard every base is chasing each Ministry. High means its favour (and its goods) cost more.">INDEX ${idx}</span></div>`;
   rows.forEach((r, i) => { const c = $('stand').querySelector(`[data-logo="${i}"]`); c.outerHTML = `<img src="${logoImg(r.logo)}" width="22" height="22" alt="">`; });
   taskBoard();
+  view.zoneStrong = isZone(tool) || iview === 'zone';
+  if (group === 'zones' && buildOpen && (ivT2 = (ivT2 || 0) + 1) % 20 === 0) buildBar();
   // the build bar's affordability, and the selection
   for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < s.costOf(k, specOf(k))); b.classList.toggle('lock', !!s.locked(k)); }
   if (selId) selPanel();
@@ -972,7 +1002,10 @@ $('me-import').onclick = async () => {
 
 // ---------------------------------------------------------------- pointer and touch
 const cv = $('view'), ptrs = new Map();
-let drag = null, pinch = null, roadDrag = null;
+let drag = null, pinch = null, roadDrag = null, zoneDrag = null;
+const isZone = t => !!t && t.startsWith('zone:');
+const tileOf = e => { const p = view.pick(e.clientX, e.clientY); return [Math.floor(p.x), Math.floor(p.z)]; };
+function zoneRect(a, b) { const out = []; for (let z = Math.min(a[1], b[1]); z <= Math.max(a[1], b[1]); z++) for (let x = Math.min(a[0], b[0]); x <= Math.max(a[0], b[0]); x++) out.push([x, z, 1]); return out; }
 const isRoad = t => !!RTOOLS[t] && !RTOOLS[t].area;
 function lineEnd(e) {   // the snapped end of the line under the pointer
   const p = view.pick(e.clientX, e.clientY), k = RTOOLS[tool].k || 'dirt';
@@ -1007,6 +1040,7 @@ cv.addEventListener('pointerdown', e => {
   if (!playing) return;
   cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; drag = null; return; }
+  if (isZone(tool) && e.button === 0) { zoneDrag = tileOf(e); drag = null; view.showPlots(zoneRect(zoneDrag, zoneDrag)); return; }
   if (isRoad(tool) && e.button === 0) { if (tool !== 'unroad') roadDrag = lineEnd(e); else roadDrag = { x: 0, z: 0, bull: true }; drag = null; return; }
   drag = { x: e.clientX, y: e.clientY, btn: e.button, moved: false };
 });
@@ -1026,6 +1060,7 @@ cv.addEventListener('pointermove', e => {
     }
   }
   if (photo) return;
+  if (isZone(tool)) { const t = tileOf(e); if (zoneDrag) { view.showPlots(zoneRect(zoneDrag, t)); if (e.pointerType === 'mouse') tip(`${Math.abs(t[0] - zoneDrag[0]) + 1} × ${Math.abs(t[1] - zoneDrag[1]) + 1}`, e.clientX, e.clientY); } else if (e.pointerType === 'mouse') { const n = sim.zoneAt(t[0], t[1]); tip(n ? ZONES[sim.zoneKey(n)].name : 'Not zoned', e.clientX, e.clientY); } return; }
   if (tool === 'clear') { const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), i = tz * sim.N + tx, o = sim.clearOrderAt(i);
     if (e.pointerType === 'mouse') tip(o ? `Ordered: ${o.tiles.length} tiles. Click to cancel` : sim.scrub?.[i] ? `Clear this patch of ${sim.scrubName()}` : 'Nothing to clear here', e.clientX, e.clientY); return; }
   if (isRoad(tool)) roadPreview(e);
@@ -1041,6 +1076,12 @@ cv.addEventListener('pointermove', e => {
 function up(e) {
   if (!playing) return;
   ptrs.delete(e.pointerId);
+  if (zoneDrag) {
+    const a = zoneDrag, t = tileOf(e); zoneDrag = null; view.showPlots(null); if (flashT <= 0) hideTip();
+    const r = sim.paintZone(a[0], a[1], t[0], t[1], tool.slice(5) || null);
+    if (r.ok) { audio.play('place'); sim.growStep(); buildBar(); } else { flash('Nothing to change there: zones go on open ground inside the charter.'); audio.play('deny'); }
+    return;
+  }
   if (roadDrag) {
     let ok;
     if (tool === 'unroad') { const p = view.pick(e.clientX, e.clientY); ok = sim.removeLine(p.x, p.z); if (!ok) flash('No road or wall there.'); }

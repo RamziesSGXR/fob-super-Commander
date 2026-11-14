@@ -20,6 +20,7 @@ export function demoSim() {
     s.drawLine(a, e, k);
   }
   for (const b of s.b) { if (B[b.type].store) b.stock = { ...b.stock, ...B[b.type].store }; if (B[b.type].need) b.stock = { ...b.stock, ...B[b.type].need }; }
+  s.paintZone(m - 15, m - 9, m - 2, m - 2, 'life'); s.paintZone(m + 2, m - 1, m + 11, m + 3, 'logi'); s.paintZone(m - 15, m + 9, m - 10, m + 12, 'comm'); s.paintZone(m + 2, m - 11, m + 13, m - 6, 'train');
   for (let i = 0; i < 30; i++) s.addTroop(i % 2 ? 100 : 40);
   s.supplies = 2000; s.log = [];
   return s;

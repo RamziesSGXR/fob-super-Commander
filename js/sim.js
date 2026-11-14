@@ -6,13 +6,14 @@
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
 import { FOUNDATION, EARLY } from './config.js';
-import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD } from './config.js';
+import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
 import { makeSite, biomeOf, GROUND, RW, RH, survey, regionKind, placeName } from './site.js';
 import { writeReport } from './reports.js';
 import { Build } from './build.js';
+import { Zones } from './zones.js';
 import { Market, bindMarket } from './market.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
@@ -73,7 +74,7 @@ export class Sim {
     const m = this.N / 2;
     // you land with a command post, a flag and open ground: the roads, the wall, the pad and everything else are yours to lay out
     this.std = opts.flat ? 2 : 0;   // the standard the build menu is set to: tents, to start (a flat test map keeps the old base)
-    this.scrub = this.makeScrub(); this.crewsInit();
+    this.scrub = this.makeScrub(); this.crewsInit(); this.zone = new Uint8Array(this.N * this.N); this.chain = null;
     this.place('hq', m - 3, m - 3, 0, true, { std: this.std });
     this.place('seflag', m - 5, m + 2, 0, true);
     this.net = emptyNet();
@@ -289,12 +290,14 @@ export class Sim {
     const d = B[type]; if (!d) return { ok: false, why: 'Unknown building' };
     if (d.fixed) return { ok: false, why: 'Cannot be built' };
     if (d.unique && this.count(type)) return { ok: false, why: 'Only one allowed' };
+    if (GROWS.has(type) && !spec?.grow) return { ok: false, why: `Grows by itself in a ${ZONES[GROWS.get(type)].name} zone: paint one from the ZONES bar` };
     if (d.chain) { const other = this.b.find(b => B[b.type].chain && b.type !== type); if (other) return { ok: false, why: `Exclusive franchise agreement with ${B[other.type].name}` }; }
     const lk = this.locked(type); if (lk) return { ok: false, why: 'Needs ' + lk.join(' and ') };
     if (this.hasStd(type)) { const sl = this.stdLock(this.stdFor(type, spec)); if (sl) return { ok: false, why: sl + ': build it as a tent or prefab' }; }
     if (this.supplies < this.costOf(type, spec)) return { ok: false, why: 'Not enough supplies' };
     if (d.atGate && !(this.gates || []).some(g => Math.hypot(g.x - x - 1, g.z - z - 0.5) < 4.5)) return { ok: false, why: 'Stands at a gate: within four tiles of one' };
     const dz = spec?.design || 0, f = this.fits(type, x, z, rot, dz); if (!f.ok) return f;
+    if (this.inBuffer(type, x, z, rot, dz)) return { ok: false, why: 'Buffer zone: kept clear' };
     if (d.deposit) { const [w, dd] = dims(type, rot, dz); let on = 0; for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) if (this.terr?.[(z + j) * this.N + x + i] === d.deposit) on++; if (on < 2) return { ok: false, why: d.deposit === 3 ? 'Must stand on an E-710 seep' : 'Must stand on an ore field' }; }
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
     if (!LOOSE.has(type) && !this.frontage(type, x, z, rot, dz)) return { ok: false, why: 'Needs a road out front: build along a road' };
@@ -432,7 +435,7 @@ export class Sim {
     if (!spec || !this.designable(type)) return d.cost;
     return Math.round(d.cost * DESIGNS[spec.design || 0].cost + (spec.parts || []).reduce((a, p) => a + (PARTS[p]?.cost || 0), 0));
   }
-  storeCap(b, g) { return b.done && B[b.type].store ? Math.floor((B[b.type].store[g] || 0) * this.capF(b) * (this.hasTech('shelving') ? 1.25 : 1)) : 0; }
+  storeCap(b, g) { return b.done && B[b.type].store ? Math.floor((B[b.type].store[g] || 0) * this.capF(b) * (b.nearPad ? GROW.padBonus : 1) * (this.hasTech('shelving') ? 1.25 : 1)) : 0; }
   needCap(b, g) { return b.done && !b.off && B[b.type].need ? B[b.type].need[g] || 0 : 0; }
   stored(g) { return this.b.reduce((a, b) => a + (this.storeCap(b, g) ? b.stock[g] : 0), 0); }
   storage(g) { return this.b.reduce((a, b) => a + this.storeCap(b, g), 0); }
@@ -525,6 +528,8 @@ export class Sim {
       unpaid: this.unpaidDays ? -Math.min(10, 4 + this.unpaidDays) : 0,
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
+      noise: -Math.round(8 * (this.adj?.noise || 0)),
+      hazard: -Math.min(6, 2 * (this.adj?.hazard || 0)),
     };
     if (this.commit) this.mor.commit = 2 * this.commitF('tru');
     this.moraleTarget = clamp(Object.values(this.mor).reduce((a, b) => a + b, 0), 0, 100);
@@ -536,7 +541,7 @@ export class Sim {
     const d = B[b.type]; if (!b.done || b.off) return 0;
     const pw = d.pw < 0 ? this.power.ratio : 1;
     const slow = this.slowF ?? 1;
-    return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100) * slow * (b.upg ? 0.5 : 1);
+    return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100) * slow * (b.upg ? 0.5 : 1) * this.zoneFit(b);
   }
 
   // ---------------------------------------------------------------- the clock
@@ -582,6 +587,7 @@ export class Sim {
     this.mood *= 0.985;
     this.deskHour(h);
     if (h === 10) this.callDay();
+    this.adjacency(); this.growStep();   // zones (js/zones.js)
     this.marketHour(h);
     this.fort = this.fortify();
   }
@@ -1339,8 +1345,8 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 7; o.scrubS = this.packScrub();
+    for (const k of Object.keys(this)) if (!['zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    o.rngS = this.rng.s; o.v = 8; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -1361,6 +1367,7 @@ export class Sim {
     this.scrub = this.unpackScrub(s.scrubS); delete this.scrubS;   // bases from before 0.13 have none
     if (!this.crews) this.crewsInit();
     this.std ??= this.stage >= 1 ? 2 : 1;
+    this.zone = this.unpackZones(s.zoneS); delete this.zoneS; this.chain ??= this.b.find(b => B[b.type]?.chain)?.type || null;   // bases from before 0.14 have no zones
     this.rebuildNet();
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
@@ -1369,7 +1376,7 @@ export class Sim {
     this.flow.today ||= this.newDay(); this.flow.days ||= []; this.loans ||= []; this.calls ||= []; this.diff ||= 'veteran'; this.stage ??= 2;   // bases from before charters keep all their ground
     for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
-    this.recalc(); this.tick(); this.marketInit();
+    this.adjacency(); this.recalc(); this.tick(); this.marketInit();
     if (!this.orders.length) this.newOrder();
   }
   // bases saved before the supply lines: pumps and plants go (refunded), E-710 and shells become fuel and ammo at the HQ
@@ -1422,4 +1429,4 @@ export class Sim {
     for (const x of [m, m + 1]) for (let z = this.N - 2; z > 2; z--) { if (this.occ[z * this.N + x]) break; this.roads[z * this.N + x] = 1; }
   }
 }
-Object.assign(Sim.prototype, Market, Build); bindMarket(B);
+Object.assign(Sim.prototype, Market, Build, Zones); bindMarket(B);

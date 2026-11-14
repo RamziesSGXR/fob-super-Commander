@@ -3,7 +3,7 @@
 // "bot" builds and plays like a sensible commander; "idle" builds nothing; "lapse" plays the first half, then walks away.
 import { Sim, LOOSE } from '../js/sim.js';
 import { REQUESTS, trueGrade } from '../js/desk.js';
-import { B, C, GKEYS, TECH } from '../js/config.js';
+import { B, C, GKEYS, TECH, GROWS } from '../js/config.js';
 
 const weeks = +(process.argv[2] || 12), mode = process.argv[3] || 'bot', seed = +(process.argv[4] || 7);
 const s = new Sim({ seed });
@@ -51,16 +51,20 @@ function found() {   // the bot's opening: a paved spine and cross streets, a pa
   L(lo, lo, hi, lo, 'wall'); L(hi, lo, hi, hi, 'wall'); L(hi, hi, lo, hi, 'wall'); L(lo, hi, lo, lo, 'wall');
   L(m + 1, s.box()[1] - 2, m + 1, s.box()[1] + 1, 'paved');
   build('pad', [m + 5, m - 3]);
+  // zones: bunks, mess and latrines to the west, storage by the pad, shops to the south-west; the rest is placed by hand
+  s.paintZone(m - 12, m - 7, m - 1, m + 8, 'life'); s.paintZone(m + 2, m - 7, m + 12, m - 1, 'logi'); s.paintZone(m - 12, m + 9, m - 1, m + 12, 'comm');
+  s.setChain('cola');
 }
 function bot() {
   if (!founded) found();
-  const want = plan[step];
-  if (want) {
-    const d = B[want], waitable = (d.needs || []).every(t => s.count(t)) && (!d.tech || s.hasTech(d.tech) || s.tech.cur === d.tech || s.techState(d.tech) === 'open');
+  while (GROWS.has(plan[step])) step++;   // everyday buildings grow in the zones by themselves
+  const want = plan[step], housing = s.dem?.bunks > 6 && /supplies/.test(s.growNote?.life || '');   // let the bunks grow first
+  if (want && !housing) {
+    const d = B[want], waitable = (d.needs || []).every(t => s.count(t) || GROWS.has(t)) && (!d.tech || s.hasTech(d.tech) || s.tech.cur === d.tech || s.techState(d.tech) === 'open');
     if (s.locked(want) && !waitable) step++;
     else if (!s.locked(want) && build(want, ['lookout', 'turret', 'flood'].includes(want) ? (k => [k ? s.box()[0] + 3 : s.box()[1] - 3, s.box()[1] - 3])(s.count(want) % 2) : want === 'barracks' || want === 'hab' ? [m - 10, m] : [m + 2, m + 2])) step++;
   } else if (s.power.ratio < 1) build('solar');
-  else if (s.troops.length > s.beds - 3) build('hab', [m - 10, m]);
+  else if (s.troops.length > s.beds - 3 && s.week > 3 && !s.b.some(b => b.grown === 'life' && !b.done)) s.paintZone(m - 12, m - 10 - s.week, m - 1, m - 8, 'life');   // more room for bunks
   if (s.power.ratio < 1 && s.supplies > 300) build('solar');
   if (s.nextStage() && s.stageCheck().every(c => c.ok)) s.promote();
   for (const c of s.calls) if (!c.acc && s.have(c.g) > c.n * 1.5) s.answer(c.id, true);
@@ -98,6 +102,7 @@ for (let i = 0; i < weeks * C.WEEK * 10; i++) {
       + ` ${pad(s.b.length, 4)} ${pad(s.stats.deployed, 7)} ${pad(s.stats.trained, 7)} ${pad(s.hunger.toFixed(2), 7)} ${pad(s.audit ? s.audit.lines : '-', 5)}  ${GKEYS.map(g => Math.round(s.amount(g))).join('/').padStart(13)} ${s.power.made}/${s.power.used}`);
   }
 }
+if (process.env.DUMP) console.log(s.b.map(b => b.type + (b.done ? "" : "*") + (b.grown ? "@" + b.grown : "")).join(" "), JSON.stringify(s.growNote), JSON.stringify(s.dem));
 const j = JSON.stringify(s.save());
 if (process.env.SAVEOUT) (await import('node:fs')).writeFileSync(process.env.SAVEOUT, j);
 const s2 = new Sim({ state: JSON.parse(j) });

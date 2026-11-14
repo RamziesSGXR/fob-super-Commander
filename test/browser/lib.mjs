@@ -28,7 +28,7 @@ export async function foundation(p, days = 6) {
     L(lo + 3, m + 0.5, hi - 3, m + 0.5, 'paved'); L(m + 0.5, lo + 3, m + 0.5, hi - 3, 'paved');
     for (const t of ['pad', 'depot', 'barracks', 'mess', 'range', 'gen', 'barracks', 'potty']) {
       const tiles = s.plotTiles();
-      for (let i = 0; i < 80; i++) { const [x, z] = tiles[(i * 37) % tiles.length]; const pl = s.plotFor(t, x, z); if (pl && s.canPlace(t, pl.tx, pl.tz, pl.rot).ok) { const b = s.place(t, pl.tx, pl.tz, pl.rot); b.done = true; b.prog = 1; break; } }
+      for (let i = 0; i < 80; i++) { const [x, z] = tiles[(i * 37) % tiles.length]; const pl = s.plotFor(t, x, z); if (pl && s.canPlace(t, pl.tx, pl.tz, pl.rot, { grow: true }).ok) { const b = s.place(t, pl.tx, pl.tz, pl.rot, false, { grow: true }); b.done = true; b.prog = 1; break; } }
     }
     for (let i = 0; i < days * 240; i++) s.step(0.5);
   }, days);

@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.13.1';
+export const VERSION = '0.14';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -127,6 +127,7 @@ export const MIN = {
 // the build menu, by what a building is for: [key, label, what the section is for, the buildings in it]
 export const GROUPS = [
   ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
+  ['zones', 'ZONES', 'Paint zones along roads: bunks, mess halls, latrines, storage and shops grow in them by themselves as the base needs them, at the standard picked here.', []],
   ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'yard', 'comms', 'mast']],
   ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
   ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
@@ -399,3 +400,33 @@ export const SCRUB = { t: 2.5, yield: 5, keep: 7, patch: 24,
 // the landing: the SEAF security detachment sweeps the ground round the landing zone before the engineers start.
 // dur: seconds (about eight hours). salvage: supplies found
 export const SWEEP = { dur: 42, salvage: [60, 140] };
+
+// ---------------------------------------------------------------- zones (0.14, design §8, after doctrine's functional areas)
+// Paint zones along roads. Everyday buildings grow in them by themselves as the base needs them (and only there); the rest
+// you place by hand, and they work a little better standing in their own zone (fits). Buffer is kept clear.
+// n: the number stored per tile. col: its colour on the ground. grows: what the zone builds itself ('chain' = your franchise)
+export const ZONES = {
+  life:   { n: 1, name: 'Life Support', short: 'LIFE', col: '#4fb4ff', grows: ['barracks', 'block', 'hab', 'mess', 'potty'],
+            desc: 'Where people live, eat and wash. Bunks, mess halls and latrines grow here as the base needs them. Keep it away from noise and fuel.' },
+  logi:   { n: 2, name: 'Logistics', short: 'LOGI', col: '#f0c84a', grows: ['depot', 'fueldepot', 'shed'],
+            desc: 'Storage. Depots and fuel depots grow here when the base runs short of room. Near a landing pad they hold more.' },
+  comm:   { n: 3, name: 'Civic and Commerce', short: 'COMM', col: '#59e08a', grows: ['vend', 'club', 'chain'],
+            desc: 'Vending machines, the Workers\' Club and your franchise grow here as the base fills up.' },
+  train:  { n: 4, name: 'Training', short: 'TRAIN', col: '#ff9a3a', grows: [], fits: ['range', 'course', 'parade', 'lecture'],
+            desc: 'Ranges, courses, parade grounds and halls you place here work 5% better. Noisy: keep it clear of Life Support.' },
+  ops:    { n: 5, name: 'Operations', short: 'OPS', col: '#c98bff', grows: [], fits: ['patrol', 'armory', 'command', 'warroom', 'comms', 'mast', 'lab', 'vault', 'eob', 'vbay', 'hdbarracks', 'medbay', 'truth', 'brig', 'cryo', 'yard'],
+            desc: 'Command, comms, patrols and research. Buildings you place here work 5% better.' },
+  ind:    { n: 6, name: 'Industry', short: 'IND', col: '#c8735a', grows: [], fits: ['gen', 'solar', 'motorpool', 'extractor', 'mine', 'factory'],
+            desc: 'Power, vehicles and industry. Buildings you place here work 5% better. Noisy and hazardous: keep it clear of Life Support.' },
+  buffer: { n: 7, name: 'Buffer', short: 'BUFFER', col: '#9aa3a0', grows: [],
+            desc: 'Kept clear: nothing can be built or grow here. Use it for standoff between the wall, the fuel and the bunks.' },
+};
+export const ZKEYS = Object.keys(ZONES);   // index + 1 = n
+export const CHAINS = ['burger', 'chicken', 'cola'];
+// every type that only appears through zones, and the zone it grows in
+export const GROWS = new Map(Object.entries(ZONES).flatMap(([k, z]) => z.grows.flatMap(t => t === 'chain' ? CHAINS.map(c => [c, k]) : [[t, k]])));
+// growth: checked every game hour; never spends the base below `reserve` supplies; one building at a time per zone
+export const GROW = { reserve: 500, head: 0.25, shop: 10, fit: 1.05, pad: 6, padBonus: 1.15 };
+// what disturbs housing nearby (tiles of reach): noise costs morale, hazards cost morale and worry the inspector
+export const NOISE = { range: 4, course: 3, parade: 3, motorpool: 3, gen: 3, vbay: 3, factory: 5, mine: 4, pad: 3 };
+export const HAZARD = { fueldepot: 3, gen: 2, armory: 3, extractor: 3 };
