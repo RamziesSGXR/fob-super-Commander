@@ -335,14 +335,14 @@ function buildBar() {
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
   const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A WATCH${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
   const head = `<div class="bi-head"><b>${G[1]}</b><span>${group === 'power' ? '' : esc(G[2])}</span>${utilLine}<span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
-  $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
-    + lines.map(k => { const d0 = RTOOLS[k], lk = d0.k ? sim.equipLock(d0.k) : null, d = lk ? { ...d0, why: lk } : d0; return `<button class="bi road ${tool === k ? 'on' : ''} ${lk ? 'lock' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : k === 'land' ? 'zones' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'land' ? `${sim.held()} / ${Math.min(441, sim.allowance())} HELD` : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
+  $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th"><img data-th="t_snap" data-std="2" alt=""></span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
+    + lines.map(k => { const d0 = RTOOLS[k], lk = d0.k ? sim.equipLock(d0.k) : null, d = lk ? { ...d0, why: lk } : d0; return `<button class="bi road ${tool === k ? 'on' : ''} ${lk ? 'lock' : ''}" data-b="${k}" type="button"><span class="th"><img data-th="t_${k}" data-std="2" alt=""></span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'land' ? `${sim.held()} / ${Math.min(441, sim.allowance())} HELD` : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
       const lk = sim.locked(k), cost = sim.costOf(k, specOf(k)), poor = sim.supplies < cost, fnd = !found && FOUNDATION.includes(k) && fm.includes(k);
       return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}" data-std="${sim.hasStd(k) ? sim.std : 2}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${cost} SUP${d.up ? ` · <i>−${perDay(d.up * (sim.hasStd(k) ? STD[sim.std].up : 1))}/watch</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
     }).join('') + `</div>`;
   // pictures of the buildings, drawn once each by the 3D view
-  for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; }
+  fillThumbs();
 }
 $('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); zoneViewFor(); audio.play('click'); };
 // the ZONES tab flips the map to the zones view (and back when you leave it); where zoning can go is shown while a brush is up
@@ -433,11 +433,12 @@ const TF = [['shift', 'Shift', 'Raise with the left button, lower with the right
   ['paint:1', 'Sand', 'Paint the surface'], ['paint:2', 'Dry ground', 'Paint the surface'], ['paint:3', 'Lush grass', 'Paint the surface'], ['paint:4', 'Dirt', 'Paint the surface'], ['paint:0', 'Unpaint', 'Back to the ground as it was']];
 const PAINTCOL = ['#555', '#cebA8e', '#a8926c', '#608042', '#765c44'];
 let tfR = 3, tfS = 2, tfTarget = null, tfA = null, tfDrag = null, tfAt = null;
+function fillThumbs() { for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; } }
 function landBar(G) {
   const m = v => `${Math.round(v * LAND.TILE_M)} m`;
   const head = `<div class="bi-head" title="${esc(G[2])}"><b>${G[1]}</b><span class="bi-crews">BRUSH <button class="btn" data-tfr="-1" type="button">−</button> ${tfR} <button class="btn" data-tfr="1" type="button">+</button> · STRENGTH <button class="btn" data-tfs="-1" type="button">−</button> ${tfS} <button class="btn" data-tfs="1" type="button">+</button> · LEVEL TO <input id="tf-target" type="number" step="5" value="${tfTarget == null ? '' : Math.round(tfTarget * LAND.TILE_M)}" placeholder="sample" style="width:64px"> M · MOVED ${fmt(Math.round(sim.stats.moved || 0))} · ${TERRA_COST} SUP A UNIT</span></div>`;
-  const card = ([k, n, why]) => `<button class="bi road ${tool === 'tf:' + k ? 'on' : ''}" data-b="tf:${k}" type="button" title="${esc(why)}"><span class="th ic-th">${k.startsWith('paint') ? `<i class="zsw" style="background:${PAINTCOL[+k.slice(6)]}"></i>` : icon('landscape')}</span><b>${n}</b><span class="why">${esc(why)}</span><span class="cost">${k === 'slope' && tool === 'tf:slope' && tfA ? 'NOW CLICK THE END' : k === 'level' && tfTarget != null ? 'TO ' + m(tfTarget) : ''}</span></button>`;
-  $('b-items').innerHTML = head + `<div class="bi-row">${TF.map(card).join('')}</div>`;
+  const card = ([k, n, why]) => `<button class="bi road ${tool === 'tf:' + k ? 'on' : ''}" data-b="tf:${k}" type="button" title="${esc(why)}"><span class="th"><img data-th="t_${k.startsWith('paint') ? 'paint_' + k.slice(6) : 'tf_' + k}" data-std="2" alt=""></span><b>${n}</b><span class="why">${esc(why)}</span><span class="cost">${k === 'slope' && tool === 'tf:slope' && tfA ? 'NOW CLICK THE END' : k === 'level' && tfTarget != null ? 'TO ' + m(tfTarget) : ''}</span></button>`;
+  $('b-items').innerHTML = head + `<div class="bi-row">${TF.map(card).join('')}</div>`; fillThumbs();
   for (const b of $('b-items').querySelectorAll('[data-tfr]')) b.onclick = () => { tfR = Math.max(1, Math.min(12, tfR + +b.dataset.tfr)); buildBar(); };
   for (const b of $('b-items').querySelectorAll('[data-tfs]')) b.onclick = () => { tfS = Math.max(1, Math.min(4, tfS + +b.dataset.tfs)); buildBar(); };
   const ti = $('tf-target'); if (ti) ti.onchange = () => { tfTarget = ti.value === '' ? null : +ti.value / LAND.TILE_M; buildBar(); };
@@ -460,10 +461,10 @@ function zonesBar(G, found, fm) {
   const card = k => {
     const z = ZONES[k], note = sim.growNote?.[k], n = sim.zoneCount(k);
     const what = z.grows.length ? 'Grows ' + z.grows.map(t => t === 'chain' ? (ch ? B[ch].name : 'your franchise') : B[t].name).join(', ') : z.fits ? 'Placed here, works 5% better' : 'Kept clear';
-    return `<button class="bi zone ${tool === 'zone:' + k ? 'on' : ''}" data-b="zone:${k}" type="button" title="${esc(z.desc)}"><span class="th ic-th" style="background:${z.col}33;border-color:${z.col}"><i class="zsw" style="background:${z.col}"></i></span><b>${z.name}</b><span class="why">${esc(what)}</span><span class="cost">${n ? n + ' tiles' : 'none painted'}${note && z.grows.length ? ' · ' + esc(note) : ''}</span></button>`;
+    return `<button class="bi zone ${tool === 'zone:' + k ? 'on' : ''}" data-b="zone:${k}" type="button" title="${esc(z.desc)}"><span class="th" style="box-shadow: inset 0 -3px 0 ${z.col}"><img data-th="t_zone_${k}" data-std="2" alt=""></span><b>${z.name}</b><span class="why">${esc(what)}</span><span class="cost">${n ? n + ' tiles' : 'none painted'}${note && z.grows.length ? ' · ' + esc(note) : ''}</span></button>`;
   };
-  $('b-items').innerHTML = head + `<div class="bi-row">${ZKEYS.map(card).join('')}<button class="bi zone ${tool === 'zone:' ? 'on' : ''}" data-b="zone:" type="button"><span class="th ic-th">${icon('none')}</span><b>Unzone</b><span class="why">Drag to clear zoning. Buildings already up stay.</span><span class="cost">FREE</span></button></div>`;
-  const sel = $('z-chain'); if (sel) sel.onchange = () => { sim.setChain(sel.value || null); sim.growStep(); buildBar(); audio.play('click'); };
+  $('b-items').innerHTML = head + `<div class="bi-row">${ZKEYS.map(card).join('')}<button class="bi zone ${tool === 'zone:' ? 'on' : ''}" data-b="zone:" type="button"><span class="th"><img data-th="t_unzone" data-std="2" alt=""></span><b>Unzone</b><span class="why">Drag to clear zoning. Buildings already up stay.</span><span class="cost">FREE</span></button></div>`;
+  fillThumbs(); const sel = $('z-chain'); if (sel) sel.onchange = () => { sim.setChain(sel.value || null); sim.growStep(); buildBar(); audio.play('click'); };
 }
 // ---------------------------------------------------------------- engineers: what a job or a crew is doing, in words
 function buildState(b) {
@@ -745,6 +746,7 @@ function taskBoard() {
   // what needs fixing
   lastWarn = [];
   const warn = (t, why, open) => { lastWarn.push({ t, why, open }); items.push(`<div class="tb-i alert"><b>${esc(t)}</b><span>${esc(why)}</span>${open ? `<div class="tb-b"><button class="btn" data-open="${open}" type="button">OPEN</button></div>` : ''}</div>`); };
+  { const ri = s.raidInfo(); if (ri.known) warn(ri.alarm ? 'RAID AT THE WIRE' : 'Raid expected', `${ri.what}${ri.dir ? ' from the ' + ri.dir : ''}, ${ri.when}.`); }
   const use = s.usage();
   for (const g of GKEYS) if (use[g] > 0 && s.amount(g) < use[g] * 0.5) warn(`${GOODS[g].name} running low`, `${Math.floor(s.amount(g))} left, ${Math.round(use[g])} used a watch. More storage brings bigger deliveries; or buy on the market.`, 'eco:market');
   for (const m of MKEYS) if ((s.commit?.[m] || 0) && (s.commitLast?.[m] ?? 1) < 0.6) warn(`${COMMIT[m].ministry}: commitment short`, `Only ${Math.round(s.commitLast[m] * 100)}% paid yesterday. Trade for the goods, or lower the level.`, 'eco:commit');
@@ -975,7 +977,7 @@ function reportPop(id) {
 // ---------------------------------------------------------------- the economy window: budget, market, commitments, loans, production
 let ecoTab = 'budget', tradeQ = 50;
 const CAT = { industry: 'Industry', calls: 'Calls answered', alloc: 'Daily allocation', deploy: 'Troopers shipped', ops: 'Operations and patrols', roster: 'Roster review', sales: 'Franchise sales', ledger: 'Desk decisions',
-  deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
+  deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', raid: 'Lost to raids', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
   bought: 'Bought', sold: 'Sold', fees: 'Fees', salvage: 'Salvage and clearing', market: 'Market trades', trade: 'Trades with other bases', commit: 'Ministry commitments' };
 // a 14-day line, for the tickers
 function spark(hist, col, w = 96, h = 26) {
@@ -1070,7 +1072,10 @@ function renderIntel(s) {
   if (s.sweep && !s.sweep.done && s.sweep.px != null) inc.push(`Parcel ${s.parcelName(s.sweep.px, s.sweep.pz)} is being swept: secure in ${days(s.sweep.dur - s.sweep.t)}`);
   if (!s.inspected) inc.push(`The Ministry of Truth inspects in ${days(Math.max(0, C.WEEK * C.INSPECT_AT - s.wt))}`);
   h += `<h3>INCOMING</h3>` + (inc.length ? `<ul class="rep">${inc.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="fine left">Nothing due.</p>');
-  h += `<h3>THREATS</h3><p class="fine left">No hostile contact near the perimeter. Raids are not in the field yet; when they are, this is where the warning comes.</p>`;
+  { const ri = s.raidInfo(), lr = s.lastRaid, ears = ['No lookout and no comms array: the base will only hear a raid when it is at the wire.', 'Lookouts give a day of warning. A Comms Array would give the hour, the size and the side.', 'The Comms Array gives the hour, the size and the side.'][ri.intel];
+    h += `<h3>THREATS</h3><div class="kv"><span>THREAT LEVEL</span><b class="${ri.threat > 60 ? 'down' : ''}">${ri.threat} of 100</b></div><div class="kv"><span>BASE STRENGTH</span><b>${ri.strength}</b></div>`
+      + (ri.known ? `<div class="card2"><div class="l"><b class="down">${esc(ri.what)}${ri.dir ? ' from the ' + ri.dir : ''}</b><span>Expected ${esc(ri.when)}.${ri.attack != null ? ` Its strength is about ${ri.attack}; yours is ${ri.strength}. ${ri.strength >= ri.attack + 12 ? 'The wall should hold.' : ri.strength >= ri.attack - 6 ? 'It will be close: man the gates, arm the wall, keep troopers home.' : 'As things stand it gets in: close and watch the wall, add turrets, train more troopers.'}` : ' Size unknown.'}</span></div></div>` : s.week < 4 ? '<p class="fine left">Quiet. Nothing has found the base yet; that will not last past the first few days.</p>' : '<p class="fine left">No contact reported.</p>')
+      + `<p class="fine left">${ears}</p>` + (lr ? `<p class="fine left">Last raid, day ${lr.week}: ${lr.out} (their ${lr.atk} against your ${lr.str}).</p>` : ''); }
   return h;
 }
 function renderMins(force) {
@@ -1585,6 +1590,8 @@ function loopBody(now) {
         if (ev.t === 'patrolBack' && ev.hero) { const f = sim.b.find(b => b.type === 'seflag'); audio.callAt('medal', f ? [[f.x + 1, f.z + 1]] : []); }
         if (ev.t === 'phase') { const c = { reveille: 'reveille', retreat: 'retreat', night: 'taps' }[ev.phase]; if (c) audio.callAt(c, horns()); }
         if (ev.t === 'moved') select(selId);
+        if (ev.t === 'raidAlarm') { audio.play('deny'); flash('ALERT: raid at the wire. See INTELLIGENCE.'); }
+        if (ev.t === 'raid') { audio.play(ev.out === 'breached' ? 'deny' : 'place'); flash(ev.text); }
         if (ev.t === 'desk') { audio.play('ping'); $('orders').classList.remove('min'); }   // requests land on the task board
         if (ev.t === 'call') callPop(ev.id);
         if (ev.t === 'report') reportPop(ev.id);

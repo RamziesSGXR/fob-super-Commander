@@ -144,4 +144,5 @@ console.log('credits', Math.round(s.credits), 'flow last', JSON.stringify(s.flow
 console.log('tech', s.tech.done.join(','), '| pads', s.count('pad'), '/', s.padCap());
 console.log('vehicles', s.veh.map(v => v.kind).join(','), '| morale parts', JSON.stringify(s.mor));
 console.log('plan step', step, plan[step], 'locked', JSON.stringify(s.locked(plan[step] || 'hq')), 'sup', Math.round(s.supplies), 'segs', s.net.segs.length, 'open', s.open, 'area', s.area, 'plots', s.plotTiles().length);
+console.log('raids', s.stats.raids || 0, 'won', s.stats.raidsWon || 0, 'threat', Math.round(s.threat || 0), 'strength', s.raidStrength(), 'last', JSON.stringify(s.lastRaid || null), 'pending', JSON.stringify(s.raid || null));
 console.log('last log:'); for (const l of s.log.slice(-8)) console.log('  [' + l.ch + '] ' + l.text);

@@ -5,6 +5,7 @@
 // obstacle course, the parade ground and the Citizenship Hall, and Defence's deployment orders ship the trained ones
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
+import { Raids } from './raids.js';
 import { FOUNDATION, EARLY } from './config.js';
 import { LAND, EQUIP } from './config.js';
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW, UTIL } from './config.js';
@@ -672,6 +673,7 @@ export class Sim {
     if (before && Math.floor(before.sh) !== Math.floor(this.time.sh)) this.hourly(Math.floor(this.time.sh));
     for (const p of this.patrols.filter(p => p.t >= p.dur)) this.resolve(p);
     if (!this.inspected && this.wt >= C.WEEK * C.INSPECT_AT) this.inspect();
+    this.raidStep();
     if (this.wt >= C.WEEK) this.endWeek();
   }
   hourly(h) {
@@ -1264,7 +1266,7 @@ export class Sim {
       'A citizen accepts personal responsibility for the safety of the body politic. Your canteen staff have been reminded.',
     ]));
     this.memo();
-    this.week++; this.wt -= C.WEEK; this.inspected = false;
+    this.week++; this.wt -= C.WEEK; this.inspected = false; this.raidPlan();
     this.newOffers(); this.newOrder();
     this.events.push({ t: 'week', rank, amt });
   }
@@ -1468,4 +1470,4 @@ export class Sim {
     if (!this.orders.length) this.newOrder();
   }
 }
-Object.assign(Sim.prototype, Market, Build, Zones, Utilities, Land, Terrain); bindMarket(B);
+Object.assign(Sim.prototype, Market, Build, Zones, Utilities, Land, Terrain, Raids); bindMarket(B);

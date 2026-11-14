@@ -729,6 +729,49 @@ const MAKE = {
   },
 };
 
+// ---------------------------------------------------------------- pictures for the tool cards: small dioramas the build
+// bar photographs the same way it photographs buildings, so roads, zones and earthworks get a picture, not an icon
+const TM = {}, tm = (c, o = {}) => TM[c + JSON.stringify(o)] ||= new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, ...o });
+const tile = (g, c, w = 3, d = 3) => box(g, w, 0.16, d, tm(c), 0, -0.08, 0, { cast: false });
+const ZPIC = { life: ['barracks', '#4fb4ff'], logi: ['depot', '#f0c84a'], comm: ['club', '#59e08a'], train: ['range', '#ff9a3a'], ops: ['patrol', '#c98bff'], ind: ['factory', '#c8705a'] };
+Object.assign(MAKE, {
+  t_road1(g) { tile(g, '#8f8358'); box(g, 3, 0.03, 0.9, tm('#7a6346'), 0, 0.015, 0, { cast: false }); for (const z of [-0.22, 0.22]) box(g, 3, 0.012, 0.14, tm('#5d4a33'), 0, 0.036, z, { cast: false });
+    for (const [x, z, r] of [[-1.1, 0.75, 0.09], [0.4, -0.8, 0.07], [1.1, 0.9, 0.06], [-0.5, -1.05, 0.05]]) ball(g, r, tm('#7b766a'), x, r * 0.5, z); for (const [x, z] of [[0.9, -1.1], [-1.2, -0.7], [0.2, 1.15]]) ball(g, 0.13, tm('#59703a'), x, 0.08, z); },
+  t_road2(g, m) { tile(g, '#6f8148'); box(g, 3, 0.04, 1.7, tm('#3e3f3c'), 0, 0.02, 0, { cast: false }); for (const z of [-0.78, 0.78]) box(g, 3, 0.07, 0.16, tm('#a7a69c'), 0, 0.035, z);
+    for (let x = -1.2; x <= 1.21; x += 0.6) box(g, 0.32, 0.01, 0.05, tm('#d8c35a'), x, 0.046, 0, { cast: false });
+    cyl(g, 0.025, 0.03, 0.9, m.dark, 0.6, 0.45, -0.95); box(g, 0.3, 0.03, 0.05, m.dark, 0.6, 0.9, -0.82); ball(g, 0.06, m.glowY, 0.6, 0.87, -0.68); },
+  t_path(g, m) { tile(g, '#6f8148'); box(g, 3, 0.03, 0.6, tm('#b3b1a6'), 0, 0.015, 0, { cast: false }); for (let x = -1.2; x <= 1.21; x += 0.4) box(g, 0.02, 0.01, 0.6, tm('#8f8d83'), x, 0.034, 0, { cast: false });
+    for (const x of [-0.9, 0.9]) { cyl(g, 0.03, 0.035, 0.3, m.dark, x, 0.15, 0.42); ball(g, 0.045, m.glowY, x, 0.32, 0.42); } for (const [x, z] of [[-0.4, -0.9], [0.7, -1.0], [-1.1, 1.0], [0.2, 1.05]]) ball(g, 0.16, tm('#4f6b34'), x, 0.1, z); },
+  t_bridge(g, m) { box(g, 3, 0.06, 3, tm('#2a6d8f', { roughness: 0.15, metalness: 0.4 }), 0, -0.5, 0, { cast: false }); for (const x of [-1.25, 1.25]) box(g, 0.5, 0.56, 3, tm('#7d7556'), x, -0.28, 0);
+    box(g, 3, 0.08, 1.1, tm('#3e3f3c'), 0, 0.04, 0); for (const z of [-0.52, 0.52]) { box(g, 3, 0.05, 0.06, tm('#c9c7bc'), 0, 0.26, z); for (let x = -1.3; x <= 1.31; x += 0.52) box(g, 0.05, 0.22, 0.05, tm('#c9c7bc'), x, 0.15, z); }
+    for (const x of [-0.45, 0.45]) box(g, 0.22, 0.52, 0.8, m.concrete, x, -0.24, 0); for (let x = -1.2; x <= 1.21; x += 0.6) box(g, 0.3, 0.01, 0.05, tm('#d8c35a'), x, 0.086, 0, { cast: false }); },
+  t_wall(g, m) { tile(g, '#8f8358'); box(g, 2.8, 0.7, 0.2, m.concrete, 0, 0.35, 0); for (const x of [-1.4, 0, 1.4]) box(g, 0.28, 0.85, 0.3, m.stone, x, 0.425, 0);
+    for (let x = -1.25; x <= 1.26; x += 0.25) box(g, 0.02, 0.14, 0.02, m.metal, x, 0.77, 0); box(g, 2.8, 0.015, 0.02, m.metal, 0, 0.83, 0); ball(g, 0.05, m.glowR, 0, 0.9, 0); },
+  t_unroad(g, m) { tile(g, '#8f8358'); box(g, 1.3, 0.04, 1.2, tm('#3e3f3c'), -0.85, 0.02, 0, { cast: false }); for (const [x, z, ry] of [[0.1, 0.3, 0.5], [0.25, -0.35, -0.3], [-0.05, -0.05, 1.1]]) box(g, 0.35, 0.06, 0.3, tm('#3e3f3c'), x, 0.05, z, { ry, rz: 0.25 });
+    box(g, 0.8, 0.3, 0.6, m.lift, 0.95, 0.3, 0); box(g, 0.4, 0.28, 0.5, m.dark, 1.05, 0.58, 0); box(g, 0.08, 0.4, 0.9, m.steel, 0.45, 0.22, 0); for (const z of [-0.36, 0.36]) box(g, 0.9, 0.2, 0.14, m.rubber, 0.95, 0.1, z); },
+  t_clear(g, m) { tile(g, '#7d8050'); for (const [x, z, r] of [[-0.9, -0.7, 0.3], [-0.3, -1.0, 0.22], [-1.0, 0.2, 0.26], [-0.4, -0.3, 0.2], [-1.1, 0.9, 0.2]]) { ball(g, r, tm('#4f6b34'), x, r * 0.7, z); ball(g, r * 0.7, tm('#5f7d3e'), x + r * 0.5, r * 0.5, z + r * 0.3); }
+    for (const [x, z] of [[0.5, 0.6], [1.0, -0.2], [0.3, -0.5]]) cyl(g, 0.09, 0.11, 0.12, tm('#6b4f33'), x, 0.06, z); box(g, 0.4, 0.3, 0.4, m.crate, 0.95, 0.15, 0.85); box(g, 0.3, 0.22, 0.3, m.crate, 0.55, 0.11, 1.05, { ry: 0.4 });
+    cyl(g, 0.06, 0.06, 0.7, tm('#6b4f33'), 0.2, 0.08, 0.2, { rz: Math.PI / 2 }); },
+  t_land(g, m) { tile(g, '#6f8148'); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) box(g, 0.92, 0.02, 0.92, tm(i === 1 && j === 0 ? '#f5d547' : i <= 0 && j <= 0 ? '#93a56b' : '#586a3c'), i, 0.01, j, { cast: false });
+    for (const [x, z] of [[0.5, -0.5], [1.5, -0.5], [0.5, 0.5], [1.5, 0.5]]) { cyl(g, 0.02, 0.02, 0.5, m.metal, x, 0.25, z); box(g, 0.2, 0.12, 0.01, m.glowY, x + 0.1, 0.44, z); } box(g, 0.5, 0.3, 0.4, m.concrete, -0.6, 0.15, -0.6); },
+  t_snap(g, m) { tile(g, '#3a4636'); for (let i = -1.5; i <= 1.51; i += 0.5) { box(g, 3, 0.006, 0.02, tm('#7fe9e0'), 0, 0.004, i, { cast: false }); box(g, 0.02, 0.006, 3, tm('#7fe9e0'), i, 0.004, 0, { cast: false }); }
+    box(g, 1.6, 0.03, 0.4, tm('#7a6346'), -0.5, 0.02, 0.5, { cast: false }); box(g, 1.5, 0.03, 0.4, tm('#7a6346'), 0.75, 0.02, 0.02, { ry: Math.PI / 4, cast: false }); for (const [x, z] of [[-1.3, 0.5], [0.25, 0.5], [1.25, -0.5]]) ball(g, 0.1, m.glowY, x, 0.08, z); },
+  t_tf_shift(g) { tile(g, '#7d8050'); const h = ball(g, 1, tm('#7d8050'), 0, 0, 0, { seg: 20 }); h.scale.set(1, 0.75, 1); const a = add(g, new THREE.ConeGeometry(0.16, 0.34, 10), tm('#f5d547'), 0, 1.35, 0); void a; box(g, 0.07, 0.3, 0.07, tm('#f5d547'), 0, 1.05, 0); },
+  t_tf_level(g, m) { tile(g, '#7d8050'); cyl(g, 0.95, 1.2, 0.5, tm('#857c5a'), 0, 0.25, 0, { seg: 24 }); cyl(g, 0.93, 0.93, 0.02, tm('#93a56b'), 0, 0.51, 0, { seg: 24, cast: false }); for (const a of [0.5, 2.6, 4.7]) { const x = Math.cos(a) * 0.75, z = Math.sin(a) * 0.75; cyl(g, 0.015, 0.015, 0.4, m.metal, x, 0.7, z); box(g, 0.14, 0.09, 0.01, m.glowY, x + 0.07, 0.86, z); } },
+  t_tf_soften(g) { tile(g, '#7d8050'); const a = ball(g, 0.8, tm('#7d8050'), -0.4, 0, 0, { seg: 20 }); a.scale.set(1.3, 0.45, 1.2); const b = ball(g, 0.6, tm('#7d8050'), 0.7, 0, 0.3, { seg: 20 }); b.scale.set(1.2, 0.3, 1.1); add(g, new THREE.ConeGeometry(0.22, 0.7, 5), tm('#6e6a5c', { transparent: true, opacity: 0.45 }), -0.4, 0.5, 0); },
+  t_tf_slope(g, m) { tile(g, '#7d8050'); const s = new THREE.Shape(); s.moveTo(-1.3, 0); s.lineTo(1.3, 0); s.lineTo(1.3, 0.9); s.closePath(); const geo = new THREE.ExtrudeGeometry(s, { depth: 1.6, bevelEnabled: false }); geo.translate(0, 0, -0.8); add(g, geo, tm('#857c5a'));
+    box(g, 2.76, 0.02, 0.5, tm('#7a6346'), 0, 0.47, 0, { rz: Math.atan2(0.9, 2.6), cast: false }); for (const [x, y] of [[-1.3, 0.1], [1.3, 1.0]]) ball(g, 0.1, m.glowY, x, y, 0); },
+  t_unzone(g, m) { tile(g, '#586a3c'); for (const r of [Math.PI / 4, -Math.PI / 4]) box(g, 2.6, 0.05, 0.3, m.glowR, 0, 0.05, 0, { ry: r, cast: false }); },
+  t_zone_buffer(g) { tile(g, '#586a3c'); box(g, 2.7, 0.02, 2.7, tm('#9aa3a0', { transparent: true, opacity: 0.55 }), 0, 0.012, 0, { cast: false }); for (let x = -1.1; x <= 1.11; x += 0.55) { ball(g, 0.2, tm('#4f6b34'), x, 0.18, -1.05); ball(g, 0.2, tm('#4f6b34'), x, 0.18, 1.05); }
+    for (const [x, z] of [[-0.5, 0], [0.6, 0.2]]) { cyl(g, 0.05, 0.06, 0.5, tm('#6b4f33'), x, 0.25, z); ball(g, 0.34, tm('#5f7d3e'), x, 0.7, z); } },
+});
+for (const [k, [type, col]] of Object.entries(ZPIC)) MAKE['t_zone_' + k] = (g, m) => { const sub = new THREE.Group(); (MAKE[type] || MAKE.hab)(sub, m); g.add(sub);
+  const b = new THREE.Box3().setFromObject(sub), sz = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3()), W = Math.max(sz.x, sz.z) + 1.1;
+  box(g, W, 0.12, W, tm('#586a3c'), c.x, -0.07, c.z, { cast: false }); box(g, W - 0.15, 0.02, W - 0.15, tm(col, { transparent: true, opacity: 0.6 }), c.x, 0.004, c.z, { cast: false }); };
+for (let i = 0; i < 5; i++) MAKE['t_paint_' + i] = g => { const c = ['#7d8050', '#cebA8e', '#a8926c', '#608042', '#765c44'][i]; tile(g, c); for (const [x, z, r] of [[-0.6, -0.5, 0.7], [0.7, 0.4, 0.55], [-0.2, 0.9, 0.4]]) { const h = ball(g, r, tm(c), x, 0, z, { seg: 16 }); h.scale.y = 0.3; }
+  if (i === 3) for (const [x, z] of [[-1, 0.6], [0.9, -0.9], [0.2, -0.3], [1.1, 1.0]]) ball(g, 0.12, tm('#4f6b34'), x, 0.1, z); if (i === 0) for (const r of [Math.PI / 4, -Math.PI / 4]) box(g, 1.6, 0.03, 0.14, tm('#d9d9d2'), 0, 0.3, 0, { ry: r, cast: false }); };
+
+
 // ---------------------------------------------------------------- construction standards (0.13): tents and prefabs
 // Every building with standards has a tent and a prefab version, drawn from its footprint (w x d before rotation) with a
 // few props that say what it is. Permanent is the building's own model above.
