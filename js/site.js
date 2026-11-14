@@ -9,7 +9,7 @@ import { Noise } from './noise.js';
 export const GROUND = { OPEN: 0, WATER: 1, ROCK: 2, SEEP: 3, ORE: 4 };
 export const RW = 240, RH = 150;   // the region map, in map pixels
 const SCALE = 0.07;
-export const TPP = 4.2;            // base tiles to a region map pixel: an 80-tile map covers about 19 pixels
+export const TPP = 26.25;   // 8 m cells to a region map pixel (210 m)            // base tiles to a region map pixel: an 80-tile map covers about 19 pixels
 
 // the planet's look and how wet it is. Chosen from the planet's name, so each planet keeps its character
 export const BIOMES = {
@@ -66,7 +66,7 @@ export function makeSite(seed, biome, cx, cy, N) {
 // the ground's height (0.17): one value per tile corner, (N + 1) x (N + 1), in world units (tiles; a tile is LAND.TILE_M
 // metres). The waterline is height 0: the sea floor shelves below it, land rises above it on the same field that decides
 // water and rock, and the rock is a stepped plateau with cliffs round its edge. A little fine noise roughens it close up.
-export const RELIEF = 4, CLIFF = 0.9, WL = 0;
+export const RELIEF = 200 / 8, CLIFF = 45 / 8, WL = 0;   // in cells (8 m): 200 m of rise per unit of the field, 45 m cliffs
 export const elevOf = (b, h) => h < b.water ? (h - b.water) * RELIEF * 0.6 - 0.04
   : (h - b.water) * RELIEF + CLIFF * Math.min(1, Math.max(0, (h - b.rock + 0.012) / 0.022)) ** 2 * (3 - 2 * Math.min(1, Math.max(0, (h - b.rock + 0.012) / 0.022)));
 export function makeHeights(seed, biome, cx, cy, N) {
@@ -81,9 +81,13 @@ export function makeHeights(seed, biome, cx, cy, N) {
 }
 
 // what a spot offers, for the landing screen. Looks at the ground a base of N tiles would have
-export function survey(seed, biome, cx, cy, N) {
-  const { terr } = makeSite(seed, biome, cx, cy, N), n = N * N, cnt = [0, 0, 0, 0, 0];
+// a big section is sampled, not generated cell by cell: S x S points spread across it (counts are scaled back up)
+export function survey(seed, biome, cx, cy, Nfull, S = 120) {
+  const N = Math.min(Nfull, S), k = Nfull / N, b = BIOMES[biome], f = field(seed), terr = new Uint8Array(N * N), n = N * N, cnt = [0, 0, 0, 0, 0];
+  const kk = SCALE * 0.9 / TPP * k;
+  for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) { const u = cx * SCALE * 0.9 + (x + 0.5 - N / 2) * kk, v = cy * SCALE * 0.9 + (z + 0.5 - N / 2) * kk; terr[z * N + x] = classify(b, f.h(u, v), f.dep(u, v)); }
   for (let i = 0; i < n; i++) cnt[terr[i]]++;
+  cnt[3] = Math.round(cnt[3] * k * k); cnt[4] = Math.round(cnt[4] * k * k);
   // natural cover: how much of the ring round the landing zone is water or rock
   let ring = 0, rc = 0;
   for (let a = 0; a < 64; a++) for (const r of [16, 20, 24]) { const x = Math.round(N / 2 + Math.cos(a / 64 * Math.PI * 2) * r), z = Math.round(N / 2 + Math.sin(a / 64 * Math.PI * 2) * r); if (x < 0 || z < 0 || x >= N || z >= N) continue; rc++; if (terr[z * N + x] === 1 || terr[z * N + x] === 2) ring++; }

@@ -26,6 +26,14 @@ export const Land = {
     if (x1 < 0) return [0, 0, 0, 0];
     return [x0 * P, z0 * P, (x1 + 1) * P, (z1 + 1) * P];
   },
+  // the part of the map that matters to the simulation: everything you hold and a margin round it (arrivals walk in
+  // across the margin). Loops that used to cover the whole map cover this
+  win(m = 40) {
+    const k = (this.ownV || 0) + ':' + m; if (this._winK === k) return this._win;
+    const N = this.N, [x0, z0, x1, z1] = this.ownBounds();
+    this._win = x1 > x0 ? [Math.max(0, x0 - m), Math.max(0, z0 - m), Math.min(N, x1 + m), Math.min(N, z1 + m)] : [0, 0, N, N]; this._winK = k;
+    return this._win;
+  },
   touches(px, pz) { return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => this.owns(px + dx, pz + dz)); },
   // what is on a parcel: tiles of each ground kind, scrub, and how much of it a base could use
   parcelInfo(px, pz) {
@@ -60,7 +68,7 @@ export const Land = {
   },
   buyParcel(px, pz) {
     const c = this.canBuy(px, pz); if (!c.ok) return c;
-    this.spend('land', c.sup, c.cr); this.own[pz * G + px] = 1; this.ownV = (this.ownV || 0) + 1;
+    this.spend('land', c.sup, c.cr); this.own[pz * G + px] = 1; this.ownV = (this.ownV || 0) + 1; this.scrubParcel(px, pz);
     this.stats.parcels = (this.stats.parcels || 0) + 1;
     this.rebuildNet(); this.events.push({ t: 'land', px, pz });
     const f = this.parcelInfo(px, pz);

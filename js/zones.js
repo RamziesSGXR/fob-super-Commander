@@ -46,7 +46,12 @@ export const Zones = {
     if (k) { this.zoneV = (this.zoneV || 0) + 1; this.events.push({ t: 'zones' }); this.stats.zoned = (this.stats.zoned || 0) + k; }
     return { ok: k > 0, n: k, why: k ? '' : 'Already zoned that way' };
   },
-  zoneCount(zk) { const n = ZONES[zk].n; let c = 0; if (this.zone) for (let i = 0; i < this.zone.length; i++) if (this.zone[i] === n) c++; return c; },
+  // zoned tiles of a kind, counted inside your land once per change
+  zoneCount(zk) {
+    const k = `${this.zoneV || 0}|${this.ownV || 0}`;
+    if (this._zcK !== k) { const N = this.N, W = this.win(), c = {}; if (this.zone) for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (this.zone[i]) c[this.zone[i]] = (c[this.zone[i]] || 0) + 1; this._zc = c; this._zcK = k; }
+    return this._zc[ZONES[zk].n] || 0;
+  },
   // the footprint of a building at x, z: every zone number under it
   zonesUnder(type, x, z, rot, dz = 0) {
     const [w, d] = dims(type, rot, dz), out = new Set();
@@ -124,7 +129,7 @@ export const Zones = {
   zonePlot(type, zk) {
     const N = this.N, zn = ZONES[zk].n, loose = LOOSE.has(type), spec = { grow: true, std: this.std };
     const tiles = [];
-    for (let i = 0; i < N * N; i++) if (this.zone[i] === zn && !this.occ[i] && !this.roads[i]) tiles.push(i);
+    const W = this.win(); for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (this.zone[i] === zn && !this.occ[i] && !this.roads[i]) tiles.push(i);
     if (!tiles.length) return null;
     // nearest the HQ first, so the base grows outward from its heart
     const hq = this.b.find(b => b.type === 'hq'), cx = hq ? hq.x + 1.5 : N / 2, cz = hq ? hq.z + 1.5 : N / 2;

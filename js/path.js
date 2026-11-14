@@ -7,8 +7,9 @@ let size = 0, cost, prev, seen, heapN, heapC, stamp = 0;
 function buffers(n) {
   if (n === size) return;
   size = n; cost = new Float32Array(n); prev = new Int32Array(n); seen = new Uint32Array(n);
-  heapN = new Int32Array(n * 8); heapC = new Float32Array(n * 8);
+  heapN = new Int32Array(65536); heapC = new Float32Array(65536);   // grows as a search needs it
 }
+function heapRoom(len) { if (len < heapN.length) return; const a = new Int32Array(heapN.length * 2), b = new Float32Array(heapN.length * 2); a.set(heapN); b.set(heapC); heapN = a; heapC = b; }
 const DX = [1, -1, 0, 0, 1, 1, -1, -1], DZ = [0, 0, 1, -1, 1, -1, 1, -1], LEN = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
 
 // walk: 1 where you can go. roads: 0 none, 1 dirt, 2 paved. fast: speed multiplier for each road type.
@@ -21,7 +22,7 @@ export function findPath(N, walk, roads, fast, sx, sz, ex, ez) {
   const h = n => { const dx = Math.abs(n % N - ex), dz = Math.abs(((n / N) | 0) - ez); return (Math.max(dx, dz) + 0.414 * Math.min(dx, dz)) / top; };
   let len = 0;
   const push = (n, c) => {
-    let i = len++;
+    heapRoom(len + 1); let i = len++;
     while (i > 0) { const p = (i - 1) >> 1; if (heapC[p] <= c) break; heapN[i] = heapN[p]; heapC[i] = heapC[p]; i = p; }
     heapN[i] = n; heapC[i] = c;
   };

@@ -5,12 +5,13 @@
 import { C, B } from './config.js';
 import { GROUND, makeHeights, WL } from './site.js';
 
+// heights are in cells (8 m); a cell-unit of earth is 8 x 8 x 8 m
 export const TERRA = {
-  maxGrade: 0.55,    // the most a building's footprint may rise across it before it has to be levelled first
-  roadGrade: 0.3,    // the most a road may climb from one tile to the next
-  rockGrade: 0.5,    // worked ground steeper than this across a tile is bare rock
-  cost: 6,           // supplies for each tile-unit of ground moved
-  min: -1.2, max: 4.5,
+  maxGrade: 0.75,    // 6 m: the most a building's footprint may rise across it before it has to be levelled first
+  roadGrade: 0.13,   // about 1 m in 8: the steepest a road climbs from one cell to the next
+  rockGrade: 1,      // worked ground steeper than 45 degrees across a cell is bare rock
+  cost: 2,           // supplies for each cell-unit of ground moved
+  min: -8, max: 30,
   PAINTS: ['', 'sand', 'dry', 'grass', 'dirt'],
 };
 
@@ -90,7 +91,7 @@ export const Terrain = {
       const d2 = (i - x) ** 2 + (j - z) ** 2; if (d2 > rr) continue;
       if (!this.ownedTile(Math.min(this.N - 1, i), Math.min(this.N - 1, j)) || this.lockedCorner(i, j)) continue;
       const f = (1 - d2 / rr) ** 1.5, k = j * M + i, h = this.hgt[k]; let to = h;
-      if (op === 'shift') to = h + (o.sign || 1) * s * dt * f * 1.2;
+      if (op === 'shift') to = h + (o.sign || 1) * s * dt * f * 1.5;
       else if (op === 'level') to = h + (o.target - h) * Math.min(1, s * dt * f * 4);
       else if (op === 'soften') { const avg = (this.hv(i - 1, j) + this.hv(i + 1, j) + this.hv(i, j - 1) + this.hv(i, j + 1)) / 4; to = h + (avg - h) * Math.min(1, s * dt * f * 6); }
       else if (op === 'slope') {

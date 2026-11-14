@@ -48,7 +48,7 @@ const params = new URLSearchParams(location.search);
 // ---------------------------------------------------------------- saving
 function store() { if (sim && playing && !sim.callIn) try { localStorage.setItem(SAVE, JSON.stringify(sim.save())); } catch { /* storage blocked: the game still works */ } }
 function stored() { try { const s = localStorage.getItem(SAVE), o = s ? JSON.parse(s) : null; return o && o.v >= SAVE_MIN ? o : null; } catch { return null; } }   // bases from before the big map (0.16) are not carried over
-const SAVE_MIN = 11;
+const SAVE_MIN = 12;
 async function exportCode() {
   const json = JSON.stringify(sim.save());
   if ('CompressionStream' in window) {
@@ -255,6 +255,7 @@ $('ht-x').onclick = () => show(playing ? null : 's-title');
 // the line tools: roads and walls are drawn the same way. Drag from one end to the other; ends snap to the grid, to
 // 45 degrees or nowhere (SNAP, or G), and always onto existing roads and walls so they join up
 const RTOOLS = { road1: { name: 'Dirt Road', k: 'dirt', why: 'One tile wide, cheap, a bit faster', desc: 'Drag to draw. One tile wide and cheap. Vehicles go 1.6 times as fast as off-road, people a little faster.' },
+  bridge: { name: 'Bridge', k: 'bridge', why: 'Spans water and gullies, on piers', desc: 'Drag from firm ground to firm ground. A paved deck on concrete piers that crosses water, ravines and rough ground at an even grade. It costs several times a road and cannot cut through a hill. Roads join it at its ends.' },
   road2: { name: 'Paved Road', k: 'paved', why: 'Two tiles wide, vehicles 2.4× faster', desc: 'Drag to draw. Two tiles wide, with a centre line. Vehicles go 2.4 times as fast, so supplies reach their buildings sooner.' },
   wall: { name: 'Wall', k: 'wall', why: 'Encloses the base; a road through it is a gate', desc: 'Drag to draw perimeter wall. Whatever your walls enclose is the base: build further out, then take the old wall down. A road drawn through a wall makes a gate.' },
   unroad: { name: 'Bulldoze', k: null, why: 'Take out a road or a wall', desc: 'Click a road or a wall to take it out. Half the cost back.' },
@@ -310,7 +311,7 @@ function buildBar() {
   $('b-items').classList.toggle('hidden', !buildOpen);
   if (!buildOpen) return;
   const items = groupItems(group), G = GROUPS.find(x => x[0] === group);
-  const lines = group === 'roads' ? ['road1', 'road2', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
+  const lines = group === 'roads' ? ['road1', 'road2', 'bridge', 'unroad', 'clear', 'land'] : group === 'defence' ? ['wall', 'unroad'] : [];
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
   if (group === 'landscape') { landBar(G); return; }

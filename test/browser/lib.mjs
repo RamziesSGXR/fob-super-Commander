@@ -28,11 +28,13 @@ export async function callIn(p) {
 // lay a cross of paved road and the foundation, through the simulation, then let a few days pass
 export async function foundation(p, days = 6) {
   await p.evaluate(days => {
-    const { sim: s } = window.__fob, [lo, hi] = s.box(), m = (lo + hi) / 2; s.supplies += 4000;
+    const { sim: s } = window.__fob, hq = s.b.find(b => b.type === 'hq'), cx = hq.x + 1, cz = hq.z + 7; s.supplies += 4000;
+    // level a square south of the HQ first, as a player would with LANDSCAPE, so the roads keep their grade
+    { const M = s.N + 1, R = 32, base = Math.max(0.5, s.hv(hq.x, hq.z)); for (let z = cz - R; z <= cz + R; z++) for (let x = cx - R; x <= cx + R; x++) if (!s.lockedCorner(x, z)) s.hgt[z * M + x] = base; s.reclassify(cx - R - 1, cz - R - 1, cx + R + 1, cz + R + 1); s.rebuildNet(); }
     const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'grid', k), s.snapLine({ x: bx, z: bz }, 'grid', k), k);
-    L(lo + 3, m + 0.5, hi - 3, m + 0.5, 'paved'); L(m + 0.5, lo + 3, m + 0.5, hi - 3, 'paved');
+    L(cx - 26, cz + 0.5, cx + 26, cz + 0.5, 'paved'); L(cx + 0.5, cz - 2, cx + 0.5, cz + 26, 'paved');
     for (const t of ['pad', 'depot', 'barracks', 'mess', 'range', 'gen', 'barracks', 'potty']) {
-      const tiles = s.plotTiles();
+      const tiles = s.plotTiles(); if (!tiles.length) continue;
       for (let i = 0; i < 80; i++) { const [x, z] = tiles[(i * 37) % tiles.length]; const pl = s.plotFor(t, x, z); if (pl && s.canPlace(t, pl.tx, pl.tz, pl.rot, { grow: true }).ok) { const b = s.place(t, pl.tx, pl.tz, pl.rot, false, { grow: true }); b.done = true; b.prog = 1; break; } }
     }
     for (let i = 0; i < days * 240; i++) s.step(0.5);

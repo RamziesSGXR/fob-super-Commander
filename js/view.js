@@ -16,10 +16,12 @@ import { WL } from './site.js';
 export const HG = { tex: new THREE.DataTexture(new Uint16Array(1), 1, 1, THREE.RedFormat, THREE.HalfFloatType), p: new THREE.Vector4(0, 0, 1, 0) };   // p: N, on, N + 1
 HG.tex.magFilter = HG.tex.minFilter = THREE.LinearFilter; HG.tex.needsUpdate = true;
 // copy a simulation's heights into the texture (a new size means a new texture underneath the same object)
-HG.load = function (sim) {
+HG.load = function (sim, box = null) {
   const M = sim.N + 1, h = sim.hgt; if (!h) { HG.p.y = 0; return; }
-  if (HG.tex.image.width !== M) { HG.tex.dispose(); HG.tex.image = { data: new Uint16Array(M * M), width: M, height: M }; }
-  const d = HG.tex.image.data; for (let k = 0; k < M * M; k++) d[k] = THREE.DataUtils.toHalfFloat(h[k]);
+  if (HG.tex.image.width !== M) { HG.tex.dispose(); HG.tex.image = { data: new Uint16Array(M * M), width: M, height: M }; box = null; }
+  const d = HG.tex.image.data, [x0, z0, x1, z1] = box ? [Math.max(0, box[0] - 1), Math.max(0, box[1] - 1), Math.min(M, box[2] + 2), Math.min(M, box[3] + 2)] : [0, 0, M, M];
+  // the surface things stand on: the ground, or a bridge deck where one runs
+  const dk = sim.deck; for (let z = z0; z < z1; z++) for (let x = x0, k = z * M + x0; x < x1; x++, k++) d[k] = THREE.DataUtils.toHalfFloat(dk?.size ? dk.get(k) ?? h[k] : h[k]);
   HG.tex.needsUpdate = true; HG.p.set(sim.N, 1, M, 0);
 };
 THREE.ShaderChunk.common += `
@@ -48,7 +50,7 @@ export class View {
     this.r.shadowMap.enabled = true; this.r.shadowMap.type = THREE.PCFShadowMap; this.q = 0; this.qMode = 'auto'; this.qT = 0; this.qN = 0;
     this.r.toneMapping = THREE.ACESFilmicToneMapping; this.r.toneMappingExposure = 1.05;
     this.scene = new THREE.Scene();
-    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600);
+    this.ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 6000);
     this.persp = new THREE.PerspectiveCamera(50, 1, 0.05, 700);   // photo mode: a free camera you can tilt down to ground level
     this.cam = this.ortho; this.photo = false; this.dist = 18; this.distT = 18; this.tilt = 0.6; this.tiltT = 0.6;
     this.yaw = Math.PI / 4; this.yawT = this.yaw; this.pitch = 0.68; this.zoom = 9; this.zoomT = 9;
@@ -186,97 +188,115 @@ export class View {
   }
   wx(x) { return x - this.N / 2; }
 
-  // the ground's colour, tile by tile: the biome's soil, the sea bed, bare rock on cliffs, mud by the water, lighter
-  // and drier up high, and whatever surface has been painted on
+  // ---------------------------------------------------------------- the ground (0.18): chunks, coloured in the shader
+  // The section is drawn as one mesh per parcel, fine (a vertex per cell corner) where the camera is looking and coarse
+  // (one per five cells) elsewhere, with skirts so the joins never gape. What the ground looks like is worked out per
+  // pixel from two small data textures (one texel per cell: sea bed, rock, wetness, seeps and ore; and the four paints)
+  // plus noise, slope and height, so it stays crisp however close the camera gets. Cliffs get a triplanar rock grain.
   paintTiles(x0, z0, x1, z1) {
-    const { g, img, P, nz, hue, bio, tex } = this.gnd, N = this.N, s = this.sim, T = s.terr, d = img.data, W = N * P;
-    x0 = Math.max(0, x0); z0 = Math.max(0, z0); x1 = Math.min(N, x1); z1 = Math.min(N, z1);
-    const PAINT = [null, [206, 186, 142], [168, 146, 108], [96, 128, 66], [118, 92, 68]];
-    for (let tz = z0; tz < z1; tz++) for (let tx = x0; tx < x1; tx++) {
-      const i0 = tz * N + tx, tk = T ? T[i0] : 0, gr = s.hgt ? s.gradeOf(tx, tz, 1, 1) : 0, el = s.hgt ? s.hAt(tx + 0.5, tz + 0.5) : 0, pt = s.paint?.[i0] || 0;
-      let wet = 0; if (T && tk !== 1) for (let j = -2; j <= 2 && !wet; j++) for (let i = -2; i <= 2; i++) { const xx = tx + i, zz = tz + j; if (xx >= 0 && zz >= 0 && xx < N && zz < N && T[zz * N + xx] === 1) { wet = 1 - Math.hypot(i, j) / 3.2; break; } }
-      for (let y = tz * P; y < tz * P + P; y++) for (let x = tx * P; x < tx * P + P; x++) {
-        const n = nz.fbm(x / (2.5 * P), y / (2.5 * P), 4), f = nz.v(x * 5.3 / P, y * 5.3 / P);
-        let r = hue[0] * (0.8 + n * 0.4) + f * 10, gg = hue[1] * (0.8 + n * 0.4) + f * 8, b = hue[2] * (0.8 + n * 0.4) + f * 6;
-        if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
-        else {
-          if (tk === 2) { r *= 0.62; gg *= 0.62; b *= 0.64; }
-          else if (tk === 3) { r *= 0.86; gg *= 0.84; b *= 0.88; }   // E-710 seeps and ore look like ground here: the RESOURCES view shows them
-          else if (tk === 4) { r *= 0.92; gg *= 0.88; b *= 0.84; }
-          const up = Math.max(-0.1, Math.min(0.2, el * 0.07)); r *= 0.95 + up; gg *= 0.95 + up; b *= 0.95 + up;   // drier and paler higher up
-          if (wet > 0) { const m = wet * 0.35; r = r * (1 - m) + 82 * m; gg = gg * (1 - m) + 74 * m; b = b * (1 - m) + 58 * m; }   // mud by the water
-          if (gr > 0.18) { const m = Math.min(1, (gr - 0.18) / 0.35) * 0.7; r = r * (1 - m) + hue[0] * 0.55 * m; gg = gg * (1 - m) + hue[1] * 0.55 * m; b = b * (1 - m) + hue[2] * 0.58 * m; }   // bare rock on the slopes
-          if (pt) { const c = PAINT[pt], m = 0.8; r = r * (1 - m) + c[0] * (0.85 + n * 0.3) * m; gg = gg * (1 - m) + c[1] * (0.85 + n * 0.3) * m; b = b * (1 - m) + c[2] * (0.85 + n * 0.3) * m; }
-        }
-        const i = (y * W + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
-      }
+    const N = this.N, s = this.sim, T = s.terr, A = this.gndA.image.data, Bd = this.gndB.image.data;
+    x0 = Math.max(0, x0 - 3); z0 = Math.max(0, z0 - 3); x1 = Math.min(N, x1 + 3); z1 = Math.min(N, z1 + 3);
+    for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
+      const i = z * N + x, t = T ? T[i] : 0, k = i * 4;
+      let wet = 0; if (T && t !== 1) for (let j = -3; j <= 3 && wet < 1; j++) for (let ii = -3; ii <= 3; ii++) { const xx = x + ii, zz = z + j; if (xx >= 0 && zz >= 0 && xx < N && zz < N && T[zz * N + xx] === 1) { wet = Math.max(wet, 1 - Math.hypot(ii, j) / 4); } }
+      A[k] = t === 1 ? 255 : 0; A[k + 1] = t === 2 ? 255 : 0; A[k + 2] = wet * 255; A[k + 3] = t === 3 ? 255 : t === 4 ? 128 : 0;
+      const pt = s.paint?.[i] || 0; Bd[k] = pt === 1 ? 255 : 0; Bd[k + 1] = pt === 2 ? 255 : 0; Bd[k + 2] = pt === 3 ? 255 : 0; Bd[k + 3] = pt === 4 ? 255 : 0;
     }
-    g.putImageData(img, 0, 0, x0 * P, z0 * P, (x1 - x0) * P, (z1 - z0) * P); tex.needsUpdate = true;
+    this.gndA.needsUpdate = this.gndB.needsUpdate = true;
   }
-  // the ground mesh and the height texture, from the simulation's heights
-  groundHeights() {
-    const s = this.sim, M = this.N + 1, pos = this.ground.geometry.attributes.position;
-    for (let k = 0; k < M * M; k++) pos.setY(k, s.hgt ? s.hgt[k] : 0);
-    pos.needsUpdate = true; this.ground.geometry.computeVertexNormals(); this.ground.geometry.computeBoundingSphere();
-    HG.load(s); this.hgtSeen = s.hgtV;
+  // one parcel's mesh at a level of detail: positions on the heights, normals from the height field, skirts round it
+  chunkGeo(px, pz, step) {
+    const s = this.sim, P = LAND.PARCEL, n = Math.ceil(P / step) + 1, x0 = px * P, z0 = pz * P, N = this.N;
+    const cx = i => Math.min(x0 + i * step, x0 + P), H = (x, z) => s.hgt ? s.hv(x, z) : 0;
+    const pos = [], nor = [], idx = [];
+    const vert = (x, z, y) => { pos.push(x - N / 2, y, z - N / 2); const dx = H(x + 1, z) - H(x - 1, z), dz = H(x, z + 1) - H(x, z - 1), l = Math.hypot(dx, 2, dz); nor.push(-dx / l, 2 / l, -dz / l); return pos.length / 3 - 1; };
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) vert(cx(i), cx(j) - x0 + z0, H(cx(i), cx(j) - x0 + z0));
+    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const a = j * n + i, b = a + 1, c = a + n, d = c + 1; idx.push(a, c, b, b, c, d); }
+    // skirts: a curtain hanging from every edge vertex, so a coarse neighbour never shows a crack
+    const edge = (list) => { const top = list, bot = list.map(k => vert(pos[k * 3] + N / 2, pos[k * 3 + 2] + N / 2, pos[k * 3 + 1] - 3)); for (let k = 0; k < top.length - 1; k++) idx.push(top[k], bot[k], top[k + 1], top[k + 1], bot[k], bot[k + 1], top[k], top[k + 1], bot[k], top[k + 1], bot[k + 1], bot[k]); };
+    const row = j => [...Array(n).keys()].map(i => j * n + i), col = i => [...Array(n).keys()].map(j => j * n + i);
+    edge(row(0)); edge(row(n - 1)); edge(col(0)); edge(col(n - 1));
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx);
+    g.computeBoundingSphere(); return g;
   }
-  // the site's own water and rock, rebuilt when the ground is worked
+  // which parcels get the fine mesh: those near what the camera is looking at
+  chunkLOD(force = false) {
+    const P = LAND.PARCEL, G = LAND.GRID, tx = this.target.x + this.N / 2, tz = this.target.z + this.N / 2, R = this.zoom * 2.2 + P;
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) {
+      const c = this.gch[pz * G + px], want = this.zoom < 160 && Math.hypot(px * P + P / 2 - tx, pz * P + P / 2 - tz) < R ? 1 : 5;
+      if (c.step === want && !force && !c.dirty) continue;
+      c.mesh.geometry.dispose(); c.mesh.geometry = this.chunkGeo(px, pz, want); c.step = want; c.dirty = false;
+    }
+  }
+  // the ground moved inside a box: mark those parcels for rebuilding, at their present detail
+  groundHeights(box = null) {
+    const P = LAND.PARCEL, G = LAND.GRID;
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) {
+      if (box && (px * P > box[2] + 1 || px * P + P < box[0] - 1 || pz * P > box[3] + 1 || pz * P + P < box[1] - 1)) continue;
+      this.gch[pz * G + px].dirty = true;
+    }
+    this.chunkLOD(); HG.load(this.sim, box); this.hgtSeen = this.sim.hgtV;
+  }
+  // the sea, one sheet at the waterline; seeps get violet crystals (in the RESOURCES view), near your land only
   syncTerrain() {
-    const N = this.N, s = this.sim, T = s.terr, bio = s.site ? BIOMES[s.site.biome] : null, nz = this.gnd.nz, rock = this.rockMat, mx = new THREE.Matrix4(), q = new THREE.Quaternion();
+    const N = this.N, s = this.sim, T = s.terr, bio = s.site ? BIOMES[s.site.biome] : null, nz = this.gnd.nz, mx = new THREE.Matrix4(), q = new THREE.Quaternion();
     for (const o of this.terrObjs || []) { this.world.remove(o); o.geometry?.dispose(); }
     this.terrObjs = []; const add = o => { this.terrObjs.push(o); this.world.add(o); };
-    if (T && bio) {
-      const wt = [], rk = [], dp = [];
-      for (let i = 0; i < N * N; i++) { if (T[i] === 1) wt.push(i); else if (T[i] === 2) rk.push(i); else if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
-      if (wt.length) {
-        const wm = this.waterMat || new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86 }); wm.defines = { NO_HGT: '' };
-        const wg = new THREE.PlaneGeometry(1.02, 1.02); wg.rotateX(-Math.PI / 2);
-        const wi = new THREE.InstancedMesh(wg, wm, wt.length); wt.forEach((i, k) => { mx.makeTranslation(this.wx(i % N + 0.5), WL + 0.03, this.wx(((i / N) | 0) + 0.5)); wi.setMatrixAt(k, mx); });
-        wi.receiveShadow = true; add(wi); this.waterMat = wm;
-      }
-      if (rk.length) {   // each rock tile gets a boulder, taller the higher the ground
-        const ri = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.75, 0), rock, rk.length);
-        rk.forEach((i, k) => {
-          const x = i % N, z = (i / N) | 0, j = nz.v(x * 1.3, z * 1.3), h = 0.35 + j * 0.7;
-          q.setFromEuler(new THREE.Euler(j * 2, j * 5, j)); mx.compose(new THREE.Vector3(this.wx(x + 0.5), h * 0.4, this.wx(z + 0.5)), q, new THREE.Vector3(0.9 + j * 0.3, h, 0.9 + j * 0.3)); ri.setMatrixAt(k, mx);
-        });
-        ri.castShadow = ri.receiveShadow = true; add(ri);
-      }
-      if (dp.length) {   // violet crystals poking out of the seeps
-        const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
-        const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
-        dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.8, 1)); ci.setMatrixAt(k, mx); });
-        ci.visible = !!this.crystalsOn; add(ci); this.crystals = ci;
-      }
+    if (!T || !bio) return;
+    const wm = this.waterMat ||= new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86, defines: { NO_HGT: '' } });
+    const wg = new THREE.PlaneGeometry(N, N); wg.rotateX(-Math.PI / 2); const wi = new THREE.Mesh(wg, wm); wi.position.y = WL + 0.03; wi.receiveShadow = true; add(wi);
+    const W = s.win ? s.win(LAND.PARCEL) : [0, 0, N, N], dp = [];
+    for (let z = W[1]; z < W[3]; z++) for (let x = W[0]; x < W[2]; x++) { const i = z * N + x; if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
+    if (dp.length) {
+      const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
+      const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
+      dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.6, 1)); ci.setMatrixAt(k, mx); });
+      ci.visible = !!this.crystalsOn; add(ci); this.crystals = ci;
     }
   }
   buildGround() {
     this.crystals = null;
-    const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = Math.max(4, Math.min(16, Math.floor(1800 / N))), c = document.createElement('canvas');
-    c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P);
+    const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), G = LAND.GRID;
     const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4];
-    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    this.gnd = { c, g, img, P, nz, hue, bio, tex };
+    this.gnd = { nz, hue, bio };
+    const data = () => { const t = new THREE.DataTexture(new Uint8Array(N * N * 4), N, N, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; return t; };
+    this.gndA = data(); this.gndB = data();
     this.paintTiles(0, 0, N, N);
-    // the ground: one vertex per tile corner, at its height, lit by its own slope; cliffs get a triplanar rock grain
     HG.load(s);
-    const geo = new THREE.PlaneGeometry(N, N, N, N); geo.rotateX(-Math.PI / 2);
-    const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }); gm.defines = { NO_HGT: '' };
+    const lin = c => new THREE.Color().setRGB(c[0] / 255, c[1] / 255, c[2] / 255, THREE.SRGBColorSpace);
+    const U = { uGA: { value: this.gndA }, uGB: { value: this.gndB }, uN: { value: N }, uHue: { value: lin(hue) }, uBed: { value: lin((bio?.sea || [70, 110, 150]).map(v => v * 0.7)) } };
+    const gm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 }); gm.defines = { NO_HGT: '' };
     gm.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTpW; varying vec3 vTpN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTpW = (modelMatrix * vec4(transformed, 1.0)).xyz; vTpN = normalize(mat3(modelMatrix) * objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 varying vec3 vTpW; varying vec3 vTpN;
+uniform sampler2D uGA; uniform sampler2D uGB; uniform float uN; uniform vec3 uHue; uniform vec3 uBed;
 float tpH(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5); float b = fract(sin(dot(i + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5); float c = fract(sin(dot(i + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5); float d = fract(sin(dot(i + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
 float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y + w.z); return tpH(p.zy * 3.1) * w.x + tpH(p.xz * 3.1) * w.y + tpH(p.xy * 3.1) * w.z; }`)
         .replace('#include <map_fragment>', `#include <map_fragment>
-{ float steep = 1.0 - clamp(vTpN.y, 0.0, 1.0); float gr = tpGrain(vTpW, vTpN) * 0.6 + tpGrain(vTpW * 3.7, vTpN) * 0.4;
-  diffuseColor.rgb *= mix(0.9 + gr * 0.2, 0.55 + gr * 0.5, smoothstep(0.25, 0.6, steep));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.34, 0.32) * (0.7 + gr * 0.5), smoothstep(0.35, 0.7, steep) * 0.6); }`);
+{ vec2 cuv = (vTpW.xz + uN * 0.5) / uN; vec4 A = texture2D(uGA, cuv), P = texture2D(uGB, cuv);
+  vec2 w = vTpW.xz; float n1 = tpH(w * 0.035) * 0.55 + tpH(w * 0.11) * 0.3 + tpH(w * 0.5) * 0.15, n2 = tpH(w * 1.9), gr = tpGrain(vTpW, vTpN) * 0.6 + tpGrain(vTpW * 3.7, vTpN) * 0.4;
+  vec3 col = uHue * (0.78 + n1 * 0.44) * (0.96 + n2 * 0.08);
+  col *= 0.95 + clamp(vTpW.y * 0.006, -0.1, 0.18);                                             // drier and paler higher up
+  col = mix(col, uHue * vec3(0.52, 0.5, 0.42), A.b * 0.45);                                       // mud by the water
+  col = mix(col, col * vec3(0.86, 0.8, 0.94), step(0.7, A.a) * 0.6);                              // E-710 seeps stain it
+  col = mix(col, col * vec3(0.98, 0.84, 0.74), step(0.3, A.a) * (1.0 - step(0.7, A.a)) * 0.6);   // ore rusts it
+  col = mix(col, vec3(0.83, 0.74, 0.55) * (0.85 + n1 * 0.3), P.r * 0.85);                          // sand
+  col = mix(col, vec3(0.66, 0.57, 0.42) * (0.85 + n1 * 0.3), P.g * 0.85);                          // dry ground
+  col = mix(col, vec3(0.32, 0.46, 0.2) * (0.8 + n1 * 0.4 + n2 * 0.1), P.b * 0.85);                 // lush grass
+  col = mix(col, vec3(0.42, 0.32, 0.23) * (0.85 + n1 * 0.3), P.a * 0.85);                          // dirt
+  float steep = 1.0 - clamp(vTpN.y, 0.0, 1.0), rk = max(A.g * 0.8, smoothstep(0.3, 0.62, steep));
+  col = mix(col, uHue * 0.5 * (0.6 + gr * 0.7), rk);                                               // bare rock: cliffs and high rock
+  col = mix(col, uBed * (0.9 + n2 * 0.2), A.r);                                                     // the bed under the water
+  diffuseColor.rgb *= col; }`);
     };
-    const ground = new THREE.Mesh(geo, gm);
-    ground.receiveShadow = true; this.world.add(ground); this.ground = ground;
-    this.groundHeights(); this.paintSeen = s.paintV; this.terrSeen = s.terrV; s.dirtyBox = null;
+    this.gmat = gm;
+    const grp = new THREE.Group(); this.gch = [];
+    for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) { const m = new THREE.Mesh(new THREE.BufferGeometry(), gm); m.receiveShadow = true; grp.add(m); this.gch.push({ mesh: m, step: 0, dirty: true }); }
+    this.world.add(grp); this.ground = grp;
+    this.chunkLOD(true); this.hgtSeen = s.hgtV; this.paintSeen = s.paintV; this.terrSeen = s.terrV; s.dirtyBox = null;
     // the land beyond the wire
     const oc = document.createElement('canvas'); oc.width = oc.height = 256; const og = oc.getContext('2d'), oi = og.createImageData(256, 256);
     for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = nz.fbm(x / 30 + 50, y / 30, 4), i = (y * 256 + x) * 4; oi.data[i] = hue[0] * (0.62 + n * 0.35); oi.data[i + 1] = hue[1] * (0.62 + n * 0.35); oi.data[i + 2] = hue[2] * (0.62 + n * 0.35); oi.data[i + 3] = 255; }
@@ -296,7 +316,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
       q.setFromEuler(new THREE.Euler(a, a * 2, 0)); mx.compose(new THREE.Vector3(x, sc * 0.3, z), q, new THREE.Vector3(sc, sc * 0.7, sc)); rocks.setMatrixAt(n++, mx);
     }
     rocks.castShadow = rocks.receiveShadow = true; this.world.add(rocks);
-    this.rockMat = rock; this.syncTerrain();
+    this.syncTerrain();
     // rock spires on the skyline, fading into the haze
     const sg = new THREE.ConeGeometry(1, 1, 5), spires = new THREE.InstancedMesh(sg, rock, 70);
     for (let i = 0; i < 70; i++) {
@@ -345,21 +365,43 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     return new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 0.1), [this.m.dark, this.m.dark, this.m.dark, this.m.dark, new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.4 }), new THREE.MeshStandardMaterial({ map: t })]);
   }
 
+  // what holds a bridge up: a concrete deck slab, piers down to the ground (or the bed under the water) every few cells,
+  // and a steel rail along each side. Drawn at the deck's own height, not lifted by the shader
+  bridgeFrame(a, b, w) {
+    const s = this.sim, L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, ha = a.h ?? s.hAt(a.x, a.z), hb = b.h ?? s.hAt(b.x, b.z);
+    const conc = this.bridgeMat ||= new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.85, defines: { NO_HGT: '' } });
+    const rail = this.railMat ||= new THREE.MeshStandardMaterial({ color: '#5d6266', roughness: 0.5, metalness: 0.5, defines: { NO_HGT: '' } });
+    const g = new THREE.Group(), ang = -Math.atan2(b.z - a.z, b.x - a.x), mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, pitch = Math.atan2(hb - ha, L);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(L, hb - ha), 0.35, w + 0.3), conc);
+    slab.position.set(this.wx(mid.x), (ha + hb) / 2 - 0.18, this.wx(mid.z)); slab.rotation.set(0, ang, pitch, 'YZX'); slab.castShadow = slab.receiveShadow = true; g.add(slab);
+    for (const sd of [-1, 1]) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(L, hb - ha), 0.12, 0.06), rail);
+      r.position.set(this.wx(mid.x - uz * (w / 2 + 0.1) * sd), (ha + hb) / 2 + 0.32, this.wx(mid.z + ux * (w / 2 + 0.1) * sd)); r.rotation.set(0, ang, pitch, 'YZX'); g.add(r);
+    }
+    for (let dd = 4; dd < L - 1; dd += 4) {
+      const t = dd / L, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t, top = ha + (hb - ha) * t - 0.35, foot = Math.min(s.hAt(x, z), top - 0.2) - 0.5;
+      if (top - foot < 0.4) continue;
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, top - foot, w * 0.8), conc); p.position.set(this.wx(x), (top + foot) / 2, this.wx(z)); p.rotation.y = ang; p.castShadow = true; g.add(p);
+    }
+    this.roadG.add(g);
+  }
   syncRoads() {
     const s = this.sim; if (s.roadsV === this.roadsV) return; this.roadsV = s.roadsV;
     this.roadG.clear(); this.booms = [];
+    if (s.deckV !== this.deckSeen) { this.deckSeen = s.deckV; HG.load(s); }
     const net = s.net, N = this.N, nd = id => net.nodes.find(n => n.id === id), surf = new THREE.Group();
     const strip = (g, a, b, w, y, mat, ext = 0) => {   // a flat strip from a to b, w wide
-      const L = Math.hypot(b.x - a.x, b.z - a.z) + ext, geo = new THREE.PlaneGeometry(L, w); geo.rotateX(-Math.PI / 2);
+      const L = Math.hypot(b.x - a.x, b.z - a.z) + ext, geo = new THREE.PlaneGeometry(L, w, Math.max(1, Math.ceil(L)), 1); geo.rotateX(-Math.PI / 2);   // a vertex every cell, to follow the ground
       const m = new THREE.Mesh(geo, mat); m.position.set(this.wx((a.x + b.x) / 2), y, this.wx((a.z + b.z) / 2)); m.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x); m.receiveShadow = true; g.add(m); return m;
     };
     const dash = this.dashMat ||= new THREE.MeshBasicMaterial({ color: '#d8c35a' });
     for (const sg of net.segs) {
       if (sg.k === 'wall') continue;
-      const a = nd(sg.a), b = nd(sg.b), surfK = sg.k === 'paved' ? 2 : 1, y = 0.012 + surfK * 0.002;
+      const a = nd(sg.a), b = nd(sg.b), surfK = sg.k === 'paved' || sg.k === 'bridge' ? 2 : 1, y = 0.012 + surfK * 0.002;
+      if (sg.k === 'bridge') this.bridgeFrame(a, b, sg.w);
       strip(surf, a, b, sg.w, y, this.roadMats[surfK]);
       for (const n of [a, b]) { const c = new THREE.Mesh(new THREE.CircleGeometry(sg.w / 2, 16), this.roadMats[surfK]); c.rotation.x = -Math.PI / 2; c.position.set(this.wx(n.x), y - 0.001, this.wx(n.z)); c.receiveShadow = true; surf.add(c); }
-      if (sg.k === 'paved' && sg.w >= 2) {   // a dashed centre line, and a raised concrete sidewalk down each side
+      if ((sg.k === 'paved' || sg.k === 'bridge') && sg.w >= 2) {   // a dashed centre line, and a raised concrete sidewalk down each side
         const L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11;
         for (const sd of [-1, 1]) strip(surf, { x: a.x - uz * off * sd, z: a.z + ux * off * sd }, { x: b.x - uz * off * sd, z: b.z + ux * off * sd }, 0.22, y + 0.012, this.walkMat ||= new THREE.MeshStandardMaterial({ color: '#a7a69c', roughness: 0.9 }));
         for (let t = 0.6; t < L - 0.6; t += 0.9) { const p = { x: a.x + (b.x - a.x) * t / L, z: a.z + (b.z - a.z) * t / L }, q = { x: a.x + (b.x - a.x) * (t + 0.35) / L, z: a.z + (b.z - a.z) * (t + 0.35) / L }; strip(surf, p, q, 0.06, 0.02, dash); }
@@ -662,7 +704,7 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
     const s = this.sim, o = ray.origin, d = ray.direction, H = x => (s?.hAt ? s.hAt(x.x + this.N / 2, x.z + this.N / 2) : 0);
     if (!s?.hgt) { const p = new THREE.Vector3(); ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p); return p; }
     // start where the ray comes down through the top of the terrain
-    let t0 = d.y < 0 ? Math.max(0, (o.y - 5) / -d.y) : 0, t1 = d.y < 0 ? (o.y + 2) / -d.y : 2000;
+    let t0 = d.y < 0 ? Math.max(0, (o.y - 34) / -d.y) : 0, t1 = d.y < 0 ? (o.y + 10) / -d.y : 4000;   // the ground is never above 30 cells
     const step = 0.4, p = new THREE.Vector3(); let prev = t0;
     for (let t = t0; t <= t1; t += step) {
       p.copy(o).addScaledVector(d, t);
@@ -704,12 +746,15 @@ float tpGrain(vec3 p, vec3 n) { vec3 w = pow(abs(n), vec3(4.0)); w /= (w.x + w.y
 
   // ---------------------------------------------------------------- every frame
   frame(dt) {
+    // the fine ground follows the camera
+    if (this.gch && (this.lodT = (this.lodT || 0) - dt) <= 0) { this.lodT = 0.3; this.chunkLOD(); }
     // the ground was worked: new heights, colours, water and rock where it changed (at most a few times a second)
     { const s = this.sim; this.tfT = (this.tfT || 0) - dt;
       if (s && this.ground && this.tfT <= 0 && (s.hgtV !== this.hgtSeen || s.paintV !== this.paintSeen || s.terrV !== this.terrSeen)) {
         this.tfT = 0.25;
-        if (s.hgtV !== this.hgtSeen) this.groundHeights();
-        const d = s.dirtyBox; s.dirtyBox = null; if (d) this.paintTiles(d[0], d[1], d[2], d[3]);
+        const d = s.dirtyBox; s.dirtyBox = null;
+        if (s.hgtV !== this.hgtSeen) this.groundHeights(d);
+        if (d) this.paintTiles(d[0], d[1], d[2], d[3]);
         if (s.terrV !== this.terrSeen) { this.syncTerrain(); this.terrSeen = s.terrV; }
         this.paintSeen = s.paintV;
         for (const g of this.bm.values()) delete g.userData.box;

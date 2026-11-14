@@ -40,7 +40,7 @@ const fmt = n => Math.round(n).toLocaleString('en-US');
 export function bestSite(seed, biome, N, all = false) {
   let best = null; const list = [];
   for (let v = RH * 0.3; v <= RH * 0.7; v += 9) for (let u = RW * 0.3; u <= RW * 0.7; u += 9) {
-    const s = survey(seed, biome, u, v, Math.min(N, 56)), score = s.open * 0.7 + s.cover * 0.4 + (s.seeps ? 0.05 : 0) + (s.ore ? 0.05 : 0) - (s.open < 0.6 ? 1 : 0);
+    const s = survey(seed, biome, u, v, N, 40), score = s.open * 0.7 + s.cover * 0.4 + (s.seeps ? 0.05 : 0) + (s.ore ? 0.05 : 0) - (s.open < 0.6 ? 1 : 0);
     list.push({ u, v, score }); if (!best || score > best.score) best = { u, v, score };
   }
   return all ? list.sort((a, b) => b.score - a.score) : best;
@@ -111,19 +111,19 @@ export class Sim {
     this.heightsInit();
   }
   rebuildNet() {
-    const r = raster(this.net, this.N, this.blockMask());
+    const W = this.win(), r = raster(this.net, this.N, this.blockMask(W), W);
     this.roads = r.roads; this.walls = r.walls; this.wallIn = r.inside; this.gates = r.gates; this.area = r.area;
-    if (this.scrub) for (let i = 0; i < this.scrub.length; i++) if (this.scrub[i] && (this.roads[i] || this.walls[i])) { this.scrub[i] = 0; this.scrubV = (this.scrubV || 0) + 1; }
+    if (this.scrub) for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * this.N + x; x < W[2]; x++, i++) if (this.scrub[i] && (this.roads[i] || this.walls[i])) { this.scrub[i] = 0; this.scrubV = (this.scrubV || 0) + 1; }
     // a wall is for defence: it marks what is inside the perimeter (wallIn), but you may build on any of your land, in or out
     this.open = r.area === 0;
     const N = this.N; this.inMask = new Uint8Array(N * N);
-    for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) ? 0 : 1; }
-    // only on ground the Bureau has granted: the parcels you hold, or the old square charter
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (!this.ownedTile(x, z)) this.inMask[z * N + x] = 0;
+    // only on ground the Bureau has granted: the parcels you hold
+    for (let z = Math.max(1, W[1]); z < Math.min(N - 1, W[3]); z++) for (let x = Math.max(1, W[0]); x < Math.min(N - 1, W[2]); x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) || !this.ownedTile(x, z) ? 0 : 1; }
+    this.buildDecks();
     this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
   }
   blocked(i) { const t = this.terr?.[i]; return t === GROUND.WATER || t === GROUND.ROCK; }
-  blockMask() { const N = this.N, m = new Uint8Array(N * N); if (this.terr) for (let i = 0; i < N * N; i++) m[i] = this.blocked(i) ? 1 : 0; return m; }
+  blockMask(W = [0, 0, this.N, this.N]) { const N = this.N, m = new Uint8Array(N * N); if (this.terr) for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) m[i] = this.blocked(i) ? 1 : 0; return m; }
   // the charter's square: [lo, hi) on both axes
   box() { const [x0, z0, x1, z1] = this.ownBounds(); return [Math.min(x0, z0), Math.max(x1, z1)]; }   // the square round every parcel held
   // ---------------------------------------------------------------- the charter: outpost, fort, major base
@@ -148,7 +148,7 @@ export class Sim {
       return { x: cx, z: z1 - 2, ox: cx, oz: Math.min(N + 5, z1 + 30), gx: cx, gz: z1 };
     }
     const g = gs.reduce((p, q) => q.z > p.z ? q : p);
-    let cx = 0, cz = 0, n = 0; for (let i = 0; i < N * N; i++) if (this.wallIn[i]) { cx += i % N; cz += (i / N) | 0; n++; }
+    let cx = 0, cz = 0, n = 0; const W = this.win(); for (let z = W[1]; z < W[3]; z++) for (let x = W[0]; x < W[2]; x++) if (this.wallIn[z * N + x]) { cx += x; cz += z; n++; }
     cx = n ? cx / n + 0.5 : N / 2; cz = n ? cz / n + 0.5 : N / 2;
     const dx = g.x - cx, dz = g.z - cz, ax = Math.abs(dx) > Math.abs(dz), sx = ax ? Math.sign(dx) : 0, sz = ax ? 0 : Math.sign(dz) || 1;
     const far = Math.min(30, ax ? (sx > 0 ? N - g.x : g.x) : (sz > 0 ? N - g.z : g.z));   // arrivals come in from 30 tiles out
@@ -157,7 +157,7 @@ export class Sim {
   walkGrid() {   // where people and vehicles can go: anywhere on the map that isn't a building or a wall; gates are open
     if (this._walkV === this.layoutV()) return this._walk;
     const N = this.N, w = new Uint8Array(N * N);
-    for (let i = 0; i < N * N; i++) w[i] = !this.occ[i] && this.walls[i] !== 1 && (!this.blocked(i) || this.roads[i]) ? 1 : 0;
+    const W = this.win(); for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) w[i] = !this.occ[i] && this.walls[i] !== 1 && (!this.blocked(i) || this.roads[i]) ? 1 : 0;
     this._walk = w; this._walkV = this.layoutV(); return w;
   }
   layoutV() { return this.b.length * 7919 + this.nid * 31 + (this.roadsV || 0); }
@@ -198,11 +198,14 @@ export class Sim {
 
   // ---------------------------------------------------------------- roads and walls: one line tool
   roadPrice(type) { return type === 2 && this.hasTech('asphalt') ? Math.ceil(ROADS[2].cost / 2) : ROADS[type].cost; }
-  linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : 1); }   // per tile of length; paved is two wide
+  linePrice(k) { return k === 'wall' ? C.WALL : this.roadPrice(KINDS[k].surf) * (k === 'paved' ? 2 : k === 'bridge' ? 2 * C.BRIDGE : 1); }   // per tile of length; paved is two wide
   snapLine(p, mode, k, from) { return snap(this.net, p, mode, KINDS[k].w, from); }
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
   checkLine(a, b, k, dry) {
     const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
+    if (k === 'bridge') return this.checkBridge(a, b, len, tiles);
+    // nothing joins a bridge partway across: roads meet it at its ends, where it stands on the ground
+    for (const p of [a, b]) { const d = this.deckAt(p.x, p.z); if (d != null && Math.abs(d - this.hAt(p.x, p.z)) > 0.25) return { ok: false, why: 'Roads join a bridge at its ends, not across the span', cost: 0 }; }
     // a road climbs only so steeply from one tile to the next (walls go where they must)
     if (k !== 'wall' && this.hgt) { let ph = null; for (const [x, z] of tiles) { const h = this.hAt(x + 0.5, z + 0.5); if (ph !== null && Math.abs(h - ph) > TERRA.roadGrade) return { ok: false, why: `Too steep for a road here (${Math.round(Math.abs(h - ph) * 100)}% grade): ease the slope (LANDSCAPE)`, cost: 0 }; ph = h; } }
     let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: nothing is built on it', cost: 0 }; } }
@@ -232,10 +235,43 @@ export class Sim {
     if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
     return { ok: true, cost, runs: ok, why: 'The wall stops at the shore; the water closes the gap' };
   }
+  // a bridge: both ends on firm ground, an even grade between them, clear of the ground all the way across. Water, rock
+  // and gullies under it are fine; a hill in the way is not
+  checkBridge(a, b, len, tiles) {
+    const N = this.N, cost = Math.ceil(len) * this.linePrice('bridge'), ha = this.hAt(a.x, a.z), hb = this.hAt(b.x, b.z);
+    if (len < 3) return { ok: false, why: 'Too short for a bridge', cost };
+    if (len > 48) return { ok: false, why: 'Longer than a span can reach (48 cells, 384 m): put a pier in on land', cost };
+    for (const p of [a, b]) { const t = this.terr?.[Math.floor(p.z) * N + Math.floor(p.x)]; if (t === GROUND.WATER || t === GROUND.ROCK) return { ok: false, why: 'Each end has to stand on firm ground', cost }; }
+    if (Math.abs(hb - ha) / len > TERRA.roadGrade * 1.5) return { ok: false, why: `Too steep a span (${Math.round(Math.abs(hb - ha) / len * 100)}% grade)`, cost };
+    for (const [x, z] of tiles) {
+      if (!this.ownedTile(x, z)) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)', cost };
+      if (this.occ[z * N + x]) return { ok: false, why: 'A building is in the way', cost };
+      const L2 = (b.x - a.x) ** 2 + (b.z - a.z) ** 2, t = Math.max(0, Math.min(1, ((x + 0.5 - a.x) * (b.x - a.x) + (z + 0.5 - a.z) * (b.z - a.z)) / L2));
+      if (this.hAt(x + 0.5, z + 0.5) > ha + (hb - ha) * t + 0.3) return { ok: false, why: 'The ground rises into the span: a bridge can only cross what is lower than it', cost };
+    }
+    if (this.supplies < cost) return { ok: false, why: 'Not enough supplies', cost };
+    return { ok: true, cost };
+  }
+  // the deck's height over a point, if a bridge runs there (null if none)
+  deckAt(x, z) { if (!this.deck) return null; const M = this.N + 1, i = Math.round(x), j = Math.round(z); const v = this.deck.get(j * M + i); return v ?? null; }
+  // every corner a bridge covers gets its deck height: the shader lifts whatever runs on the bridge onto it
+  buildDecks() {
+    const M = this.N + 1, net = this.net, nd = id => net.nodes.find(n => n.id === id), deck = new Map();
+    for (const sg of net.segs) {
+      if (sg.k !== 'bridge') continue;
+      const a = nd(sg.a), b = nd(sg.b), ha = a.h ?? this.hAt(a.x, a.z), hb = b.h ?? this.hAt(b.x, b.z), L2 = (b.x - a.x) ** 2 + (b.z - a.z) ** 2 || 1;
+      for (const [x, z] of lineTiles(this.N, a.x, a.z, b.x, b.z, sg.w + 0.6)) for (const [i, j] of [[x, z], [x + 1, z], [x, z + 1], [x + 1, z + 1]]) {
+        const t = Math.max(0, Math.min(1, ((i - a.x) * (b.x - a.x) + (j - a.z) * (b.z - a.z)) / L2)), h = ha + (hb - ha) * t;
+        if (h > this.hgt[j * M + i] - 0.05) deck.set(j * M + i, Math.max(deck.get(j * M + i) ?? -1e9, h));
+      }
+    }
+    this.deck = deck; this.deckV = (this.deckV || 0) + 1;
+  }
   drawLine(a, b, k) {
     const c = this.checkLine(a, b, k); if (!c.ok) return null;
     if (c.runs) { let first = null; for (const [p, q] of c.runs) { const s = addLine(this.net, p, q, k); if (s) { first ??= s; } } if (first) { this.spend('build', c.cost); this.rebuildNet(); } return first; }
     const s = addLine(this.net, a, b, k); if (!s) return null;
+    if (k === 'bridge') for (const id of [s.a, s.b]) { const n = this.net.nodes.find(n => n.id === id); n.h ??= this.hAt(n.x, n.z); }   // the deck's ends stay where they were laid
     this.spend('build', c.cost); this.rebuildNet(); return s;
   }
   removeLine(x, z) {
@@ -327,13 +363,13 @@ export class Sim {
   }
   // the roadside strips buildings can go on: free ground inside the wall within four tiles of a road
   plotTiles() {
-    const N = this.N, dist = new Int8Array(N * N).fill(-1), q = [];
-    for (let i = 0; i < N * N; i++) if (this.roads[i] && this.inMask[i]) { dist[i] = 0; q.push(i); }
+    const N = this.N, dist = new Int8Array(N * N).fill(-1), q = [], W = this.win();
+    for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (this.roads[i] && this.inMask[i]) { dist[i] = 0; q.push(i); }
     for (let h = 0; h < q.length; h++) {
       const i = q[h], x = i % N; if (dist[i] >= 4) continue;
       for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) if (j >= 0 && j < N * N && dist[j] < 0 && this.inMask[j] && !this.roads[j] && !this.occ[j] && !this.walls[j]) { dist[j] = dist[i] + 1; q.push(j); }
     }
-    const out = []; for (let i = 0; i < N * N; i++) if (dist[i] > 0) out.push([i % N, (i / N) | 0, dist[i]]); return out;
+    const out = []; for (let z = W[1]; z < W[3]; z++) for (let x = W[0], i = z * N + x; x < W[2]; x++, i++) if (dist[i] > 0) out.push([x, z, dist[i]]); return out;
   }
   fits(type, x, z, rot, dz = 0, self = 0) {
     const [w, dd] = dims(type, rot, dz);
@@ -345,7 +381,7 @@ export class Sim {
       const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
     }
     // the ground under it is levelled as it goes down, so long as it is not too steep to start with
-    if (this.hgt && this.gradeOf(x, z, w, dd) > TERRA.maxGrade) return { ok: false, why: `Too steep (${Math.round(this.gradeOf(x, z, w, dd) * 50)} m of rise): level it first (LANDSCAPE)` };
+    if (this.hgt && this.gradeOf(x, z, w, dd) > TERRA.maxGrade) return { ok: false, why: `Too steep (${Math.round(this.gradeOf(x, z, w, dd) * LAND.TILE_M)} m of rise): level it first (LANDSCAPE)` };
     return { ok: true };
   }
   place(type, x, z, rot = 0, free = false, spec = null) {
@@ -1192,7 +1228,7 @@ export class Sim {
     let manned = 0;
     gs.forEach((g, i) => { if (this.troops.some(t => t.gate === i && t.state === 'guard')) { manned++; posts.push([g.x, g.z, 5]); } });
     let wall = 0, seen = 0, armed = 0; const wt = [];
-    for (let i = 0; i < N * N; i++) if (this.walls[i] === 1) { wall++; const x = i % N + 0.5, z = ((i / N) | 0) + 0.5; wt.push(x, z); if (posts.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) seen++; if (guns.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) armed++; }
+    const W = this.win(); for (let zz = W[1]; zz < W[3]; zz++) for (let xx = W[0], i = zz * N + xx; xx < W[2]; xx++, i++) if (this.walls[i] === 1) { wall++; const x = xx + 0.5, z = zz + 0.5; wt.push(x, z); if (posts.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) seen++; if (guns.some(p => Math.hypot(p[0] - x, p[1] - z) <= p[2])) armed++; }
     const key = this.b.filter(b => b.done && (b.type === 'hq' || b.type === 'fueldepot'));
     let depth = 0;
     for (const b of key) { let m = 99; for (let k = 0; k < wt.length; k += 2) m = Math.min(m, Math.hypot(wt[k] - b.x - b.w / 2, wt[k + 1] - b.z - b.d / 2)); depth += Math.min(1, m / 7); }
@@ -1362,12 +1398,12 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['hgt', 'hgt0', 'terr0', 'paint', 'own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'wallIn', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 11; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn(); o.hgtS = this.packHeights(); o.paintS = this.packPaint();
+    for (const k of Object.keys(this)) if (!['deck', 'hgt', 'hgt0', 'terr0', 'paint', 'own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'wallIn', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    o.rngS = this.rng.s; o.v = 12; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn(); o.hgtS = this.packHeights(); o.paintS = this.packPaint();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
-    if (!s.v || s.v < 11) throw new Error('save from before the big map (0.16)');
+    if (!s.v || s.v < 12) throw new Error('save from before the 8 m map (0.18)');
     Object.assign(this, structuredClone(s));
     this.rng = new RNG(1); this.rng.s = s.rngS; this.events = [];
     delete this.walls; delete this.inMask; delete this.gates; delete this.roads;

@@ -1,9 +1,9 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.17.1';
+export const VERSION = '0.18.0';
 
 export const C = {
-  N: 276,                   // the map is N x N tiles: a section of the planet, GRID x GRID parcels of PARCEL tiles each
+  N: 1725,                  // the map is N x N cells of 8 m: a 13.8 km section of the planet, GRID x GRID parcels of PARCEL cells each
   WALL: 4,
   BRIDGE: 3,               // a road tile over water costs this many times as much
   // the charter: how much land the Bureau lets you hold. parcels: the most parcels of LAND you may own at once
@@ -424,12 +424,13 @@ export const SCRUB = { t: 2.5, yield: 5, keep: 7, patch: 24,
   name: { desert: 'scrub and rubble', steppe: 'scrub and brush', ice: 'ice boulders and drift', jungle: 'undergrowth', ash: 'slag and debris' } };
 // the landing: the SEAF security detachment sweeps the ground round the landing zone before the engineers start.
 // dur: seconds (about eight hours). salvage: supplies found
-// the land (0.16): the section is GRID x GRID parcels of PARCEL tiles; the ring round the edge is never granted, so 21 x 21
-// = 441 can be bought. A tile is TILE_M metres, so a parcel is 600 m square and the buildable section about 159 km².
+// the land (0.16, 8 m cells from 0.18): the section is GRID x GRID parcels of PARCEL cells; the ring round the edge is
+// never granted, so 21 x 21 = 441 can be bought. A cell is TILE_M metres (a 2-lane road is 2 cells, 16 m; zoning is
+// 4 cells deep, 32 m), so a parcel is 600 m square and the buildable section about 159 km².
 // You start with START x START parcels round the HQ; more are bought next to what you hold, up to the charter's allowance.
 // A parcel's price: supplies for the survey and the stakes, plus a Bureau filing fee in credits; both rise with every parcel
 // held past the start, and are weighted by how much of it can be built on and what is under it
-export const LAND = { PARCEL: 12, GRID: 23, TILE_M: 50, START: 3, sup: 150, supStep: 25, cr: 20, crStep: 4 };
+export const LAND = { PARCEL: 75, GRID: 23, TILE_M: 8, START: 3, sup: 150, supStep: 25, cr: 20, crStep: 4 };
 export const SWEEP = { dur: 42, salvage: [60, 140] };
 
 // ---------------------------------------------------------------- zones (0.14, design §8, after doctrine's functional areas)

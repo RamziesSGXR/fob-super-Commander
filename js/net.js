@@ -8,6 +8,7 @@
 export const KINDS = {
   dirt:  { name: 'Dirt Road', w: 1, surf: 1 },
   paved: { name: 'Paved Road', w: 2, surf: 2 },
+  bridge: { name: 'Bridge', w: 2, surf: 2 },   // a paved deck on piers: spans water, ravines and rough ground
   wall:  { name: 'Wall', w: 1, surf: 0 },
 };
 const REACH = 0.22;   // tiles within half the width plus this of the centreline belong to a segment (keeps diagonals 4-connected)
@@ -86,8 +87,10 @@ export function removeSeg(net, id) {
 }
 
 // tiles from the network: roads (surface 1 dirt, 2 paved), walls (1 wall, 2 gate) and the enclosed base
-export function raster(net, N, block = null) {
+// win: [x0, z0, x1, z1), the part of the map that matters (your land and a margin); outside it nothing is inside
+export function raster(net, N, block = null, win = null) {
   const roads = new Uint8Array(N * N), walls = new Uint8Array(N * N), inside = new Uint8Array(N * N);
+  const [X0, Z0, X1, Z1] = win || [0, 0, N, N], each = f => { for (let z = Z0; z < Z1; z++) for (let x = X0; x < X1; x++) f(z * N + x, x, z); };
   for (const s of net.segs) {
     const a = node(net, s.a), b = node(net, s.b);
     for (const [x, z] of lineTiles(N, a.x, a.z, b.x, b.z, s.w)) {
@@ -95,26 +98,28 @@ export function raster(net, N, block = null) {
       if (s.k === 'wall') walls[i] = 1; else roads[i] = Math.max(roads[i], KINDS[s.k].surf);
     }
   }
-  for (let i = 0; i < N * N; i++) if (walls[i] && roads[i]) walls[i] = 2;   // a road through a wall is a gate
+  each(i => { if (walls[i] && roads[i]) walls[i] = 2; });   // a road through a wall is a gate
   // flood in from the map edge; what it can't reach, walls and gates aside, is inside
   const out = new Uint8Array(N * N), stack = [];
   const shut = i => walls[i] || (block && block[i] && !roads[i]);   // water and rock shut the base in like a wall, unless a road bridges them
   const seed = i => { if (!out[i] && !shut(i)) { out[i] = 1; stack.push(i); } };
-  for (let k = 0; k < N; k++) { seed(k); seed((N - 1) * N + k); seed(k * N); seed(k * N + N - 1); }
+  for (let x = X0; x < X1; x++) { seed(Z0 * N + x); seed((Z1 - 1) * N + x); }
+  for (let z = Z0; z < Z1; z++) { seed(z * N + X0); seed(z * N + X1 - 1); }
   while (stack.length) {
     const i = stack.pop(), x = i % N, z = (i / N) | 0;
-    if (x > 0) seed(i - 1); if (x < N - 1) seed(i + 1); if (z > 0) seed(i - N); if (z < N - 1) seed(i + N);
+    if (x > X0) seed(i - 1); if (x < X1 - 1) seed(i + 1); if (z > Z0) seed(i - N); if (z < Z1 - 1) seed(i + N);
   }
   // what the flood can't reach is inside, but only a pocket a wall helps close: ground ringed by nothing but water and
   // rock is just a pocket of land, not a base
   let n = 0; const met = new Uint8Array(N * N);
-  for (let i0 = 0; i0 < N * N; i0++) {
+  for (let z0 = Z0; z0 < Z1; z0++) for (let x0 = X0; x0 < X1; x0++) {
+    const i0 = z0 * N + x0;
     if (out[i0] || shut(i0) || met[i0]) continue;
     const comp = [i0]; met[i0] = 1; let walled = false;
     for (let h = 0; h < comp.length; h++) {
-      const i = comp[h], x = i % N;
-      for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) {
-        if (j < 0 || j >= N * N) continue;
+      const i = comp[h], x = i % N, z = (i / N) | 0;
+      for (const j of [x > X0 ? i - 1 : -1, x < X1 - 1 ? i + 1 : -1, z > Z0 ? i - N : -1, z < Z1 - 1 ? i + N : -1]) {
+        if (j < 0) continue;
         if (walls[j]) walled = true;
         if (!out[j] && !shut(j) && !met[j]) { met[j] = 1; comp.push(j); }
       }
@@ -123,11 +128,11 @@ export function raster(net, N, block = null) {
   }
   // gates: clusters of gate tiles
   const gates = [], seen = new Uint8Array(N * N);
-  for (let i = 0; i < N * N; i++) if (walls[i] === 2 && !seen[i]) {
+  each(i => { if (walls[i] !== 2 || seen[i]) return;
     const q = [i], tiles = []; seen[i] = 1;
     while (q.length) { const j = q.pop(); tiles.push(j); for (const d of [1, -1, N, -N]) { const k = j + d; if (k >= 0 && k < N * N && walls[k] === 2 && !seen[k]) { seen[k] = 1; q.push(k); } } }
     const x = tiles.reduce((a, j) => a + j % N, 0) / tiles.length + 0.5, z = tiles.reduce((a, j) => a + ((j / N) | 0), 0) / tiles.length + 0.5;
     gates.push({ x, z, tiles });
-  }
+  });
   return { roads, walls, inside, gates, area: n };
 }

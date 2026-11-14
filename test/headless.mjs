@@ -6,9 +6,12 @@ import { REQUESTS, trueGrade } from '../js/desk.js';
 import { B, C, GKEYS, TECH, GROWS } from '../js/config.js';
 
 const weeks = +(process.argv[2] || 12), mode = process.argv[3] || 'bot', seed = +(process.argv[4] || 7);
-const s = new Sim({ seed });
+// the bot always builds round the middle of the section: the Command Post goes down there, and the ground for 60 cells
+// round it is levelled first (as a player would with LANDSCAPE) so its fixed plan fits whatever the site is
+const m = Math.floor(C.N / 2), s = new Sim({ seed, at: [m - 3, m - 3] });
+{ const M = s.N + 1, R = 60, k0 = (m - R) * M + m - R, base = Math.max(0.5, s.hgt[k0]); for (let z = m - R; z <= m + R; z++) for (let x = m - R; x <= m + R; x++) s.hgt[z * M + x] = base; s.reclassify(m - R - 1, m - R - 1, m + R + 1, m + R + 1); s.rebuildNet(); }
 if (process.env.COMMIT) { const [d, p, t] = process.env.COMMIT.split(',').map(Number); s.commit = { def: d, pro: p, tru: t }; }
-const N = s.N, m = N / 2;
+const N = s.N;
 
 function spot(type, near = [m, m]) {
   let best = null; const [x0, z0, x1, z1] = s.ownBounds();
@@ -43,10 +46,12 @@ const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', '
   'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'fuelfarm', 'tower', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
 let step = 0, roadN = 0;
 let founded = false, wallAt = 0, start0 = null;
-function rewall() {   // take the old wall down and put a new one round everything held, with the gate road through the south side
+// the bot's perimeter: a square round the middle, wider each charter (the land it starts with is far bigger, 8 m cells)
+const PERIM = [36, 46, 58, 80], perim = () => { const h = PERIM[s.stage] / 2; return [Math.floor(m - h), Math.floor(m - h), Math.ceil(m + h), Math.ceil(m + h)]; };
+function rewall() {   // take the old wall down and put a new one round the bigger square, with the gate road through the south side
   wallAt = s.stage;
   for (const g of s.net.segs.filter(g => g.k === 'wall')) { const a = s.net.nodes.find(n => n.id === g.a), b = s.net.nodes.find(n => n.id === g.b); if (a && b) s.removeLine((a.x + b.x) / 2, (a.z + b.z) / 2); }
-  const [x0, z0, x1, z1] = s.ownBounds(), L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
+  const [x0, z0, x1, z1] = perim(), L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
   const lo = [x0 + 1.5, z0 + 1.5], hi = [x1 - 1.5, z1 - 1.5];
   L(lo[0], lo[1], hi[0], lo[1], 'wall'); L(hi[0], lo[1], hi[0], hi[1], 'wall'); L(hi[0], hi[1], lo[0], hi[1], 'wall'); L(lo[0], hi[1], lo[0], lo[1], 'wall');
   L(m + 1, z1 - 4, m + 1, z1 + 1, 'paved');
@@ -54,10 +59,11 @@ function rewall() {   // take the old wall down and put a new one round everythi
 function found() {   // the bot's opening: a paved spine and cross streets, a pad, then a wall round it all with a gate
   founded = true; start0 = s.parcelAt(s.ownBounds()[0], s.ownBounds()[1]);
   const L = (ax, az, bx, bz, k) => s.drawLine(s.snapLine({ x: ax, z: az }, 'free', k), s.snapLine({ x: bx, z: bz }, 'free', k), k);
-  L(m + 1, s.box()[1] - 2, m + 1, m - 12, 'paved'); L(m - 12, m + 0.5, m + 13, m + 0.5, 'dirt'); L(m - 12, m + 8.5, m + 13, m + 8.5, 'dirt'); L(m - 12, m - 7.5, m + 13, m - 7.5, 'dirt');
-  const [b0, b1] = s.box(), lo = b0 + 1.5, hi = b1 - 1.5;
+  const [b0, , b1] = perim();
+  L(m + 1, b1 - 2, m + 1, m - 12, 'paved'); L(m - 12, m + 0.5, m + 13, m + 0.5, 'dirt'); L(m - 12, m + 8.5, m + 13, m + 8.5, 'dirt'); L(m - 12, m - 7.5, m + 13, m - 7.5, 'dirt');
+  const lo = b0 + 1.5, hi = b1 - 1.5;
   L(lo, lo, hi, lo, 'wall'); L(hi, lo, hi, hi, 'wall'); L(hi, hi, lo, hi, 'wall'); L(lo, hi, lo, lo, 'wall');
-  L(m + 1, s.box()[1] - 2, m + 1, s.box()[1] + 1, 'paved');
+  L(m + 1, b1 - 2, m + 1, b1 + 1, 'paved');
   build('pad', [m + 5, m - 3]);
   // zones: bunks, mess and latrines to the west, storage by the pad, shops to the south-west; the rest is placed by hand
   s.paintZone(m - 12, m - 7, m - 1, m + 8, 'life'); s.paintZone(m + 2, m - 7, m + 12, m - 1, 'logi'); s.paintZone(m - 12, m + 9, m - 1, m + 12, 'comm');
@@ -83,11 +89,8 @@ function bot() {
   // land: each charter, the bot grows its ground to a bigger rectangle (north and west first, where the bunks go), and
   // once the rectangle is all held, moves its wall out to the new edge
   if (!saving) {
-    const [w, h] = [[3, 3], [4, 5], [6, 6], [8, 8]][s.stage], [x0, z0] = start0, rx = Math.max(1, x0 + 3 - w), rz = Math.max(1, z0 + 3 - h);
-    const want = []; for (let pz = rz; pz < rz + h; pz++) for (let px = rx; px < rx + w; px++) if (!s.owns(px, pz) && s.grantable(px, pz)) want.push([px, pz]);
-    const nb = want.find(([px, pz]) => s.parcelState(px, pz) === 'buy');
-    if (nb && s.credits > s.parcelCost(...nb).cr + 200 && s.supplies > s.parcelCost(...nb).sup + 900) s.buyParcel(...nb);
-    if (!want.length && wallAt !== s.stage) rewall();
+    // the starting 3 x 3 parcels (1.8 km) hold the whole base: no land to buy, just a wider wall each charter
+    if (wallAt !== s.stage) rewall();
   }
   if ((!saving && s.credits > 700 && s.supplies < 1500) || (saving && ns && s.credits > ns.cr + 400 && s.supplies < (ns.sup || 0) + 300)) s.buySupplies();
   while ((s.credits < 150 || (saving && short)) && s.supplies > 1200 + (ns?.sup || 0) && s.sellSupplies());

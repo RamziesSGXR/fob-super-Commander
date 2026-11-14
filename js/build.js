@@ -5,7 +5,7 @@
 //   - Clearing: the SEAF security detachment sweeps the landing zone before work starts, and the ground is covered in scrub
 //     and debris that engineers clear (for a little salvage) before anything goes up on it.
 // Mixed into Sim (see the end of sim.js), so `this` is the simulation.
-import { B, C, DESIGNS, STD, STANDARDS, ENG, SCRUB, SWEEP, RANKS } from './config.js';
+import { B, C, DESIGNS, STD, STANDARDS, ENG, SCRUB, SWEEP, RANKS, LAND } from './config.js';
 import { Noise } from './noise.js';
 import { GROUND } from './site.js';
 
@@ -140,18 +140,21 @@ export const Build = {
   },
 
   // ---------------------------------------------------------------- scrub and debris
-  makeScrub() {
-    const N = this.N, sc = new Uint8Array(N * N); if (!this.site) return sc;
-    const nz = new Noise((this.seed ^ 0x5c7b) >>> 0), dens = SCRUB.density[this.site.biome] ?? 0.4;
-    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
-      const i = z * N + x, t = this.terr?.[i]; if (t === GROUND.WATER || t === GROUND.ROCK) continue;
+  // scrub grows on land you buy, parcel by parcel (the starting ground is cleared for the landing)
+  makeScrub() { return new Uint8Array(this.N * this.N); },
+  scrubParcel(px, pz) {
+    if (!this.site || !this.scrub) return;
+    const N = this.N, P = LAND.PARCEL, nz = new Noise((this.seed ^ 0x5c7b) >>> 0), dens = SCRUB.density[this.site.biome] ?? 0.4;
+    for (let z = pz * P; z < pz * P + P; z++) for (let x = px * P; x < px * P + P; x++) {
+      const i = z * N + x, t = this.terr?.[i]; if (t === GROUND.WATER || t === GROUND.ROCK || this.occ[i] || this.roads[i] || this.walls[i]) continue;
       const v = nz.fbm(x / 7, z / 7) * 0.8 + nz.v(x * 0.9, z * 0.9) * 0.2;
-      if (v > 1 - dens) sc[i] = 1;
+      if (v > 1 - dens) this.scrub[i] = 1;
     }
-    return sc;
+    this.scrubV = (this.scrubV || 0) + 1;
   },
-  packScrub() { const s = this.scrub; if (!s) return ''; let o = ''; for (let i = 0; i < s.length; i += 4) o += ((s[i] | s[i + 1] << 1 | s[i + 2] << 2 | s[i + 3] << 3) || 0).toString(16); return o; },
-  unpackScrub(str) { const N = this.N, s = new Uint8Array(N * N); if (str) for (let k = 0; k < str.length; k++) { const v = parseInt(str[k], 16); for (let j = 0; j < 4; j++) if (k * 4 + j < s.length) s[k * 4 + j] = (v >> j) & 1; } return s; },
+  // run-length: long empty stretches cost nothing
+  packScrub() { const s = this.scrub; if (!s) return ''; const out = []; let v = s[0], n = 0; for (let i = 0; i < s.length; i++) { if (s[i] === v) n++; else { out.push(v + n.toString(36)); v = s[i]; n = 1; } } out.push(v + n.toString(36)); return out.join(','); },
+  unpackScrub(str) { const N = this.N, s = new Uint8Array(N * N); if (str) { let i = 0; for (const e of str.split(',')) { const v = +e[0], n = parseInt(e.slice(1), 36); if (v) s.fill(1, i, i + n); i += n; } } return s; },
   scrubName() { return SCRUB.name[this.site?.biome] || 'scrub and debris'; },
   scrubUnder(x, z, w, d) { const out = []; if (!this.scrub) return out; for (let j = 0; j < d; j++) for (let i = 0; i < w; i++) { const k = (z + j) * this.N + x + i; if (this.scrub[k]) out.push(k); } return out; },
   clearTile(i, pay) {
