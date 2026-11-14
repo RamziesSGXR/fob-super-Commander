@@ -10,7 +10,7 @@ import { LAND } from './config.js';
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW, UTIL } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
-import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
+import { REQUESTS, GRADES, trueGrade, CALLS, hasOffice } from './desk.js';
 import { makeSite, biomeOf, GROUND, RW, RH, survey, regionKind, placeName } from './site.js';
 import { writeReport } from './reports.js';
 import { Build } from './build.js';
@@ -83,7 +83,7 @@ export class Sim {
     this.flat = !!opts.flat;
     // a new game opens on the empty section: the Commander calls the HQ in. Everyone else (tests, the bot, the title demo)
     // gets it set down on open ground near the middle
-    if (opts.callIn) { this.callIn = true; this.rebuildNet(); this.ranking(); this.tick(); this.marketInit(); this.recalc(); return; }
+    if (opts.callIn) { this.callIn = 'flag'; this.rebuildNet(); this.ranking(); this.tick(); this.marketInit(); this.recalc(); return; }
     if (opts.flat) { const m = this.N / 2; this.found(m - 3, m - 3, { force: true }); const c = (GRID - 1) / 2; for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) this.own[(c + j) * GRID + c + i] = 1; this.rebuildNet(); }
     else { const at = opts.at || this.autoSpot(); this.found(at[0], at[1], { force: !!opts.at }); }
     this.begin();
@@ -110,12 +110,12 @@ export class Sim {
   }
   rebuildNet() {
     const r = raster(this.net, this.N, this.blockMask());
-    this.roads = r.roads; this.walls = r.walls; this.inMask = r.inside; this.gates = r.gates; this.area = r.area;
+    this.roads = r.roads; this.walls = r.walls; this.wallIn = r.inside; this.gates = r.gates; this.area = r.area;
     if (this.scrub) for (let i = 0; i < this.scrub.length; i++) if (this.scrub[i] && (this.roads[i] || this.walls[i])) { this.scrub[i] = 0; this.scrubV = (this.scrubV || 0) + 1; }
-    // until a wall closes, the camp is open ground: build anywhere, defend nothing
+    // a wall is for defence: it marks what is inside the perimeter (wallIn), but you may build on any of your land, in or out
     this.open = r.area === 0;
-    const N = this.N;
-    if (this.open) for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) ? 0 : 1; }
+    const N = this.N; this.inMask = new Uint8Array(N * N);
+    for (let z = 1; z < N - 1; z++) for (let x = 1; x < N - 1; x++) { const i = z * N + x; this.inMask[i] = this.walls[i] || (this.blocked(i) && !this.roads[i]) ? 0 : 1; }
     // only on ground the Bureau has granted: the parcels you hold, or the old square charter
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) if (!this.ownedTile(x, z)) this.inMask[z * N + x] = 0;
     this.roadsV = (this.roadsV || 0) + 1; this.events?.push({ t: 'roads' });
@@ -146,10 +146,10 @@ export class Sim {
       return { x: cx, z: z1 - 2, ox: cx, oz: Math.min(N + 5, z1 + 30), gx: cx, gz: z1 };
     }
     const g = gs.reduce((p, q) => q.z > p.z ? q : p);
-    let cx = 0, cz = 0, n = 0; for (let i = 0; i < N * N; i++) if (this.inMask[i]) { cx += i % N; cz += (i / N) | 0; n++; }
+    let cx = 0, cz = 0, n = 0; for (let i = 0; i < N * N; i++) if (this.wallIn[i]) { cx += i % N; cz += (i / N) | 0; n++; }
     cx = n ? cx / n + 0.5 : N / 2; cz = n ? cz / n + 0.5 : N / 2;
     const dx = g.x - cx, dz = g.z - cz, ax = Math.abs(dx) > Math.abs(dz), sx = ax ? Math.sign(dx) : 0, sz = ax ? 0 : Math.sign(dz) || 1;
-    const far = ax ? (sx > 0 ? N - g.x : g.x) : (sz > 0 ? N - g.z : g.z);
+    const far = Math.min(30, ax ? (sx > 0 ? N - g.x : g.x) : (sz > 0 ? N - g.z : g.z));   // arrivals come in from 30 tiles out
     return { x: g.x - sx * 1.5, z: g.z - sz * 1.5, ox: g.x + sx * (far + 5), oz: g.z + sz * (far + 5), gx: g.x, gz: g.z };
   }
   walkGrid() {   // where people and vehicles can go: anywhere on the map that isn't a building or a wall; gates are open
@@ -201,7 +201,7 @@ export class Sim {
   // can this line go here, and what does it cost? a: snapped start, b: snapped end
   checkLine(a, b, k, dry) {
     const len = Math.hypot(b.x - a.x, b.z - a.z), tiles = lineTiles(this.N, a.x, a.z, b.x, b.z, KINDS[k].w);
-    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); wet++; } }
+    let wet = 0; for (const [x, z] of tiles) { const t = this.terr?.[z * this.N + x]; if (t === GROUND.ROCK) return { ok: false, why: 'Solid rock in the way', cost: 0 }; if (t === GROUND.WATER) { if (k === 'wall') return dry ? { ok: false, why: 'Water', cost: 0 } : this.shoreWall(a, b); return { ok: false, why: 'Water: nothing is built on it', cost: 0 }; } }
     const cost = Math.ceil(len) * this.linePrice(k) + Math.ceil(wet / KINDS[k].w) * this.linePrice(k) * (C.BRIDGE - 1);
     if (tiles.some(([x, z]) => !this.ownedTile(x, z))) return { ok: false, why: 'Outside your ground: buy the parcel first (LAND)', cost };
     if (len < 0.9) return { ok: false, why: 'Too short', cost };
@@ -335,7 +335,7 @@ export class Sim {
     const [w, dd] = dims(type, rot, dz);
     for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) {
       const tx = x + i, tz = z + j;
-      if (!this.inside(tx, tz)) return { ok: false, why: this.open ? 'Off the map' : 'Outside the wall' };
+      if (!this.inside(tx, tz)) return { ok: false, why: !this.ownedTile(tx, tz) ? 'Outside your land: buy the parcel first (LAND)' : this.walls[tz * this.N + tx] ? 'A wall is in the way' : 'Off the map' };
       if (this.occ[tz * this.N + tx] && this.occ[tz * this.N + tx] !== self) return { ok: false, why: 'Something is in the way' };
       if (this.roads[tz * this.N + tx]) return { ok: false, why: 'There is a road here' };
       const tr = this.terr?.[tz * this.N + tx]; if (tr === GROUND.WATER) return { ok: false, why: 'That is water' }; if (tr === GROUND.ROCK) return { ok: false, why: 'Solid rock' };
@@ -1258,7 +1258,7 @@ export class Sim {
   deskHour(h) {
     for (const r of this.desk.filter(r => this.t >= r.due)) { this.desk = this.desk.filter(x => x !== r); this.mood -= 2; this.say('base', `"${REQUESTS[r.k].title}" sat on your desk until it was filed without action. People noticed.`); }
     if (h < 9 || h > 17 || this.desk.length >= 4 || this.t < C.DAY || !this.rng.chance(0.17)) return;
-    const open = new Set(this.desk.map(r => r.k)), pool = REQUESTS.map((r, k) => k).filter(k => !open.has(k) && k !== this.deskLast && (!REQUESTS[k].when || REQUESTS[k].when(this)));
+    const open = new Set(this.desk.map(r => r.k)), pool = REQUESTS.map((r, k) => k).filter(k => !open.has(k) && k !== this.deskLast && hasOffice(this, REQUESTS[k].from) && (!REQUESTS[k].when || REQUESTS[k].when(this)));
     if (!pool.length) return;
     const k = this.rng.pick(pool); this.deskLast = k;
     const r = { id: this.nid++, k, name: `${'ABCDEFGHJKLMNPRSTVW'[this.rng.int(19)]}. ${this.rng.pick(SURNAMES)}`, due: this.t + C.DAY * 2 };
@@ -1350,7 +1350,7 @@ export class Sim {
   // ---------------------------------------------------------------- saving
   save() {
     const o = {};
-    for (const k of Object.keys(this)) if (!['own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
+    for (const k of Object.keys(this)) if (!['own', 'zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'wallIn', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
     o.rngS = this.rng.s; o.v = 11; o.scrubS = this.packScrub(); o.zoneS = this.packZones(); o.ownS = this.packOwn();
     return JSON.parse(JSON.stringify(o));
   }

@@ -23,7 +23,7 @@ export async function newGame(p) {
 // take the section on the landing screen and call the HQ in at the suggested spot
 export async function callIn(p) {
   await p.click('#ld-go'); await p.waitForTimeout(1500);
-  await p.evaluate(() => { const f = window.__fob, [x, z] = f.sim.autoSpot(); f.callIn(x, z); }); await p.waitForTimeout(800);
+  await p.evaluate(() => window.__fob.callInAuto()); await p.waitForTimeout(800);
 }
 // lay a cross of paved road and the foundation, through the simulation, then let a few days pass
 export async function foundation(p, days = 6) {

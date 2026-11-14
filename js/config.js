@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.16.0';
+export const VERSION = '0.16.1';
 
 export const C = {
   N: 276,                   // the map is N x N tiles: a section of the planet, GRID x GRID parcels of PARCEL tiles each
@@ -151,6 +151,8 @@ export const B = {
               desc: 'The heart of the faction: houses and feeds eight votes (six while it is still tents), keeps a little of everything and a forklift. Upgrade it from its card.' },
   seflag:   { name: 'Super Earth Flag', group: 'core', w: 2, d: 2, cost: 0, up: 0, prop: 6, mor: 2, unique: true, fixed: true,
               desc: 'Every base flies one, at its centre. It cannot be removed. Troops salute it, and medals are pinned beneath it.' },
+  // the Command Post: what the first pelican brings down, the HQ with its own landing pad beside it. Placed once, at the start
+  starter:  { name: 'Command Post', group: 'core', w: 6, d: 3, cost: 0, fixed: true, unique: true },
   pad:      { name: 'Landing Pad', group: 'core', w: 3, d: 3, cost: 300, up: 20, pw: -1, pad: true,
               desc: 'The supply pelican lands here every morning, and transports take trained troopers to the front every afternoon. More pads, bigger loads.' },
   depot:    { name: 'Supply Depot', group: 'core', w: 2, d: 2, cost: 180, up: 12, lifts: 1, store: { rations: 150, ammo: 100 },

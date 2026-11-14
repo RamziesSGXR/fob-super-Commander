@@ -2,7 +2,7 @@
 // spot on it, and the base's own ground is cut from that spot at full detail, so what you saw is what you land on.
 //
 // Ground kinds, one per tile: 0 open ground, 1 water, 2 rock (cliffs and outcrops), 3 an E-710 seep, 4 an ore field.
-// Water and rock can't be built on or walked through; roads may bridge water at a price; both shut the base in like a
+// Water and rock can't be built on or walked through; nothing is laid across water; both shut the base in like a
 // wall would. Deposits are open ground with something under it.
 import { Noise } from './noise.js';
 
@@ -76,7 +76,7 @@ export function survey(seed, biome, cx, cy, N) {
       cover > 0.35 ? 'Good natural defences: cliffs and water close much of the perimeter for free.' : cover > 0.15 ? 'Some natural cover on the approaches.' : 'Exposed on every side: the wall will be long.',
       cnt[3] ? `E-710 seeps (${cnt[3]} tiles): an Extractor can pump your own fuel.` : 'No E-710 under this ground.',
       cnt[4] ? `Ore fields (${cnt[4]} tiles): a Mine can dig your own supplies.` : 'No ore worth digging.',
-      cnt[1] / n > 0.08 ? 'Water on site: bridges cost extra, but the shore is a wall you never pay for.' : ''].filter(Boolean) };
+      cnt[1] / n > 0.08 ? 'Water on site: nothing is built on it, but the shore is a wall you never pay for.' : ''].filter(Boolean) };
 }
 
 // what is at a region pixel (for placing operations on the map): k is a GROUND kind, h the height

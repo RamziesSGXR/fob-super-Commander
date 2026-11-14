@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.16.0">
+<link rel="stylesheet" href="css/style.css?v=0.16.1">
 </head>
 <body>
 <div id="app">
@@ -161,7 +161,8 @@
     <aside id="orders" class="panel"><div class="ph"><span>ORDERS &amp; DESK</span><b id="tb-n"></b><button class="x" id="or-x" type="button" title="Fold away">–</button></div><div id="tb-body"></div></aside>
 
     <div id="selp" class="panel hidden"></div>
-    <div id="callin" class="panel hidden"><div class="ph"><span>CALL IN THE HQ</span></div><p class="fine left">Pick where your command post comes down. The 3 × 3 parcels round it, 1.8 km on a side, are the ground the Bureau grants you to start. It needs open, level ground: no water or rock under it or the landing zone.</p><div id="ci-read"></div><div class="btns"><button id="ci-best" class="btn" type="button">SUGGEST A SPOT</button></div></div>
+    <div id="debug" class="panel hidden"></div>
+    <div id="callin" class="panel hidden"><div class="ph"><span id="ci-h">CALL IN</span></div><p class="fine left" id="ci-p"></p><div id="ci-read"></div><div class="btns"><button id="ci-best" class="btn" type="button">SUGGEST A SPOT</button></div></div>
 
     <!-- bottom right: the minimap, the info views over it, and the comms log the COMMS button opens -->
     <div id="mmwrap">
@@ -248,32 +249,32 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.16.0",
-  "./js/build.js": "./js/build.js?v=0.16.0",
-  "./js/config.js": "./js/config.js?v=0.16.0",
-  "./js/demo.js": "./js/demo.js?v=0.16.0",
-  "./js/desk.js": "./js/desk.js?v=0.16.0",
-  "./js/land.js": "./js/land.js?v=0.16.0",
-  "./js/life.js": "./js/life.js?v=0.16.0",
-  "./js/logo.js": "./js/logo.js?v=0.16.0",
-  "./js/main.js": "./js/main.js?v=0.16.0",
-  "./js/market.js": "./js/market.js?v=0.16.0",
-  "./js/models.js": "./js/models.js?v=0.16.0",
-  "./js/net.js": "./js/net.js?v=0.16.0",
-  "./js/noise.js": "./js/noise.js?v=0.16.0",
-  "./js/path.js": "./js/path.js?v=0.16.0",
-  "./js/reports.js": "./js/reports.js?v=0.16.0",
-  "./js/rng.js": "./js/rng.js?v=0.16.0",
-  "./js/sim.js": "./js/sim.js?v=0.16.0",
-  "./js/site.js": "./js/site.js?v=0.16.0",
-  "./js/utils.js": "./js/utils.js?v=0.16.0",
-  "./js/view.js": "./js/view.js?v=0.16.0",
-  "./js/voices.js": "./js/voices.js?v=0.16.0",
-  "./js/zones.js": "./js/zones.js?v=0.16.0",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.16.0"
+  "./js/audio.js": "./js/audio.js?v=0.16.1",
+  "./js/build.js": "./js/build.js?v=0.16.1",
+  "./js/config.js": "./js/config.js?v=0.16.1",
+  "./js/demo.js": "./js/demo.js?v=0.16.1",
+  "./js/desk.js": "./js/desk.js?v=0.16.1",
+  "./js/land.js": "./js/land.js?v=0.16.1",
+  "./js/life.js": "./js/life.js?v=0.16.1",
+  "./js/logo.js": "./js/logo.js?v=0.16.1",
+  "./js/main.js": "./js/main.js?v=0.16.1",
+  "./js/market.js": "./js/market.js?v=0.16.1",
+  "./js/models.js": "./js/models.js?v=0.16.1",
+  "./js/net.js": "./js/net.js?v=0.16.1",
+  "./js/noise.js": "./js/noise.js?v=0.16.1",
+  "./js/path.js": "./js/path.js?v=0.16.1",
+  "./js/reports.js": "./js/reports.js?v=0.16.1",
+  "./js/rng.js": "./js/rng.js?v=0.16.1",
+  "./js/sim.js": "./js/sim.js?v=0.16.1",
+  "./js/site.js": "./js/site.js?v=0.16.1",
+  "./js/utils.js": "./js/utils.js?v=0.16.1",
+  "./js/view.js": "./js/view.js?v=0.16.1",
+  "./js/voices.js": "./js/voices.js?v=0.16.1",
+  "./js/zones.js": "./js/zones.js?v=0.16.1",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.16.1"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.16.0"></script>
+<script type="module" src="js/main.js?v=0.16.1"></script>
 </body>
 </html>

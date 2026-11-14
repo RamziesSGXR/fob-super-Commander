@@ -105,8 +105,22 @@ export function raster(net, N, block = null) {
     const i = stack.pop(), x = i % N, z = (i / N) | 0;
     if (x > 0) seed(i - 1); if (x < N - 1) seed(i + 1); if (z > 0) seed(i - N); if (z < N - 1) seed(i + N);
   }
-  let n = 0;
-  for (let i = 0; i < N * N; i++) if (!out[i] && !shut(i)) { inside[i] = 1; n++; }
+  // what the flood can't reach is inside, but only a pocket a wall helps close: ground ringed by nothing but water and
+  // rock is just a pocket of land, not a base
+  let n = 0; const met = new Uint8Array(N * N);
+  for (let i0 = 0; i0 < N * N; i0++) {
+    if (out[i0] || shut(i0) || met[i0]) continue;
+    const comp = [i0]; met[i0] = 1; let walled = false;
+    for (let h = 0; h < comp.length; h++) {
+      const i = comp[h], x = i % N;
+      for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, i - N, i + N]) {
+        if (j < 0 || j >= N * N) continue;
+        if (walls[j]) walled = true;
+        if (!out[j] && !shut(j) && !met[j]) { met[j] = 1; comp.push(j); }
+      }
+    }
+    if (walled) for (const i of comp) { inside[i] = 1; n++; }
+  }
   // gates: clusters of gate tiles
   const gates = [], seen = new Uint8Array(N * N);
   for (let i = 0; i < N * N; i++) if (walls[i] === 2 && !seen[i]) {

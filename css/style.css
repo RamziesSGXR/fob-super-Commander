@@ -499,3 +499,5 @@ body.ui-scifi .bi.on { border-color: var(--yellow); background-color: rgba(40, 3
 #callin { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); width: min(440px, 92vw); padding: 0 12px 10px; z-index: 8; border-top: 2px solid var(--yellow); }
 #callin p { margin: 6px 0 8px; } #callin .btns { margin-top: 8px; display: flex; gap: 8px; } #ci-read .kv b { text-align: right; }
 #hud.calling #orders, #hud.calling #build, #hud.calling #stand, #hud.calling #selp, #hud.calling #deskpop, #hud.calling #status, #hud.calling #comms-b, #hud.calling #notices { display: none !important; }
+#debug { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); width: 300px; padding: 0 10px 8px; z-index: 30; font-size: 11px; pointer-events: none; opacity: 0.94; }
+#debug .kv b { text-align: right; }

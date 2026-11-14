@@ -70,48 +70,76 @@ export const Land = {
   // a name for a parcel on the grid: columns lettered A.., rows numbered 1..
   parcelName(px, pz) { return `${String.fromCharCode(65 + px - 1)}${pz}`; },
 
-  // ---------------------------------------------------------------- calling in the HQ
-  // the 3 x 3 parcels round an HQ at (x, z), kept off the ungranted edge
-  startParcels(x, z) {
-    const [w, d] = [B.hq.w, B.hq.d], [cx, cz] = this.parcelAt(x + w / 2, z + d / 2), h = (LAND.START - 1) / 2;
+  // ---------------------------------------------------------------- the landing: flag first, then the Command Post
+  // The first pelican comes down where the Commander points. The troopers raise the Super Earth flag there, and the
+  // 3 x 3 parcels round it are granted, cleared of scrub from orbit. Then the Commander sets down the Command Post (the HQ
+  // and its landing pad, with the HQ's stores) anywhere on that ground: the nexus of the base.
+  // the 3 x 3 parcels round a point, kept off the ungranted edge
+  startParcels(x, z, w = 1, d = 1) {
+    const [cx, cz] = this.parcelAt(x + w / 2, z + d / 2), h = (LAND.START - 1) / 2;
     const px = Math.max(1 + h, Math.min(G - 2 - h, cx)), pz = Math.max(1 + h, Math.min(G - 2 - h, cz));
     const out = []; for (let j = -h; j <= h; j++) for (let i = -h; i <= h; i++) out.push([px + i, pz + j]);
     return out;
   },
-  canFound(x, z) {
-    const N = this.N, [w, d] = [B.hq.w, B.hq.d];
-    if (x < P || z < P || x + w > N - P || z + d > N - P) return { ok: false, why: 'Too close to the edge of the section' };
-    // the HQ, the flag beside it and a landing zone for the first pelican want open, level ground
-    for (let j = -3; j < d + 3; j++) for (let i = -3; i < w + 3; i++) {
-      const t = this.terr?.[(z + j) * N + x + i];
-      if (t === GROUND.WATER || t === GROUND.ROCK) return { ok: false, why: j >= 0 && i >= 0 && j < d && i < w ? (t === GROUND.WATER ? 'That is water' : 'Solid rock') : 'Needs open ground round it for the flag and the landing zone' };
-    }
-    return { ok: true, parcels: this.startParcels(x, z) };
+  canFlag(x, z) {
+    const N = this.N, t = this.terr?.[z * N + x];
+    if (x < P || z < P || x >= N - P || z >= N - P) return { ok: false, why: 'Too close to the edge of the section' };
+    if (t === GROUND.WATER || t === GROUND.ROCK) return { ok: false, why: t === GROUND.WATER ? 'That is water' : 'Solid rock' };
+    // somewhere on the 3 x 3 there has to be room for the Command Post
+    const ps = this.startParcels(x, z), free = ps.reduce((a, [px, pz]) => a + this.parcelInfo(px, pz).open, 0);
+    if (free < P * P * 2) return { ok: false, why: 'Too little open ground round it to build a base on' };
+    return { ok: true, parcels: ps };
   },
-  // the HQ comes down: the starting ground is granted, the landing zone cleared from orbit, the flag goes up beside it
-  found(x, z, opts = {}) {
-    const c = opts.force ? { ok: true, parcels: this.startParcels(x, z) } : this.canFound(x, z); if (!c.ok) return c;
+  plantFlag(x, z, opts = {}) {
+    const c = opts.force ? { ok: true, parcels: this.startParcels(x, z) } : this.canFlag(x, z); if (!c.ok) return c;
     const N = this.N;
     this.own.fill(0); for (const [px, pz] of c.parcels) this.own[pz * G + px] = 1; this.ownV = (this.ownV || 0) + 1;
-    const [w, d] = [B.hq.w, B.hq.d], cx = x + w / 2, cz = z + d / 2;
-    if (this.scrub) for (let j = -SCRUB.keep - 1; j <= SCRUB.keep + 1; j++) for (let i = -SCRUB.keep - 1; i <= SCRUB.keep + 1; i++) {
-      const tx = Math.floor(cx + i), tz = Math.floor(cz + j); if (tx < 0 || tz < 0 || tx >= N || tz >= N) continue;
-      if (Math.hypot(tx + 0.5 - cx, tz + 0.5 - cz) < SCRUB.keep) this.scrub[tz * N + tx] = 0;
-    }
+    // the starting ground is always clear: scrub only grows on the land you buy later
+    if (this.scrub) for (const [px, pz] of c.parcels) for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) this.scrub[(pz * P + j) * N + px * P + i] = 0;
     this.scrubV = (this.scrubV || 0) + 1;
-    this.callIn = false;
     this.rebuildNet();
-    const hq = this.place('hq', x, z, 0, true, { std: this.std });
-    const fs = this.hqFlagSpot(x, z, hq) || [x - 3, z]; this.place('seflag', fs[0], fs[1], 0, true);
+    this.place('seflag', x, z, 0, true);
+    this.flagAt = [x, z]; this.callIn = 'hq';
     this.rebuildNet();
-    hq.stock = { ...B.hq.store }; for (const g in hq.stock) hq.stock[g] = this.storeCap(hq, g);
-    this.hqSet = true;
     return { ok: true };
+  },
+  // where the Command Post's two halves go for a rotation: [hq x, hq z, pad x, pad z]
+  starterParts(x, z, rot) { return [[x, z, x + 3, z], [x, z + 3, x, z], [x + 3, z, x, z], [x, z, x, z + 3]][rot & 3]; },
+  canStarter(x, z, rot = 0) {
+    const [hx, hz, px, pz] = this.starterParts(x, z, rot);
+    const a = this.fits('hq', hx, hz, rot), b = this.fits('pad', px, pz, rot);
+    if (!a.ok) return a; if (!b.ok) return { ok: false, why: 'No room for the landing pad: ' + b.why.toLowerCase() };
+    return { ok: true };
+  },
+  placeStarter(x, z, rot = 0, opts = {}) {
+    const c = opts.force ? { ok: true } : this.canStarter(x, z, rot); if (!c.ok) return c;
+    const [hx, hz, px, pz] = this.starterParts(x, z, rot);
+    const hq = this.place('hq', hx, hz, rot, true, { std: this.std });
+    this.place('pad', px, pz, rot, true);
+    hq.stock = { ...B.hq.store }; for (const g in hq.stock) hq.stock[g] = this.storeCap(hq, g);
+    this.callIn = false; this.hqSet = true;
+    this.rebuildNet();
+    return { ok: true };
+  },
+  // both at once, for tests, the bot and the title demo: the Command Post at (x, z) facing south, the flag beside it
+  canFound(x, z) {
+    const N = this.N;
+    if (x < P + 3 || z < P + 3 || x + 9 > N - P || z + 6 > N - P) return { ok: false, why: 'Too close to the edge of the section' };
+    for (let j = -3; j < 6; j++) for (let i = -3; i < 9; i++) {
+      const t = this.terr?.[(z + j) * N + x + i];
+      if (t === GROUND.WATER || t === GROUND.ROCK) return { ok: false, why: t === GROUND.WATER ? 'Water too near' : 'Rock too near' };
+    }
+    return { ok: true, parcels: this.startParcels(x - 2, z + 1) };
+  },
+  found(x, z, opts = {}) {
+    const c = opts.force ? { ok: true } : this.canFound(x, z); if (!c.ok) return c;
+    this.plantFlag(x - 2, z + 1, { force: true });
+    return this.placeStarter(x, z, 0, { force: true });
   },
   // somewhere sensible to put the HQ when nobody is choosing (tests, the bot, the suggestion on the call-in screen): the
   // start whose 3 x 3 parcels have the most open ground, nearer the middle on a tie
   autoSpot() {
-    const N = this.N, [w, d] = [B.hq.w, B.hq.d], m = N / 2; let best = null;
+    const N = this.N, [w, d] = [6, 3], m = N / 2; let best = null;
     const open = new Float32Array(G * G); for (let pz = 0; pz < G; pz++) for (let px = 0; px < G; px++) open[pz * G + px] = this.parcelInfo(px, pz).frac;
     for (let pz = 2; pz < G - 2; pz++) for (let px = 2; px < G - 2; px++) {
       let o = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) o += open[(pz + j) * G + px + i];

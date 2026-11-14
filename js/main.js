@@ -174,26 +174,51 @@ $('ld-go').onclick = () => start(new Sim({ faction: draft, diff: draft.diff, see
 // ---------------------------------------------------------------- calling in the HQ: the whole section from high up, the
 // 3 x 3 parcels the HQ would bring shown under the pointer
 function beginCallIn() {
-  tool = 'callin'; select(null); paused = false;
+  tool = 'callin'; select(null); paused = false; rot = 0;
   view.zoomT = view.zoom = view.zMax() * 0.92; view.lookAt(sim.N / 2, sim.N / 2);
   $('callin').classList.remove('hidden'); $('hud').classList.add('calling');
-  ciRead(null);
+  ciCard(); ciRead(null);
+}
+// the card at the top: what this step is
+function ciCard() {
+  const flag = sim.callIn === 'flag';
+  $('ci-h').textContent = flag ? 'STEP 1 OF 2 · RAISE THE FLAG' : 'STEP 2 OF 2 · SET DOWN THE COMMAND POST';
+  $('ci-p').textContent = flag
+    ? 'Pick where the first pelican comes down. The troopers raise the Super Earth flag there, and the 3 × 3 parcels round it (1.8 km on a side) are granted to you, cleared of scrub.'
+    : 'Now place the Command Post anywhere on your ground: the HQ and its own landing pad, with the HQ\'s stores. It is the nexus of the base; the first pelican lands on its pad. R turns it.';
+  $('ci-best').textContent = flag ? 'SUGGEST A SPOT' : 'NEXT TO THE FLAG';
 }
 function ciRead(at) {
   if (!at) { $('ci-read').innerHTML = '<p class="fine left">Move over the map to survey a spot.</p>'; return; }
-  const c = sim.canFound(at[0], at[1]), ps = sim.startParcels(at[0], at[1]), f = ps.map(([px, pz]) => sim.parcelInfo(px, pz)), sum = k => f.reduce((a, b) => a + b[k], 0);
+  if (sim.callIn === 'hq') { const c = sim.canStarter(at[0], at[1], rot); $('ci-read').innerHTML = `<div class="kv"><span>HERE</span><b class="${c.ok ? 'up' : 'warn'}">${c.ok ? 'CLEAR TO SET DOWN' : esc(c.why).toUpperCase()}</b></div>`; return; }
+  const c = sim.canFlag(at[0], at[1]), ps = sim.startParcels(at[0], at[1]), f = ps.map(([px, pz]) => sim.parcelInfo(px, pz)), sum = k => f.reduce((a, b) => a + b[k], 0);
   $('ci-read').innerHTML = `<div class="kv"><span>BUILDABLE</span><b>${sum('buildKm2').toFixed(2)} km² of ${sum('km2').toFixed(2)}</b></div><div class="kv"><span>WATER · ROCK</span><b>${sum('water')} · ${sum('rock')} tiles</b></div><div class="kv"><span>E-710 · ORE</span><b>${sum('seeps')} · ${sum('ore')} tiles</b></div>`
     + `<div class="kv"><span>HERE</span><b class="${c.ok ? 'up' : 'warn'}">${c.ok ? 'CLEAR TO LAND' : esc(c.why).toUpperCase()}</b></div>`;
 }
 function callIn(x, z) {
-  const r = sim.found(x, z); if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+  if (sim.callIn === 'flag') {
+    const r = sim.plantFlag(x, z); if (!r.ok) { flash(r.why); audio.play('deny'); return; }
+    tool = 'starter'; ciStart = null; view.setGhost(null); view.lookAt(x + 0.5, z + 0.5); view.zoomT = 40;
+    audio.play('place'); ciCard(); ciRead(null); drawMinimap();
+    flash('The flag is up. Now set down the Command Post.');
+    return;
+  }
+  const r = sim.placeStarter(x, z, rot); if (!r.ok) { flash(r.why); audio.play('deny'); return; }
   sim.begin(); life = new Life(sim); view.life = life;
   tool = null; ciStart = null; view.setGhost(null); view.showParcels(null); $('callin').classList.add('hidden'); $('hud').classList.remove('calling');
-  const hq = sim.b.find(b => b.type === 'hq'); view.lookAt(hq.x + 3, hq.z + 4); view.zoomT = 24;
+  const hq = sim.b.find(b => b.type === 'hq'); view.lookAt(hq.x + 1.5, hq.z + 1.5); view.zoomT = 24;
   audio.play('place'); buildBar(); hud(); drawMinimap(); store();
-  flash('The HQ is coming down. Draw your first road from it.');
+  flash('The pelican is inbound to the pad. Draw your first road from the HQ.');
 }
-$('ci-best').onclick = () => { const [x, z] = sim.autoSpot(); view.lookAt(x + 3, z + 3); view.zoomT = Math.min(view.zoomT, 60); hover = { tx: x, tz: z, rot: 0 }; view.setGhost('hq', x, z, 0, true); ciStart = { parcels: sim.startParcels(x, z), ok: true }; ciRead([x, z]); flash('A good spot: click the ground there to call the HQ in.'); };
+// test hook: the whole landing in one call, at the suggested spot
+function callInAuto() { const [x, z] = sim.autoSpot(); if (sim.callIn === 'flag') sim.plantFlag(x - 2, z + 1, { force: true }); tool = 'starter'; rot = 0; callIn(x, z); }
+$('ci-best').onclick = () => {
+  let x, z;
+  if (sim.callIn === 'flag') { [x, z] = sim.autoSpot(); x -= 2; z += 1; ciStart = { parcels: sim.startParcels(x, z), ok: true }; view.setGhost('seflag', x, z, 0, true); }
+  else { const [fx, fz] = sim.flagAt; let best = null; for (let r = 2; r < 14 && !best; r++) for (let dz = -r; dz <= r && !best; dz++) for (let dx = -r; dx <= r && !best; dx++) for (let k = 0; k < 4 && !best; k++) if (Math.max(Math.abs(dx), Math.abs(dz)) === r && sim.canStarter(fx + dx, fz + dz, k).ok) best = [fx + dx, fz + dz, k]; if (!best) { flash('No room near the flag: pick a spot'); return; } [x, z, rot] = best; view.setGhost('starter', x, z, rot, true); }
+  view.lookAt(x + 1, z + 1); view.zoomT = Math.min(view.zoomT, 50); hover = { tx: x, tz: z, rot }; ciRead([x, z]);
+  flash(sim.callIn === 'flag' ? 'A good spot: click there to bring the pelican down.' : 'Room here: click it to set the Command Post down.');
+};
 
 // ---------------------------------------------------------------- LAND: buy the parcels next to yours
 let landSel = null, landHover = null, ciStart = null;
@@ -291,7 +316,16 @@ function buildBar() {
   // pictures of the buildings, drawn once each by the 3D view
   for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; }
 }
-$('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); audio.play('click'); };
+$('b-groups').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; const g = b.dataset.g; buildOpen = g === group ? !buildOpen : true; group = g; buildBar(); zoneViewFor(); audio.play('click'); };
+// the ZONES tab flips the map to the zones view (and back when you leave it); where zoning can go is shown while a brush is up
+let ivBeforeZones = null;
+function zoneViewFor() {
+  const z = buildOpen && group === 'zones';
+  if (z && iview !== 'zone') { ivBeforeZones = iview; setIview('zone'); }
+  else if (!z && ivBeforeZones !== null && iview === 'zone') { setIview(ivBeforeZones); ivBeforeZones = null; }
+}
+// every free roadside tile on your land: where a zone can be painted
+function zoneable() { return sim.plotTiles().filter(([x, z]) => { const t = sim.terr?.[z * sim.N + x]; return t !== 1 && t !== 2 && sim.ownedTile(x, z); }); }
 $('b-items').onclick = e => { const chn = e.target.closest('[data-chain]'); if (chn) { sim.setChain(chn.dataset.chain || null); buildBar(); audio.play('click'); return; } const sd = e.target.closest('[data-std]'); if (sd && !sd.closest('.bi')) { const k = +sd.dataset.std, lk = sim.stdLock(k); if (lk) { flash(lk + '.'); audio.play('deny'); return; } sim.setStd(k); buildBar(); audio.play('click'); return; } if (e.target.closest('[data-snap]')) { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); return; } const b = e.target.closest('[data-b]'); if (b) pickTool(b.dataset.b); };
 $('b-items').addEventListener('pointermove', e => {
   const b = e.target.closest('[data-b]'); if (!b) return hideTip();
@@ -341,7 +375,7 @@ $('design').onclick = e => {
   if (d || p) { audio.play('click'); designPanel(); if (hover) view.setGhost(tool, hover.tx, hover.tz, hover.rot, sim.canPlace(tool, hover.tx, hover.tz, hover.rot, sp).ok, sp); }
 };
 function pickTool(k) {
-  if (k.startsWith('zone:')) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showPlots(null); buildBar(); if (tool) flash(`Drag over the ground to ${k === 'zone:' ? 'clear zoning' : 'paint ' + ZONES[k.slice(5)].name}. Along roads is where things grow.`); return; }
+  if (k.startsWith('zone:')) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showPlots(tool ? zoneable() : null); buildBar(); if (tool) flash(`Click beside a road to ${k === 'zone:' ? 'clear' : 'fill'} that block${k === 'zone:' ? '' : ' with ' + ZONES[k.slice(5)].name}, or drag to paint a patch. The pale strips are where zoning can go.`); return; }
   if (RTOOLS[k]) { tool = tool === k ? null : k; select(null); view.setGhost(null); view.showRoadGhost(null); buildBar(); return; }
   const lk = sim.locked(k);
   if (lk) { flash(`${B[k].name} needs ${lk.join(' and ')} first.`); return; }
@@ -467,8 +501,8 @@ function startMoveHQ() { select(null); tool = 'movehq'; flash('Pick where the HQ
 const ORDERS = [
   ['Wait for the security detachment to sweep the landing zone: the engineers start building once it is secure', s => s.secure()],
   ['Draw a road from your HQ (ROADS, drag). Stay inside your land: the dashed yellow line', s => s.net.segs.some(q => q.k !== 'wall')],
-  ['Paint a Life Support zone and a Logistics zone along the road (ZONES, drag): barracks, a mess, latrines and a depot grow there', s => s.zoneCount('life') > 0 && s.zoneCount('logi') > 0],
-  ['Lay the foundation: place a Landing Pad and a Firing Range; the zones grow the Supply Depot, Barracks and Mess Hall', s => s.founded()],
+  ['Paint a Life Support zone and a Logistics zone along the road (ZONES: click beside a road to fill a block): barracks, a mess, latrines and a depot grow there', s => s.zoneCount('life') > 0 && s.zoneCount('logi') > 0],
+  ['Lay the foundation: place a Firing Range; the zones grow the Supply Depot, Barracks and Mess Hall (the Command Post brought the pad)', s => s.founded()],
   ['Have the engineers clear a patch of scrub for salvage (ROADS, CLEAR SCRUB)', s => (s.stats.cleared || 0) >= 6],
   ['Build an Engineer Yard (LOGISTICS): a third crew means three jobs at once', s => s.crews.some(c => c.yard)],
   ['Close a wall round the base (DEFENCE, Wall), with a road through it for a gate', s => !s.open && s.gates.length > 0],
@@ -786,7 +820,8 @@ function hud() {
     + `<div class="sfoot">Allocation for ${['1st', '2nd', '3rd', '4th'][s.rank]}: ~${fmt(C.ALLOC.base * C.ALLOC.mult[s.rank])} SUP<br><span title="Planet market indices: how hard every base is chasing each Ministry. High means its favour (and its goods) cost more.">INDEX ${idx}</span></div>`;
   rows.forEach((r, i) => { const c = $('stand').querySelector(`[data-logo="${i}"]`); c.outerHTML = `<img src="${logoImg(r.logo)}" width="22" height="22" alt="">`; });
   taskBoard();
-  view.zoneStrong = isZone(tool) || iview === 'zone';
+  // zones stand out while painting, in the zones view, and while a build menu is open that has things growing in zones
+  view.zoneStrong = isZone(tool) || iview === 'zone' || (buildOpen && GROUPS.find(g => g[0] === group)?.[3]?.some(k => GROWS.has(k)));
   if (group === 'zones' && buildOpen && (ivT2 = (ivT2 || 0) + 1) % 20 === 0) buildBar();
   // the build bar's affordability, and the selection
   for (const b of document.querySelectorAll('.bi')) { const k = b.dataset.b; if (!B[k]) continue; b.classList.toggle('poor', s.supplies < s.costOf(k, specOf(k))); b.classList.toggle('lock', !!s.locked(k)); }
@@ -1137,10 +1172,27 @@ setInterval(() => { const m = audio.musicInfo(); $('mx-track').textContent = !m.
 addEventListener('pointerdown', () => audio.unlock(), { capture: true }); addEventListener('keydown', () => audio.unlock(), { capture: true });
 $('b-rl').onclick = () => view.rotate(-1); $('b-rr').onclick = () => view.rotate(1);
 $('b-hide').onclick = () => $('hud').classList.toggle('bare');
-$('b-menu').onclick = () => { $('menu').classList.toggle('hidden'); $('me-msg').textContent = ''; $('me-code').classList.add('hidden'); };
-$('me-x').onclick = $('me-resume').onclick = () => $('menu').classList.add('hidden');
-$('me-howto').onclick = () => { $('menu').classList.add('hidden'); show('s-howto'); };
-$('me-faction').onclick = () => { $('menu').classList.add('hidden'); wasPaused = paused; paused = true; openFaction(true); };
+// F3: the debug window. Frame time, what the renderer draws, what the simulation holds, where the camera is
+let debugOn = false, frameMs = 0, fpsS = 60, dbgT = 0, stepMs = 0;
+function debugPanel(dt) {
+  fpsS = fpsS * 0.95 + (dt > 0 ? 1 / dt : 60) * 0.05; if ((dbgT -= dt) > 0) return; dbgT = 0.25;
+  const r = view.r?.info?.render || {}, s = sim, t = view.target, mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB' : 'n/a';
+  const rows = [['VERSION', VERSION], ['FPS', Math.round(fpsS)], ['FRAME (RENDER)', frameMs.toFixed(1) + ' ms'], ['SIM STEP', (stepMs || 0).toFixed(2) + ' ms'], ['DRAW CALLS', r.calls ?? 'n/a'], ['TRIANGLES', r.triangles != null ? (r.triangles / 1000).toFixed(0) + 'k' : 'n/a'], ['JS HEAP', mem]];
+  if (s) rows.push(['MAP', `${s.N}×${s.N} tiles · ${s.held?.() ?? 0} parcels`], ['BUILDINGS', s.b.length], ['TROOPS', s.troops.length], ['ACTORS', life?.actors?.size ?? 0], ['DAY · HOUR', `${s.time?.day ?? '-'} · ${(s.time?.hour ?? 0).toFixed(2)}`], ['SPEED', paused ? 'paused' : gameSpeed() + '×'], ['CAMERA', `${Math.round(t.x + s.N / 2)}, ${Math.round(t.z + s.N / 2)} · zoom ${view.zoom.toFixed(1)}`], ['TOOL', tool || '-'], ['PARCEL', hover ? s.parcelName?.(...s.parcelAt(hover.tx, hover.tz)) : '-']);
+  $('debug').innerHTML = '<div class="ph"><span>DEBUG · F3</span></div>' + rows.map(([k, v]) => `<div class="kv"><span>${k}</span><b>${esc(String(v))}</b></div>`).join('');
+}
+// the menu stops the clock while it is open, and puts it back the way it was when it closes
+let menuWasPaused = null;
+function menuOpen(on) {
+  const el = $('menu'), isOpen = !el.classList.contains('hidden'); if (on === isOpen) return;
+  el.classList.toggle('hidden', !on);
+  if (on) { menuWasPaused = paused; setPause(true); $('me-msg').textContent = ''; $('me-code').classList.add('hidden'); }
+  else if (menuWasPaused !== null) { setPause(menuWasPaused); menuWasPaused = null; }
+}
+$('b-menu').onclick = () => menuOpen($('menu').classList.contains('hidden'));
+$('me-x').onclick = $('me-resume').onclick = () => menuOpen(false);
+$('me-howto').onclick = () => { menuOpen(false); setPause(true); show('s-howto'); };
+$('me-faction').onclick = () => { menuOpen(false); wasPaused = paused; paused = true; openFaction(true); };
 $('me-new').onclick = () => { if (confirm('Found a new faction? This base will be gone for good unless you copied its save code.')) { try { localStorage.removeItem(SAVE); } catch { /* ignore */ } playing = false; $('menu').classList.add('hidden'); title(); } };
 $('me-export').onclick = async () => {
   const code = await exportCode(), t = $('me-code'); t.value = code; t.classList.remove('hidden'); t.select();
@@ -1181,11 +1233,11 @@ function roadPreview(e) {
 function tileAt(e) {
   const p = view.pick(e.clientX, e.clientY);
   if (!tool) return p;
-  if (tool !== 'moveflag' && tool !== 'movehq' && tool !== 'callin' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
+  if (tool !== 'moveflag' && tool !== 'movehq' && tool !== 'callin' && tool !== 'starter' && !LOOSE.has(tool)) {   // buildings snap to the nearest roadside plot and face the road
     const pl = sim.plotFor(tool, p.x, p.z, specOf(tool)?.design);
     if (pl) return { ...p, tx: pl.tx, tz: pl.tz, rot: pl.rot };
   }
-  const [w, d] = dims(tool === 'moveflag' ? 'seflag' : tool === 'movehq' || tool === 'callin' ? 'hq' : tool, tool === 'movehq' || tool === 'callin' ? 0 : rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
+  const [w, d] = dims(tool === 'moveflag' || tool === 'callin' ? 'seflag' : tool === 'movehq' ? 'hq' : tool, tool === 'movehq' || tool === 'callin' ? 0 : rot, specOf(tool)?.design); return { ...p, tx: Math.round(p.x - w / 2), tz: Math.round(p.z - d / 2), rot };
 }
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('pointerdown', e => {
@@ -1216,7 +1268,8 @@ cv.addEventListener('pointermove', e => {
   if (tool === 'clear') { const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), i = tz * sim.N + tx, o = sim.clearOrderAt(i);
     if (e.pointerType === 'mouse') tip(o ? `Ordered: ${o.tiles.length} tiles. Click to cancel` : sim.scrub?.[i] ? `Clear this patch of ${sim.scrubName()}` : 'Nothing to clear here', e.clientX, e.clientY); return; }
   if (isRoad(tool)) roadPreview(e);
-  else if (tool === 'callin') { const t = tileAt(e); hover = t; const ok = sim.canFound(t.tx, t.tz); view.setGhost('hq', t.tx, t.tz, 0, ok.ok); ciStart = { parcels: sim.startParcels(t.tx, t.tz), ok: ok.ok }; ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  else if (tool === 'starter') { const t = tileAt(e); hover = t; const ok = sim.canStarter(t.tx, t.tz, rot); view.setGhost('starter', t.tx, t.tz, rot, ok.ok); ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
+  else if (tool === 'callin') { const t = tileAt(e); hover = t; const ok = sim.canFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); ciStart = { parcels: sim.startParcels(t.tx, t.tz), ok: ok.ok }; ciRead([t.tx, t.tz]); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'land') { const p = view.pick(e.clientX, e.clientY), q = sim.parcelAt(p.x, p.z); landHover = q; if (e.pointerType === 'mouse') { const st = sim.parcelState(...q), c = sim.parcelCost(...q); tip(`<b>Parcel ${sim.parcelName(...q)}</b> · ${{ owned: 'yours', buy: `${c.sup} SUP · ${c.cr} CR · click to see`, next: esc(sim.canBuy(...q).why), far: 'must touch your ground', edge: 'never granted' }[st]}`, e.clientX, e.clientY); } }
   else if (tool === 'movehq') { const t = tileAt(e); hover = t; const ok = sim.canMoveHQ(t.tx, t.tz); view.setGhost('hq', t.tx, t.tz, 0, ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
   else if (tool === 'moveflag') { const t = tileAt(e); hover = t; const ok = sim.canMoveFlag(t.tx, t.tz); view.setGhost('seflag', t.tx, t.tz, 0, ok.ok); view.showPlaza(sim.plazaAt(t.tx, t.tz, sim.b.find(b => b.type === 'seflag').id), ok.ok); if (!ok.ok && e.pointerType === 'mouse') tip(esc(ok.why), e.clientX, e.clientY); else if (flashT <= 0) hideTip(); }
@@ -1231,9 +1284,10 @@ function up(e) {
   if (!playing) return;
   ptrs.delete(e.pointerId);
   if (zoneDrag) {
-    const a = zoneDrag, t = tileOf(e); zoneDrag = null; view.showPlots(null); if (flashT <= 0) hideTip();
-    const r = sim.paintZone(a[0], a[1], t[0], t[1], tool.slice(5) || null);
-    if (r.ok) { audio.play('place'); sim.growStep(); buildBar(); } else { flash('Nothing to change there: zones go on open ground inside the charter.'); audio.play('deny'); }
+    const a = zoneDrag, t = tileOf(e); zoneDrag = null; view.showPlots(isZone(tool) ? zoneable() : null); if (flashT <= 0) hideTip();
+    // a click (no drag) fills the block along the road under it; a drag paints the rectangle
+    const one = a[0] === t[0] && a[1] === t[1], r = one ? sim.zoneFill(t[0], t[1], tool.slice(5) || null) : sim.paintZone(a[0], a[1], t[0], t[1], tool.slice(5) || null);
+    if (r.ok) { audio.play('place'); sim.growStep(); buildBar(); view.showPlots(zoneable()); } else { flash(one ? r.why : 'Nothing to change there: zones go on open ground on your land.'); audio.play('deny'); }
     return;
   }
   if (roadDrag) {
@@ -1249,7 +1303,7 @@ function up(e) {
   const d = drag; drag = null;
   if (photo) return;
   if (d.moved) return;
-  if (d.btn === 2 && tool === 'callin') return;
+  if (d.btn === 2 && (tool === 'callin' || tool === 'starter')) return;
   if (d.btn === 2) { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else select(null); return; }
   if (tool === 'clear') {
     const p = view.pick(e.clientX, e.clientY), tx = Math.floor(p.x), tz = Math.floor(p.z), o = sim.clearOrderAt(tz * sim.N + tx);
@@ -1257,7 +1311,7 @@ function up(e) {
     const r = sim.orderClear(tx, tz); if (!r.ok) { flash(r.why + '.'); audio.play('deny'); return; }
     flash(`${r.n} tiles ordered cleared. ${sim.crews.some(c => c.job == null && !c.wait) ? 'A crew is on its way.' : 'The next free crew will take it.'}`); audio.play('place'); return;
   }
-  if (tool === 'callin') { const t = tileAt(e); callIn(t.tx, t.tz); return; }
+  if (tool === 'callin' || tool === 'starter') { const t = tileAt(e); callIn(t.tx, t.tz); return; }
   if (tool === 'land') { const p = view.pick(e.clientX, e.clientY), q = sim.parcelAt(p.x, p.z); if (sim.grantable(...q)) { landCard(q); audio.play('click'); } return; }
   if (tool === 'movehq') {
     const t = tileAt(e), r = sim.moveHQ(t.tx, t.tz);
@@ -1287,8 +1341,9 @@ const held = new Set();
 addEventListener('keydown', e => {
   if (e.target.closest('input, textarea')) return;
   const k = e.key.toLowerCase(); held.add(k);
+  if (k === 'f3') { e.preventDefault(); debugOn = !debugOn; $('debug').classList.toggle('hidden', !debugOn); return; }
   if (!playing) return;
-  if (sim.callIn) { if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1); return; }   // nothing else until the HQ is down
+  if (sim.callIn) { if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1); else if (k === 'r' && tool === 'starter') { rot = (rot + 1) % 4; if (hover) { view.setGhost('starter', hover.tx, hover.tz, rot, sim.canStarter(hover.tx, hover.tz, rot).ok); ciRead([hover.tx, hover.tz]); } } return; }   // nothing else until the HQ is down
   if (k === 'p') { setPhoto(!photo); return; }
   if (photo) {
     if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1);
@@ -1415,7 +1470,7 @@ function loopBody(now) {
     if (fx || fz) view.move(fx, fz, dt);
     if (!paused && !sim.callIn) {
       acc += dt * gameSpeed();
-      while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; }
+      const st0 = performance.now(); let sn = 0; while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; sn++; } if (sn) stepMs = stepMs * 0.9 + (performance.now() - st0) / sn * 0.1;
       for (const ev of sim.drain()) {
         life.event(ev); if (ev.t === 'built' || ev.t === 'week') buildBar();
         if (ev.t === 'built') { const b = sim.byId(ev.id); if (b) audio.playAt('built', b.x + b.w / 2, b.z + b.d / 2); }
@@ -1441,7 +1496,8 @@ function loopBody(now) {
   }
   if (sim && sim.time) { view.setTime(sim.time.hour); audio.setNight(1 - (view.dayLight ?? 1)); }
   if (playing && sim) { view.showParcels(tool === 'land' ? 'land' : tool === 'callin' ? 'callin' : null, tool === 'land' ? landHover : null, tool === 'callin' ? ciStart : null); if (tool !== 'land' && landSel) landCard(null); else if (landSel) landCard(landSel); }
-  if (!view.lost) view.frame(dt);
+  if (!view.lost) { const t0 = performance.now(); view.frame(dt); frameMs = frameMs * 0.9 + (performance.now() - t0) * 0.1; }
+  if (debugOn) debugPanel(dt);
   if (sim && sim.time) soundscape(dt);
   requestAnimationFrame(loop);
 }
@@ -1450,4 +1506,4 @@ function loopBody(now) {
 title();
 if (params.has('play')) { const s = stored(); start(s ? new Sim({ state: s }) : new Sim({ seed: +(params.get('seed') || 7) })); }
 requestAnimationFrame(loop);
-window.__fob = { get sim() { return sim; }, get life() { return life; }, view, audio, callIn: (x, z) => callIn(x, z), select: id => select(id), openMins: t => openMins(t), setEco: t => { ecoTab = t; }, snd: () => ({ chatT, paT, sndT, n: bubbles.length, playing, paused }) };
+window.__fob = { get sim() { return sim; }, get life() { return life; }, view, audio, callIn: (x, z) => callIn(x, z), callInAuto: () => callInAuto(), select: id => select(id), openMins: t => openMins(t), setEco: t => { ecoTab = t; }, snd: () => ({ chatT, paT, sndT, n: bubbles.length, playing, paused }) };

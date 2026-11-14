@@ -22,9 +22,11 @@ export class Life {
     this.gridKey = '';
     // a new base: the first pelican brings everyone down onto the landing zone beside the HQ
     if (sim.sweep && !sim.sweep.done && sim.sweep.t < 1) {
+      // onto the Command Post's own pad, if it has one; otherwise beside the HQ
       const ids = sim.troops.map(t => t.id), hq = sim.b.find(b => b.type === 'hq'), [cx, cz] = hq ? this.centre(hq) : [this.N / 2, this.N / 2];
+      const pad = sim.b.filter(b => b.type === 'pad').sort((p, q) => Math.hypot(...this.centre(p).map((v, i) => v - [cx, cz][i])) - Math.hypot(...this.centre(q).map((v, i) => v - [cx, cz][i])))[0];
       for (const id of ids) this.hold.add(id);
-      this.landing = true; this.queue.push({ kind: 'landing', ids, at: [cx + 4.5, cz + 2] });
+      this.landing = true; this.queue.push({ kind: 'landing', ids, at: pad ? this.centre(pad) : [cx + 4.5, cz + 2] });
     }
   }
 

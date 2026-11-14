@@ -168,6 +168,9 @@ const MAKE = {
     g.userData.spin = dish;
     sandbags(g, m, -0.95, 1.25, 0.8); sandbags(g, m, 0.95, 1.25, 0.8);
   },
+  starter(g, m) {   // the HQ and its pad, side by side: the base's first footprint
+    const a = new THREE.Group(); MAKE.hq(a, m); a.position.x = -1.5; const b = new THREE.Group(); MAKE.pad(b, m); b.position.x = 1.5; g.add(a, b);
+  },
   pad(g, m) {
     box(g, 2.9, 0.1, 2.9, m.asphalt, 0, 0.05, 0, { cast: false });
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 40), m.hazard); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.105; g.add(ring);

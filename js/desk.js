@@ -5,6 +5,14 @@
 // An option's fx: sup and cr (negative is a cost), mood (morale for a few days), def / pro / tru (Ministry standing),
 // pride. say: what the comms log records. when(sim): only offered if true.
 
+// a request only reaches the desk once whoever files it has an office on the base: the Patrol Office's request needs a
+// Patrol Office, a trooper's needs a barracks, a Ministry's needs the building it works through. The Bureau writes to every HQ.
+export const OFFICE = {
+  'Citizen': ['mess', 'barracks', 'hab', 'block'], 'Trooper': ['barracks', 'hdbarracks'], 'Patrol Office': ['patrol'], 'Motor Pool': ['motorpool'],
+  'Medical': ['medbay'], 'Quartermaster': ['depot'], 'SEAF': ['shed'], 'Franchise': ['burger', 'chicken', 'cola'], 'Inspector': ['comms'],
+  'Ministry of Truth': ['truth', 'mast'], 'Ministry of Defence': ['patrol', 'range'], 'Ministry of Humanity': ['lecture', 'hab', 'block'], 'Ministry of Science': ['lab'],
+};
+export const hasOffice = (s, from) => !OFFICE[from] || OFFICE[from].some(t => s.b.some(b => b.type === t && b.done));
 export const REQUESTS = [
   { from: 'Citizen', title: 'Request for leave', text: 'NAME of the canteen asks for two days of leave to visit a sister on Super Earth. Form L-2 is attached, in triplicate, one copy slightly damp.',
     opts: [{ label: 'APPROVE', fx: { mood: 4, cr: -10 }, say: 'Leave approved. NAME was seen smiling, which has been noted.' },

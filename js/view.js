@@ -284,8 +284,9 @@ export class View {
       const a = nd(sg.a), b = nd(sg.b), surfK = sg.k === 'paved' ? 2 : 1, y = 0.012 + surfK * 0.002;
       strip(surf, a, b, sg.w, y, this.roadMats[surfK]);
       for (const n of [a, b]) { const c = new THREE.Mesh(new THREE.CircleGeometry(sg.w / 2, 16), this.roadMats[surfK]); c.rotation.x = -Math.PI / 2; c.position.set(this.wx(n.x), y - 0.001, this.wx(n.z)); c.receiveShadow = true; surf.add(c); }
-      if (sg.k === 'paved' && sg.w >= 2) {   // a dashed centre line
-        const L = Math.hypot(b.x - a.x, b.z - a.z);
+      if (sg.k === 'paved' && sg.w >= 2) {   // a dashed centre line, and a raised concrete sidewalk down each side
+        const L = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11;
+        for (const sd of [-1, 1]) strip(surf, { x: a.x - uz * off * sd, z: a.z + ux * off * sd }, { x: b.x - uz * off * sd, z: b.z + ux * off * sd }, 0.22, y + 0.012, this.walkMat ||= new THREE.MeshStandardMaterial({ color: '#a7a69c', roughness: 0.9 }));
         for (let t = 0.6; t < L - 0.6; t += 0.9) { const p = { x: a.x + (b.x - a.x) * t / L, z: a.z + (b.z - a.z) * t / L }, q = { x: a.x + (b.x - a.x) * (t + 0.35) / L, z: a.z + (b.z - a.z) * (t + 0.35) / L }; strip(surf, p, q, 0.06, 0.02, dash); }
       }
     }
@@ -401,14 +402,13 @@ export class View {
   // street lamps along the roadside every few tiles; their heads and the pools under them light up at night
   streetLamps() {
     const s = this.sim, N = this.N, spots = [], net = s.net, nd = id => net.nodes.find(n => n.id === id);
-    const free = (x, z) => { const tx = Math.floor(x), tz = Math.floor(z); return tx >= 0 && tz >= 0 && tx < N && tz < N && !s.roads[tz * N + tx] && !s.occ[tz * N + tx] && !s.walls[tz * N + tx]; };
     for (const sg of net.segs) {
-      if (sg.k === 'wall') continue;
+      if (sg.k !== 'paved') continue;   // lamps stand on the sidewalk of paved roads: part of the road, laid with it
       const a = nd(sg.a), b = nd(sg.b), L = Math.hypot(b.x - a.x, b.z - a.z); if (L < 1) continue;
-      const ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 + 0.3;
+      const ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, off = sg.w / 2 - 0.11;
       for (let t = 1.5, k = 0; t < L - 0.5; t += 3.2, k++) {
         const sd = k % 2 ? 1 : -1, x = a.x + ux * t - uz * off * sd, z = a.z + uz * t + ux * off * sd;
-        if (free(x, z)) spots.push([x, z, a.x + ux * t, a.z + uz * t]);
+        spots.push([x, z, a.x + ux * t, a.z + uz * t]);
       }
     }
     if (!this.lampHead) {
@@ -427,15 +427,20 @@ export class View {
     if (!spots.length) return;
     const mx = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), q0 = new THREE.Quaternion(), flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
     const pole = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.025, 0.035, 1.2, 6), this.m.steel, spots.length);
+    const foot = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.06, 0.07, 0.05, 8), this.m.concrete, spots.length);
+    const arm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.025, 0.025), this.m.steel, spots.length);
     const head = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 0.05, 0.1), this.lampHead, spots.length);
     const pool = new THREE.InstancedMesh(new THREE.CircleGeometry(1.3, 18), this.lampPool, spots.length);
     spots.forEach(([x, z, rx, rz], k) => {
-      mx.compose(new THREE.Vector3(this.wx(x), 0.6, this.wx(z)), q0, one); pole.setMatrixAt(k, mx);
-      mx.compose(new THREE.Vector3(this.wx(x + (rx - x) * 0.4), 1.2, this.wx(z + (rz - z) * 0.4)), q0, one); head.setMatrixAt(k, mx);
+      const hx = x + (rx - x) * 0.4, hz = z + (rz - z) * 0.4, reach = Math.hypot(hx - x, hz - z), ang = Math.atan2(hz - z, hx - x), qa = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0));
+      mx.compose(new THREE.Vector3(this.wx(x), 0.62, this.wx(z)), q0, one); pole.setMatrixAt(k, mx);
+      mx.compose(new THREE.Vector3(this.wx(x), 0.045, this.wx(z)), q0, one); foot.setMatrixAt(k, mx);
+      mx.compose(new THREE.Vector3(this.wx((x + hx) / 2), 1.21, this.wx((z + hz) / 2)), qa, new THREE.Vector3(reach + 0.04, 1, 1)); arm.setMatrixAt(k, mx);
+      mx.compose(new THREE.Vector3(this.wx(hx), 1.19, this.wx(hz)), qa, one); head.setMatrixAt(k, mx);
       mx.compose(new THREE.Vector3(this.wx(rx), 0.03, this.wx(rz)), flat, one); pool.setMatrixAt(k, mx);
     });
-    pole.castShadow = true; pool.renderOrder = 2; pole.frustumCulled = head.frustumCulled = pool.frustumCulled = false;
-    this.roadG.add(pole, head, pool);
+    pole.castShadow = arm.castShadow = true; pool.renderOrder = 2; pole.frustumCulled = head.frustumCulled = pool.frustumCulled = foot.frustumCulled = arm.frustumCulled = false;
+    this.roadG.add(pole, foot, arm, head, pool);
   }
   // tiles a road tool is about to lay (green) or clear (red)
   showRoadGhost() { this.roadGhost.clear(); }
