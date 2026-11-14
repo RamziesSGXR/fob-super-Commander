@@ -7,7 +7,7 @@
 <meta name="description" content="FOB Super Commander: build your faction's base, earn the Federation's favour and outshine the other loyal factions. A fan-made prototype for the Super Earth Special Forces community.">
 <title>FOB Super Commander</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpath d=%22M8 6h84v40q-2 36-42 51Q10 82 8 46z%22 fill=%22%231b2a1a%22 stroke=%22%23ffe600%22 stroke-width=%226%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=0.11">
+<link rel="stylesheet" href="css/style.css?v=0.12">
 </head>
 <body>
 <div id="app">
@@ -132,16 +132,10 @@
   <div id="hud" class="hidden">
     <header id="top">
       <div class="who"><canvas id="h-logo" width="56" height="56"></canvas><div><b id="h-name"></b><span id="h-base"></span></div></div>
-      <div class="res">
-        <span class="ri cr" title="Supplies: what you build, pave and pay upkeep with. They come from the weekly allocation, shipped troopers and won operations."><i>SUP</i><b id="r-sup">0</b></span>
-        <span class="ri" title="Credits: money. Earned by shipping troopers, special operations, franchise sales and fair roster grades. Spent on research, Ledger requests and buying supplies."><i>CR</i><b id="r-cr">0</b></span>
-        <span class="ri" title="Power made / used"><i>PWR</i><b id="r-pw"></b></span>
-        <span class="ri" title="Votes on the base / all votes / votes housed"><i>VOTES</i><b id="r-trp"></b></span>
-        <span class="ri" title="Morale"><i>MRL</i><b id="r-mrl"></b></span>
-        <span class="ri" title="Rations on the base"><i>RAT</i><b id="r-rat"></b></span>
-        <span class="ri" title="E-710 fuel on the base"><i>FUEL</i><b id="r-fuel"></b></span>
-        <span class="ri" title="Ammo on the base"><i>AMMO</i><b id="r-ammo"></b></span>
-        <span class="ri" title="Trained troopers ready to ship / recruits in training"><i>READY</i><b id="r-ready"></b></span>
+      <div class="bigs">
+        <button class="big sup" type="button" data-mt="eco" title="Supplies: what you build, pave and pay upkeep and the morning deliveries with. Under it, the change per day. Click for the economy."><b id="r-sup">0</b><span>SUPPLIES</span><i id="r-sup-d"></i></button>
+        <button class="big cr" type="button" data-mt="eco" title="Credits: money. Earned by shipping troopers, operations, franchises and trade; spent on wages, research and the market. Click for the economy."><b id="r-cr">0</b><span>CREDITS</span><i id="r-cr-d"></i></button>
+        <button class="big debt" type="button" data-mt="eco" data-et="loans" title="What the base owes the Bureau: loans plus any overdraft. Click for loans."><b id="r-debt">0</b><span>OWED</span><i id="r-debt-d"></i></button>
       </div>
       <button id="b-week" class="week" type="button" title="Standings (S)"><b id="w-title">WEEK 1</b><span class="wbar"><span id="w-fill"></span><span id="w-insp" title="Inspection"></span></span><span id="w-rank"></span></button>
       <div class="menu">
@@ -154,35 +148,61 @@
         <button id="b-menu" class="btn" type="button" title="Menu">MENU</button>
       </div>
     </header>
+    <div id="notices"></div>
 
     <aside id="stand" class="panel" title="Standings: click for details"></aside>
-    <aside id="orders" class="panel"><div class="ph"><span>FIRST ORDERS</span><button class="x" id="or-x" type="button" title="Hide">–</button></div><ol id="or-list"></ol></aside>
+    <!-- the task board: what to do next, and everything waiting on the Commander's desk, with the buttons to deal with it -->
+    <aside id="orders" class="panel"><div class="ph"><span>ORDERS &amp; DESK</span><b id="tb-n"></b><button class="x" id="or-x" type="button" title="Fold away">–</button></div><div id="tb-body"></div></aside>
 
-    <div id="clock" class="panel">
-      <div class="ck-top"><b id="ck-day">DAY 1</b><span id="ck-time">06:00</span><span id="ck-phase"></span></div>
-      <div class="ck-ctl">
+    <div id="selp" class="panel hidden"></div>
+
+    <!-- bottom right: the minimap, the info views over it, and the comms log the COMMS button opens -->
+    <div id="mmwrap">
+      <div id="comms" class="panel hidden"><div class="ph"><span>COMMS</span><button class="x" id="cm-x" type="button" title="Close">×</button></div><div id="c-list"></div></div>
+      <div id="iv-legend" class="panel hidden"></div>
+      <div id="iv" role="toolbar" aria-label="Info views"></div>
+      <div class="mm-row">
+        <div class="mm-btns">
+          <button id="b-comms" class="btn icon" type="button" title="The comms log (C)">COMMS<b id="cm-dot"></b></button>
+          <button id="b-mmz" class="btn icon" type="button" title="Minimap zoom">1×</button>
+        </div>
+        <canvas id="minimap" width="200" height="200" title="The base from above: click or drag to move the camera"></canvas>
+      </div>
+    </div>
+
+    <div id="design" class="panel hidden"></div>
+    <footer id="build">
+      <div id="b-items" class="hidden"></div>
+      <div id="b-groups" role="toolbar" aria-label="Build"></div>
+    </footer>
+    <!-- the status bar: the clock, the base at a glance, and the information windows -->
+    <div id="status">
+      <div id="clock">
         <button id="ck-slow" class="btn icon" type="button" title="Slower ( [ )">◀</button>
         <button id="ck-pause" class="btn icon" type="button" title="Pause (Space)">II</button>
         <button id="ck-fast" class="btn icon" type="button" title="Faster ( ] )">▶</button>
         <b id="ck-speed">1×</b>
+        <span class="ck-txt"><b id="ck-day">DAY 1</b> <b id="ck-time">06:00</b> <span id="ck-phase"></span></span>
+      </div>
+      <div class="res">
+        <span class="ri" title="Votes on the base / all votes / votes housed"><i>VOTES</i><b id="r-trp"></b></span>
+        <span class="ri" title="Morale"><i>MORALE</i><b id="r-mrl"></b></span>
+        <span class="ri" title="Power made / used"><i>POWER</i><b id="r-pw"></b></span>
+        <span class="ri" title="Rations on the base"><i>RAT</i><b id="r-rat"></b></span>
+        <span class="ri" title="E-710 fuel on the base"><i>FUEL</i><b id="r-fuel"></b></span>
+        <span class="ri" title="Ammo on the base"><i>AMMO</i><b id="r-ammo"></b></span>
+        <span class="ri" title="Trained troopers ready to ship / recruits in training"><i>READY</i><b id="r-ready"></b></span>
+      </div>
+      <div id="mdock">
+        <button class="md" data-mt="eco" type="button"><b class="c-pro">ECONOMY</b><span id="md-eco"></span></button>
+        <button class="md" data-mt="led" type="button"><b class="c-pro">DESK</b><span id="md-led"></span></button>
+        <button class="md" data-mt="def" type="button"><b class="c-def">DEFENCE</b><span id="md-def"></span></button>
+        <button class="md" data-mt="pro" type="button"><b class="c-pro">EXPANSION</b><span id="md-pro"></span></button>
+        <button class="md" data-mt="tru" type="button"><b class="c-tru">TRUTH</b><span id="md-tru"></span></button>
+        <button class="md" data-mt="sci" type="button"><b class="c-sci">SCIENCE</b><span id="md-sci"></span></button>
+        <button class="md" data-mt="st" type="button"><b>STANDINGS</b><span id="md-st"></span></button>
       </div>
     </div>
-    <div id="selp" class="panel hidden"></div>
-    <div id="mdock" class="panel">
-      <button class="md" data-mt="def" type="button"><b class="c-def">DEFENCE</b><span id="md-def"></span></button>
-      <button class="md" data-mt="pro" type="button"><b class="c-pro">EXPANSION</b><span id="md-pro"></span></button>
-      <button class="md" data-mt="tru" type="button"><b class="c-tru">TRUTH</b><span id="md-tru"></span></button>
-      <button class="md" data-mt="led" type="button"><b class="c-pro">LEDGER</b><span id="md-led"></span></button>
-      <button class="md" data-mt="sci" type="button"><b class="c-sci">SCIENCE</b><span id="md-sci"></span></button>
-      <button class="md" data-mt="st" type="button"><b>STANDINGS</b><span id="md-st"></span></button>
-    </div>
-    <div id="comms" class="panel"><div class="ph"><span>COMMS</span></div><div id="c-list"></div></div>
-
-    <div id="design" class="panel hidden"></div>
-    <footer id="build">
-      <div id="b-groups"></div>
-      <div id="b-items"></div>
-    </footer>
 
     <div id="tip" class="hidden"></div>
     <div id="paused" class="hidden">PAUSED</div>
@@ -221,27 +241,28 @@
 <script type="importmap">
 {
  "imports": {
-  "./js/audio.js": "./js/audio.js?v=0.11",
-  "./js/config.js": "./js/config.js?v=0.11",
-  "./js/demo.js": "./js/demo.js?v=0.11",
-  "./js/desk.js": "./js/desk.js?v=0.11",
-  "./js/life.js": "./js/life.js?v=0.11",
-  "./js/logo.js": "./js/logo.js?v=0.11",
-  "./js/main.js": "./js/main.js?v=0.11",
-  "./js/models.js": "./js/models.js?v=0.11",
-  "./js/net.js": "./js/net.js?v=0.11",
-  "./js/noise.js": "./js/noise.js?v=0.11",
-  "./js/path.js": "./js/path.js?v=0.11",
-  "./js/reports.js": "./js/reports.js?v=0.11",
-  "./js/rng.js": "./js/rng.js?v=0.11",
-  "./js/sim.js": "./js/sim.js?v=0.11",
-  "./js/site.js": "./js/site.js?v=0.11",
-  "./js/view.js": "./js/view.js?v=0.11",
-  "./js/voices.js": "./js/voices.js?v=0.11",
-  "./js/vendor/three.js": "./js/vendor/three.js?v=0.11"
+  "./js/audio.js": "./js/audio.js?v=0.12",
+  "./js/config.js": "./js/config.js?v=0.12",
+  "./js/demo.js": "./js/demo.js?v=0.12",
+  "./js/desk.js": "./js/desk.js?v=0.12",
+  "./js/life.js": "./js/life.js?v=0.12",
+  "./js/logo.js": "./js/logo.js?v=0.12",
+  "./js/main.js": "./js/main.js?v=0.12",
+  "./js/market.js": "./js/market.js?v=0.12",
+  "./js/models.js": "./js/models.js?v=0.12",
+  "./js/net.js": "./js/net.js?v=0.12",
+  "./js/noise.js": "./js/noise.js?v=0.12",
+  "./js/path.js": "./js/path.js?v=0.12",
+  "./js/reports.js": "./js/reports.js?v=0.12",
+  "./js/rng.js": "./js/rng.js?v=0.12",
+  "./js/sim.js": "./js/sim.js?v=0.12",
+  "./js/site.js": "./js/site.js?v=0.12",
+  "./js/view.js": "./js/view.js?v=0.12",
+  "./js/voices.js": "./js/voices.js?v=0.12",
+  "./js/vendor/three.js": "./js/vendor/three.js?v=0.12"
  }
 }
 </script>
-<script type="module" src="js/main.js?v=0.11"></script>
+<script type="module" src="js/main.js?v=0.12"></script>
 </body>
 </html>

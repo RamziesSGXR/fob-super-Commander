@@ -57,10 +57,109 @@ export class View {
     for (const g of this.vm.values()) this.world.remove(g); this.vm.clear();
     this.ghostKey = '';
     this.faction = f; this.roadsV = -1;   // the gate sign carries the base's name
+    this.thumbs = new Map(); if (this.infoMesh) { this.world.remove(this.infoMesh); this.infoMesh = null; }
+    this.resG = null; this.routeG = null; this.packets = null;
+  }
+
+  // ---------------------------------------------------------------- pictures of buildings for the build menu: each type is
+  // drawn once, from the game's own angle, into an image
+  thumb(type) {
+    this.thumbs ||= new Map(); if (this.thumbs.has(type)) return this.thumbs.get(type);
+    if (!this.m || this.lost) return null;
+    const W = 160, H = 112;
+    if (!this.th) {
+      const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight('#dfe9ff', '#6b5638', 1.3));
+      const sun = new THREE.DirectionalLight('#fff1d6', 2.2); sun.position.set(-6, 10, 5); sc.add(sun);
+      const rt = new THREE.WebGLRenderTarget(W, H, { samples: 4 }); rt.texture.colorSpace = THREE.SRGBColorSpace;
+      this.th = { sc, rt, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100), px: new Uint8Array(W * H * 4), cv: Object.assign(document.createElement('canvas'), { width: W, height: H }) };
+    }
+    const { sc, rt, cam, px, cv } = this.th;
+    const g = buildModel(type, this.m, false, null); sc.add(g);
+    const box = new THREE.Box3().setFromObject(g), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2 || 1;
+    const dir = new THREE.Vector3(Math.sin(Math.PI / 4), 0.82, Math.cos(Math.PI / 4)).normalize();
+    cam.position.copy(c).addScaledVector(dir, 30); cam.lookAt(c);
+    const a = W / H, k = r * 1.02; Object.assign(cam, { left: -k * a, right: k * a, top: k, bottom: -k }); cam.updateProjectionMatrix();
+    const cc = new THREE.Color(); this.r.getClearColor(cc); const ca = this.r.getClearAlpha(), sh = this.r.shadowMap.enabled;
+    this.r.shadowMap.enabled = false; this.r.setRenderTarget(rt); this.r.setClearColor(0x000000, 0); this.r.clear(); this.r.render(sc, cam);
+    this.r.readRenderTargetPixels(rt, 0, 0, W, H, px); this.r.setRenderTarget(null); this.r.setClearColor(cc, ca); this.r.shadowMap.enabled = sh;
+    sc.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    const x = cv.getContext('2d'), im = x.createImageData(W, H);
+    for (let y = 0; y < H; y++) im.data.set(px.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);   // the GPU's rows run bottom-up
+    x.putImageData(im, 0, 0); const url = cv.toDataURL(); this.thumbs.set(type, url); return url;
+  }
+
+  // ---------------------------------------------------------------- info views: the base as coloured blocks, one colour per
+  // building, like a city builder's data overlay. cols: Map of building id -> colour, or null to go back to the base itself
+  setInfo(cols, ghost = false) {
+    this.info = cols || null;
+    for (const g of this.bm.values()) g.visible = !this.info;
+    for (const c of this.chunks?.values() || []) c.group.visible = !this.info;
+    if (!this.info) { if (this.infoMesh) this.infoMesh.visible = false; return; }
+    const n = cols.size;
+    if (!this.infoMesh || this.infoMesh.userData.cap < n) {
+      if (this.infoMesh) { this.world.remove(this.infoMesh); this.infoMesh.dispose(); }
+      const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+      this.infoMesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true }), Math.max(64, n * 2));
+      this.infoMesh.userData.cap = Math.max(64, n * 2); this.infoMesh.castShadow = true; this.infoMesh.receiveShadow = true; this.infoMesh.frustumCulled = false;
+      this.world.add(this.infoMesh);
+    }
+    const im = this.infoMesh, o = new THREE.Object3D(), col = new THREE.Color(); let i = 0;
+    for (const [id, c] of cols) {
+      const b = this.sim.byId(id), g = this.bm.get(id); if (!b) continue;
+      o.position.set(this.wx(b.x + b.w / 2), 0, this.wx(b.z + b.d / 2)); o.scale.set(Math.max(0.3, b.w - 0.12), Math.max(0.25, (g?.userData.top || 0.8) * (b.done ? 1 : b.prog)), Math.max(0.3, b.d - 0.12)); o.updateMatrix();
+      im.setMatrixAt(i, o.matrix); im.setColorAt(i, col.set(c)); i++;
+    }
+    im.count = i; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.visible = true;
+    im.material.opacity = ghost ? 0.22 : 1; im.material.depthWrite = !ghost; im.castShadow = !ghost;
+    this.r.shadowMap.needsUpdate = true;
+  }
+  // the RESOURCES view: E-710 seeps (violet), ore (rust), water and rock marked on the ground, crystals showing
+  showResources(on) {
+    if (on && !this.resG) {
+      const N = this.N, T = this.sim.terr, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'), im = g.createImageData(N, N);
+      for (let i = 0; i < N * N; i++) { const t = T ? T[i] : 0, col = t === 3 ? [170, 80, 255, 200] : t === 4 ? [230, 120, 60, 200] : t === 1 ? [70, 150, 255, 90] : t === 2 ? [40, 40, 44, 120] : [0, 0, 0, 0]; im.data.set(col, i * 4); }
+      g.putImageData(im, 0, 0);
+      const tex = new THREE.CanvasTexture(c); tex.magFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace;
+      this.resG = new THREE.Mesh(new THREE.PlaneGeometry(N, N), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+      this.resG.rotation.x = -Math.PI / 2; this.resG.position.y = 0.05; this.resG.renderOrder = 2; this.world.add(this.resG);
+    }
+    if (this.resG) this.resG.visible = !!on;
+    if (this.crystals) this.crystals.visible = !!on;
+  }
+  // the SUPPLY ROUTES view: an arc for every route goods take, in the good's colour, with packets running along it.
+  // routes: [{ a: [x, z], b: [x, z], col, live }]; live ones (a vehicle on it now) are brighter and quicker
+  setRoutes(routes) {
+    if (this.routeG) { this.world.remove(this.routeG); this.routeG.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); }); this.routeG = null; }
+    if (!routes || !routes.length) return;
+    const G = this.routeG = new THREE.Group(), pk = []; this.world.add(G);
+    for (const r of routes) {
+      const a = new THREE.Vector3(this.wx(r.a[0]), 0.4, this.wx(r.a[1])), b = new THREE.Vector3(this.wx(r.b[0]), 0.4, this.wx(r.b[1])), d = a.distanceTo(b);
+      const mid = a.clone().add(b).multiplyScalar(0.5); mid.y = 0.6 + d * 0.25;
+      const curve = new THREE.QuadraticBezierCurve3(a, mid, b), pts = curve.getPoints(24);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: r.col, transparent: true, opacity: r.live ? 0.95 : 0.5 }));
+      line.renderOrder = 3; G.add(line);
+      const n = Math.max(1, Math.round(d / 4)); for (let i = 0; i < n; i++) pk.push({ curve, t: i / n, sp: (r.live ? 0.5 : 0.22) * 6 / Math.max(6, d), col: r.col });
+    }
+    const im = new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff' }), pk.length), col = new THREE.Color();
+    pk.forEach((p, i) => im.setColorAt(i, col.set(p.col))); im.frustumCulled = false; G.add(im);
+    this.packets = { im, pk };
+  }
+  routeTick(dt) {
+    const P = this.packets; if (!P || !this.routeG) return;
+    const o = new THREE.Object3D();
+    P.pk.forEach((p, i) => { p.t = (p.t + p.sp * dt) % 1; o.position.copy(p.curve.getPoint(p.t)); o.updateMatrix(); P.im.setMatrixAt(i, o.matrix); });
+    P.im.instanceMatrix.needsUpdate = true;
+  }
+  // where the edges of the screen meet the ground, in tiles: the camera's footprint, for the minimap
+  footprint() {
+    const out = [], p = new THREE.Vector3(), pl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { this.ray.setFromCamera(new THREE.Vector2(x, y), this.cam); if (this.ray.ray.intersectPlane(pl, p)) out.push([p.x + this.N / 2, p.z + this.N / 2]); }
+    return out;
   }
   wx(x) { return x - this.N / 2; }
 
   buildGround() {
+    this.crystals = null;
     const N = this.N, s = this.sim, nz = new Noise(s.seed + 3), P = 16, c = document.createElement('canvas');
     c.width = c.height = N * P; const g = c.getContext('2d'), img = g.createImageData(N * P, N * P), d = img.data;
     const bio = s.site ? BIOMES[s.site.biome] : null, hue = bio ? bio.ground : [[156, 128, 92], [142, 112, 84], [120, 118, 98], [164, 120, 84]][s.seed % 4], T = s.terr, H = s.hgt;
@@ -70,8 +169,8 @@ export class View {
       const tk = T ? T[tz * N + tx] : 0;
       if (tk === 1) { const c = bio.sea; r = c[0] * 0.7 + f * 6; gg = c[1] * 0.7 + f * 6; b = c[2] * 0.7 + f * 6; }   // the bed under the water
       else if (tk === 2) { r *= 0.62; gg *= 0.62; b *= 0.64; }
-      else if (tk === 3) { const sp = nz.v(x / 5, y / 5); r = r * 0.45 + 20 * sp; gg = gg * 0.35; b = b * 0.45 + 40 * sp; }   // E-710 seeps: dark, oily, a violet sheen
-      else if (tk === 4) { r = r * 0.8 + 40; gg = gg * 0.7 + 14; b = b * 0.55; }   // ore: rusty ground
+      else if (tk === 3) { r *= 0.86; gg *= 0.84; b *= 0.88; }   // E-710 seeps and ore look like ground here: the RESOURCES view shows them
+      else if (tk === 4) { r *= 0.92; gg *= 0.88; b *= 0.84; }
       else if (T && H) { const sh = Math.min(1, Math.max(0, (H[tz * N + tx] - bio.water) / (bio.rock - bio.water))); r *= 0.9 + sh * 0.18; gg *= 0.9 + sh * 0.18; b *= 0.9 + sh * 0.18; }
       const i = (y * N * P + x) * 4; d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
     }
@@ -120,7 +219,7 @@ export class View {
         const cm = new THREE.MeshStandardMaterial({ color: '#2a1838', emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.2 });
         const ci = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.12), cm, dp.length);
         dp.forEach((i, k) => { const j = nz.v(i * 0.7, 9); q.setFromEuler(new THREE.Euler(j, j * 3, 0)); mx.compose(new THREE.Vector3(this.wx(i % N + 0.2 + j * 0.6), 0.08, this.wx(((i / N) | 0) + 0.3 + j * 0.4)), q, new THREE.Vector3(1, 1.8, 1)); ci.setMatrixAt(k, mx); });
-        this.world.add(ci);
+        ci.visible = false; this.world.add(ci); this.crystals = ci;
       }
     }
     // rock spires on the skyline, fading into the haze
@@ -436,7 +535,7 @@ export class View {
     this.syncBuildings(dt);
     this.syncPeople(dt);
     this.syncVehicles(dt);
-    this.smokeUpdate(dt);
+    this.smokeUpdate(dt); this.routeTick(dt);
     // the boom barriers lift for anything on wheels and drop behind it
     for (const bm of this.booms || []) {
       const u = bm.userData, up = s.veh.some(v => !v.away && Math.hypot(v.x - u.gx, v.z - u.gz) < u.r);
@@ -488,7 +587,7 @@ export class View {
         const box = new THREE.Box3().setFromObject(model); g.userData.top = box.max.y;
         const d = B[b.type];
         if (d.crew || d.pw < 0) { const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), this.m.glowG); lamp.position.set(0, box.max.y + 0.25, 0); lamp.userData.bid = b.id; g.add(lamp); g.userData.lamp = lamp; }
-        this.world.add(g); this.bm.set(b.id, g);
+        g.visible = !this.info; this.world.add(g); this.bm.set(b.id, g);
       }
       const model = g.userData.model, ud = model.userData;
       // under construction: it rises inside scaffolding
@@ -553,7 +652,7 @@ export class View {
     if (!mm.length) { g.userData.ck = 'none'; return; }
     const ck = `${Math.floor(g.position.x / 32)},${Math.floor(g.position.z / 32)}`;
     this.chunks ||= new Map();
-    let c = this.chunks.get(ck); if (!c) { c = { members: new Set(), group: new THREE.Group(), dirty: true }; this.world.add(c.group); this.chunks.set(ck, c); }
+    let c = this.chunks.get(ck); if (!c) { c = { members: new Set(), group: new THREE.Group(), dirty: true }; c.group.visible = !this.info; this.world.add(c.group); this.chunks.set(ck, c); }
     c.members.add(g); c.dirty = true; g.userData.ck = ck;
   }
   unbatch(g) {

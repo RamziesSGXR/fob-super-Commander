@@ -5,12 +5,14 @@
 // obstacle course, the parade ground and the Citizenship Hall, and Defence's deployment orders ship the trained ones
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
+import { FOUNDATION, EARLY } from './config.js';
 import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
 import { makeSite, biomeOf, GROUND, RW, RH, survey, regionKind, placeName } from './site.js';
 import { writeReport } from './reports.js';
+import { Market, bindMarket } from './market.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
 export const MKEYS = ['def', 'pro', 'tru'];
@@ -52,7 +54,7 @@ export class Sim {
     this.planet = this.faction.planet || this.rng.pick(PLANETS);
     // the landing site: chosen on the planet map, or the best open spot near the middle if none was chosen
     const biome = biomeOf(this.planet), site = opts.flat ? null : opts.site || bestSite(this.seed, biome, this.N);
-    this.site = site ? { seed: this.seed, biome, u: site.u, v: site.v } : null; this.stage = opts.flat ? 2 : 0;
+    this.site = site ? { seed: this.seed, biome, u: site.u, v: site.v } : null; this.stage = opts.flat ? 2 : 0; if (opts.flat) this.foundedF = true;
     this.supplies = C.START.supplies; this.credits = C.START.credits; this.mood = 0; this.desk = []; this.flow = { cur: this.newFlow(), last: null, today: this.newDay(), days: [] };
     this.loans = [{ k: 'charter', bal: this.D.charter }]; this.calls = []; this.supplies = this.D.sup;
     this.morale = C.START.morale; this.grief = 0; this.pride = 0; this.hunger = 0;
@@ -76,7 +78,7 @@ export class Sim {
     const hq = this.b.find(b => b.type === 'hq'); hq.stock = { ...B.hq.store };
     for (let i = 0; i < C.START.troops; i++) this.addTroop(i < 3 ? 100 : 30);
     this.newOffers(); this.newOrder();
-    this.ranking(); this.tick();
+    this.ranking(); this.tick(); this.marketInit();
     this.say('base', `${this.faction.name} has landed on ${this.planet}. ${this.faction.base} is yours to build, Commander. ${C.START.troops} votes have been delivered to your base. You have open ground, a command post and ${C.START.supplies} supplies: draw a road, then build along it.`);
     this.say('def', 'The Ministry of Defence expects trained troopers. Train your recruits; transports leave from the landing pad every afternoon.');
     this.recalc();
@@ -242,8 +244,12 @@ export class Sim {
     if (d.tech && !this.hasTech(d.tech)) n.push(TECH[d.tech].name + ' research');
     if (d.stage && (this.stage || 0) < d.stage) n.push(`a ${C.STAGES[d.stage].name} charter`);
     if (d.pad && this.count('pad') >= this.padCap()) n.push(this.has('comms') || this.count('comms') ? 'another Comms Tower' : 'a Comms Tower');
+    if (!this.founded() && !EARLY.has(type)) n.push(`the foundation first (${this.foundMissing().map(t => B[t].name).join(', ')})`);
     return n.length ? n : null;
   }
+  // the foundation: once a base has placed these it can build anything; until then, only what brings money in
+  foundMissing() { return FOUNDATION.filter(t => !this.b.some(b => b.type === t)); }
+  founded() { if (this.foundedF) return true; if (!this.foundMissing().length) { this.foundedF = true; this.say('base', 'The foundation is laid: pad, depot, barracks, mess and range. Every other building is open to you now.'); return true; } return false; }
   padCap() { return 1 + this.count('comms') * (this.hasTech('radio') ? 3 : 2) + this.count('mast') * B.mast.pads; }
   padLoad() { return C.PADLOAD + (this.hasTech('cargo') ? 60 : 0); }
   padSeats() { return C.PADSEATS + (this.hasTech('cargo') ? 4 : 0); }
@@ -510,6 +516,7 @@ export class Sim {
       worn: -Math.round(12 * worn),
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
     };
+    if (this.commit) this.mor.commit = 2 * this.commitF('tru');
     this.moraleTarget = clamp(Object.values(this.mor).reduce((a, b) => a + b, 0), 0, 100);
     this.avgCond = done.length ? done.reduce((a, b) => a + b.cond, 0) / done.length : 100;
   }
@@ -529,7 +536,7 @@ export class Sim {
     this.recalc();
     for (const b of this.b) if (!b.done) {
       const helpers = Math.min(3, this.idle);
-      b.prog += dt / (b.time * C.BUILD) * (0.4 + 0.2 * helpers);
+      b.prog += dt / (b.time * C.BUILD) * (0.4 + 0.2 * helpers) * (1 + 0.08 * this.commitF('pro'));
       if (b.prog >= 1) { b.prog = 1; b.done = true; this.events.push({ t: 'built', id: b.id }); this.roadsV++; this.say('base', b.refit ? `${B[b.type].name} refitted: ${DESIGNS[b.design || 0].name}.` : `${B[b.type].name} complete.`); b.refit = false; }
     }
     this.consume(day);
@@ -569,6 +576,7 @@ export class Sim {
     this.mood *= 0.985;
     this.deskHour(h);
     if (h === 10) this.callDay();
+    this.marketHour(h);
     this.fort = this.fortify();
   }
 
@@ -784,7 +792,7 @@ export class Sim {
     const ids = go.map(t => t.id);
     this.troops = this.troops.filter(t => !ids.includes(t.id));
     o.sent += go.length; this.stats.deployed += go.length;
-    const pay = go.length * C.DEPLOY_PAY, cr = Math.round(go.reduce((a, t) => a + C.DEPLOY_CR * (t.grade === 'A' ? 1.5 : 1), 0)); this.earn('deploy', pay, cr);
+    const pay = go.length * C.DEPLOY_PAY, cr = Math.round(go.reduce((a, t) => a + C.DEPLOY_CR * (t.grade === 'A' ? 1.5 : 1), 0) * (1 + 0.05 * this.commitF('def'))); this.earn('deploy', pay, cr);
     this.events.push({ t: 'deploy', ids, names: go.map(t => t.name), pads: this.byPad(pads, ids) });
     this.say('def', `${go.length} trooper${go.length > 1 ? 's' : ''} shipped to the front (${o.sent} of ${o.n}). +${pay} supplies, +${cr} credits.`);
     if (o.sent >= o.n) {
@@ -937,7 +945,7 @@ export class Sim {
     const drill = squad.reduce((a, t) => a + t.drill, 0) / squad.length;
     const raw = squad.reduce((a, t) => a + (this.trained(t) ? 0 : 0.15), 0) / squad.length;
     const arm = (this.b.some(b => b.type === 'armory' && b.done && b.crew > 0 && !b.off) ? 0.1 : 0) + this.oddsBonus();
-    return clamp(0.66 + 0.15 * vet + 0.1 * drill + 0.2 * (this.morale - 50) / 50 + arm + armour + 0.03 * (o.size - 2) - 0.1 * o.diff - raw, 0.05, 0.97);
+    return clamp(0.66 + 0.02 * this.commitF('def') + 0.15 * vet + 0.1 * drill + 0.2 * (this.morale - 50) / 50 + arm + armour + 0.03 * (o.size - 2) - 0.1 * o.diff - raw, 0.05, 0.97);
   }
   // armour parked in a staffed Vehicle Bay with fuel for the trip
   armourFree(kind) {
@@ -1079,6 +1087,7 @@ export class Sim {
 
   // ---------------------------------------------------------------- the week, and the other factions
   updateRivals() {
+    for (const r of this.rivals) r.commit = this.rivalCommit(r);
     for (const r of this.rivals) for (const m of MKEYS) {
       const target = (28 + r.w[m] * (26 + Math.min(52, this.week * 3.6))) * this.D.rivals + this.rng.range(-6, 6);
       r.stand[m] = clamp(r.stand[m] ? r.stand[m] + (target - r.stand[m]) * 0.5 : target, 0, 100);
@@ -1173,6 +1182,7 @@ export class Sim {
     // the industrial complexes turn fuel into supplies
     for (const b of this.b) { const pm = B[b.type].pump; if (pm && b.done && !b.off) { const w = this.work(b); b.stock.fuel = Math.min(this.storeCap(b, 'fuel'), (b.stock.fuel || 0) + pm * w); } }
     for (const b of this.b) { const mk = this.stat(b, 'make'); if (!b.done || b.off || !mk || (B[b.type].need?.fuel && (b.stock.fuel || 0) < 1)) continue; const w = this.work(b); if (w <= 0) continue; if (B[b.type].need?.fuel) b.stock.fuel = Math.max(0, b.stock.fuel - 10 * w); this.earn(b.type === 'mine' ? 'mine' : 'industry', Math.round(mk * w)); }
+    this.marketDay();   // prices move, offers lapse, and the Ministry commitments are paid
     const f = this.flow; f.days.push(f.today); if (f.days.length > 7) f.days.shift(); f.today = this.newDay();
   }
   newDay() { return { sup: {}, cr: {} }; }
@@ -1222,15 +1232,9 @@ export class Sim {
     f.supOut = Math.round(f.sup0 + sum(f.sup) - this.supplies); f.crOut = Math.round(f.cr0 + sum(f.cr) - this.credits); f.week = this.week;
     this.flow.last = f; this.flow.cur = this.newFlow();
   }
-  sellSupplies() {
-    if (this.supplies < C.SELL.sup) return false;
-    this.spend('sold', C.SELL.sup); this.earn('sold', 0, C.SELL.cr); return true;
-  }
-  buySupplies() {
-    if (this.credits - C.BUY.cr < -this.OD) return false;
-    this.spend('bought', 0, C.BUY.cr); this.earn('bought', C.BUY.sup);
-    this.say('bur', `The Bureau has sold you ${C.BUY.sup} supplies for ${C.BUY.cr} credits, at the patriotic rate.`); return true;
-  }
+  // the old Ledger buttons, now trades on the planet's market
+  sellSupplies() { return this.trade('sup', 100, false).ok; }
+  buySupplies() { return this.trade('sup', 100, true).ok; }
 
   // ---------------------------------------------------------------- the Base Ledger: requests on the Commander's desk
   deskHour(h) {
@@ -1351,10 +1355,11 @@ export class Sim {
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
     this.veh ||= []; this.orders ||= []; this.week_ ||= { short: 0, total: 0, fed: 0, eat: 0 }; this.hunger ||= 0; this.recruitAcc ||= 0; this.tech ||= { done: [], cur: null, pts: 0 };
     this.credits ??= C.START.credits; this.mood ||= 0; this.desk ||= []; this.flow ||= { cur: this.newFlow(), last: null };
+    if (this.b.length > 10 || this.week > 2) this.foundedF = true;   // bases from before the foundation rule
     this.flow.today ||= this.newDay(); this.flow.days ||= []; this.loans ||= []; this.calls ||= []; this.diff ||= 'veteran'; this.stage ??= 2;   // bases from before charters keep all their ground
     for (const t of this.troops) if (!t.q) { const base = 40 + (t.id * 7) % 40, q = k => clamp(base + (t.id * k) % 36 - 12, 20, 99); t.q = { aim: q(5), fit: q(11), con: q(17) }; t.grade ??= null; }
     this.roadsV = 1;
-    this.recalc(); this.tick();
+    this.recalc(); this.tick(); this.marketInit();
     if (!this.orders.length) this.newOrder();
   }
   // bases saved before the supply lines: pumps and plants go (refunded), E-710 and shells become fuel and ammo at the HQ
@@ -1407,3 +1412,4 @@ export class Sim {
     for (const x of [m, m + 1]) for (let z = this.N - 2; z > 2; z--) { if (this.occ[z * this.N + x]) break; this.roads[z * this.N + x] = 1; }
   }
 }
+Object.assign(Sim.prototype, Market); bindMarket(B);

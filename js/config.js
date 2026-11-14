@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.11';
+export const VERSION = '0.12';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -49,6 +49,35 @@ export const C = {
 
 // The three Ministries a loyal faction answers to.
 // What a base runs on. Everything arrives by pelican and is billed per unit.
+// ---------------------------------------------------------------- the planet's market (js/market.js)
+export const MKEYS_ALL = ['def', 'pro', 'tru'];
+export const MARKET = {
+  // price in credits per unit at an index of 100; idx: the Ministry whose index moves it; w: how hard; lot: offer sizes
+  goods: {
+    sup:     { name: 'Supplies', short: 'SUP', base: 0.45, idx: 'pro', w: 0.7, lot: [100, 300] },
+    rations: { name: 'Rations', short: 'RAT', base: 0.55, idx: 'def', w: 0.5, lot: [40, 120] },
+    fuel:    { name: 'E-710 fuel', short: 'FUEL', base: 1.0, idx: 'pro', w: 0.8, lot: [20, 80] },
+    ammo:    { name: 'Ammo', short: 'AMMO', base: 0.9, idx: 'def', w: 1.0, lot: [30, 100] },
+  },
+  spread: 0.12,      // buy at the price plus this, sell at the price less it
+  impact: 0.0005,    // each unit you trade moves the price this much (100 units: 5%)
+  vol: 0.035,        // the day's random move
+  shocks: [
+    { m: 'def', d: 35, days: 4, text: 'a major offensive opens on the front. Every base is shipping ammo; Defence favour is dear.' },
+    { m: 'def', d: -25, days: 3, text: 'ceasefire rumours (denied). Ammo prices slip; Defence favour is cheap this week.' },
+    { m: 'pro', d: 30, days: 4, text: 'audit season at the Bureau. Everyone is building; supplies and fuel are dear.' },
+    { m: 'pro', d: -22, days: 3, text: 'a supply glut after a convoy came through whole. Supplies and fuel are cheap.' },
+    { m: 'tru', d: 32, days: 4, text: 'election week. Every base wants the Ministry of Truth to notice it.' },
+    { m: 'tru', d: -20, days: 3, text: 'the Ministry of Truth is busy with a scandal (there is no scandal). Its favour is cheap.' },
+  ],
+};
+// Ministry commitments: what a level costs a day (per level), and the standing a day it buys at an index of 100
+export const COMMIT = {
+  levels: ['NONE', 'LOW', 'STANDARD', 'HIGH', 'ALL OUT'],
+  def: { ministry: 'Ministry of Defence', cost: { ammo: 5, rations: 4 }, gain: 0.9, perk: 'Patrol and operation odds +2% a level; deployment orders pay 5% more a level.' },
+  pro: { ministry: 'Bureau of Expansion', cost: { sup: 14, fuel: 2 }, gain: 0.9, perk: 'Building goes 8% faster a level.' },
+  tru: { ministry: 'Ministry of Truth', cost: { cr: 6, sup: 6 }, gain: 0.9, perk: 'Morale +2 a level.' },
+};
 export const GOODS = {
   rations: { name: 'Rations', short: 'RAT', cost: 1, color: '#c9b37a' },
   fuel:    { name: 'E-710 fuel', short: 'FUEL', cost: 2, color: '#b07ad8' },
@@ -95,10 +124,21 @@ export const MIN = {
 };
 
 // The build bar is grouped by the Ministry that owns each building. Humanity has no standing yet; it arrives later.
+// the build menu, by what a building is for: [key, label, what the section is for, the buildings in it]
 export const GROUPS = [
-  ['expansion', 'EXPANSION', ['core', 'power', 'industry']], ['defence', 'DEFENCE', ['military']],
-  ['humanity', 'HUMANITY', ['living']], ['truth', 'TRUTH', ['propaganda']],
+  ['roads', 'ROADS', 'Roads first: every building snaps to a plot along one, door to the street.', []],
+  ['logistics', 'LOGISTICS', 'Bring supplies and recruits in, store goods, and move them round the base.', ['pad', 'depot', 'fueldepot', 'shed', 'motorpool', 'comms', 'mast']],
+  ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
+  ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
+  ['income', 'INCOME', 'Buildings that earn credits or make supplies.', ['vend', 'burger', 'chicken', 'cola', 'mart', 'casino', 'extractor', 'mine', 'factory']],
+  ['power', 'POWER', 'Most buildings need power to run.', ['gen', 'solar']],
+  ['defence', 'DEFENCE', 'Close the wall, watch it and arm it, and send patrols out.', ['patrol', 'lookout', 'flood', 'turret', 'shelter', 'armory', 'vbay', 'hdbarracks', 'brig', 'cryo', 'eob']],
+  ['truth', 'TRUTH', 'Morale and propaganda, for the Ministry of Truth.', ['flag', 'banner', 'hdbanner', 'speaker', 'billboard', 'truth', 'pool', 'plaque', 'statue', 'memorial', 'halls', 'partyhq', 'palace', 'monument']],
+  ['command', 'COMMAND', 'Research, operations and records.', ['command', 'warroom', 'lab', 'vault']],
 ];
+// what a new base builds before anything else: these are what bring money in. Everything else waits for them
+export const FOUNDATION = ['pad', 'depot', 'barracks', 'mess', 'range'];
+export const EARLY = new Set([...FOUNDATION, 'gen', 'solar', 'potty', 'hab']);
 
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).

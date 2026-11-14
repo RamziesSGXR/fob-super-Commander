@@ -7,6 +7,7 @@ import { B, C, GKEYS, TECH } from '../js/config.js';
 
 const weeks = +(process.argv[2] || 12), mode = process.argv[3] || 'bot', seed = +(process.argv[4] || 7);
 const s = new Sim({ seed });
+if (process.env.COMMIT) { const [d, p, t] = process.env.COMMIT.split(',').map(Number); s.commit = { def: d, pro: p, tru: t }; }
 const N = s.N, m = N / 2;
 
 function spot(type, near = [m, m]) {
