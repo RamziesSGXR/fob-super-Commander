@@ -1,6 +1,6 @@
 // Every tuning number in FOB Super Commander lives here: the buildings, the Ministries, the rivals and the week.
 
-export const VERSION = '0.14';
+export const VERSION = '0.15';
 
 export const C = {
   N: 80,                    // the map is N x N tiles; the base is whatever your walls enclose, inside the charter's bounds
@@ -132,14 +132,14 @@ export const GROUPS = [
   ['training', 'TRAINING', 'Turn recruits into troopers. The front pays supplies and credits for every one you ship.', ['range', 'course', 'parade', 'lecture']],
   ['living', 'LIVING', 'House, feed and look after your people. Empty bunks are what bring recruits in.', ['barracks', 'hab', 'block', 'mess', 'potty', 'medbay', 'club', 'dome']],
   ['income', 'INCOME', 'Buildings that earn credits or make supplies.', ['vend', 'burger', 'chicken', 'cola', 'mart', 'casino', 'extractor', 'mine', 'factory']],
-  ['power', 'POWER', 'Most buildings need power to run.', ['gen', 'solar']],
+  ['power', 'UTILITIES', 'Power, water, sewage and fuel. Each covers a circle round it: a building outside power coverage goes dark, and bunks without water or sewage lose morale and fall sick.', ['gen', 'solar', 'substation', 'well', 'tower', 'rowpu', 'lagoon', 'treatment', 'fuelfarm']],
   ['defence', 'DEFENCE', 'Close the wall, watch it and arm it, and send patrols out.', ['patrol', 'lookout', 'flood', 'turret', 'shelter', 'armory', 'vbay', 'hdbarracks', 'brig', 'cryo', 'eob']],
   ['truth', 'TRUTH', 'Morale and propaganda, for the Ministry of Truth.', ['flag', 'banner', 'hdbanner', 'speaker', 'billboard', 'truth', 'pool', 'plaque', 'statue', 'memorial', 'halls', 'partyhq', 'palace', 'monument']],
   ['command', 'COMMAND', 'Research, operations and records.', ['command', 'warroom', 'lab', 'vault']],
 ];
 // what a new base builds before anything else: these are what bring money in. Everything else waits for them
 export const FOUNDATION = ['pad', 'depot', 'barracks', 'mess', 'range'];
-export const EARLY = new Set([...FOUNDATION, 'gen', 'solar', 'potty', 'hab', 'yard']);
+export const EARLY = new Set([...FOUNDATION, 'gen', 'solar', 'potty', 'hab', 'yard', 'substation', 'well', 'tower', 'lagoon', 'rowpu']);
 
 // w x d is the footprint before rotation. pw: power made (+) or used (-). up: upkeep each week. crew: troops it needs to run.
 // mor: morale it adds. prop: propaganda it adds. needs: buildings that must stand first (the tech tree).
@@ -273,6 +273,21 @@ export const B = {
               desc: 'Turns E-710 and labour into supplies: about 45 a day while crewed, powered and fuelled. Trucks bring the fuel.' },
   memorial: { name: 'Memorial Wall', group: 'propaganda', w: 3, d: 1, cost: 180, up: 4, prop: 6, mor: 2, needs: ['barracks'],
               desc: 'A plaque for every trooper who fell. Halves the grief of each loss.' },
+  // ---------------------------------------------------------------- utilities (0.15). cover: tiles of reach (power, water, sewage, fuel)
+  substation: { name: 'Substation', group: 'power', w: 1, d: 1, cost: 110, up: 4, cover: { pw: 10 },
+              desc: 'Transformers behind a fence. Carries the grid ten tiles further: every building inside its circle can draw power.' },
+  well:     { name: 'Water Well', group: 'power', w: 1, d: 1, cost: 90, up: 3, pw: -1, water: 40, cover: { wa: 6 },
+              desc: 'A borehole, a pump and a chlorine drum. About forty votes\' water a day for the buildings round it. Keep it away from a sewage lagoon.' },
+  tower:    { name: 'Water Tower', group: 'power', w: 1, d: 1, cost: 160, up: 5, cover: { wa: 9 }, relay: 'wa',
+              desc: 'A tank on legs. Adds no water of its own, but carries what the wells and purifiers make nine tiles further, if one is within fourteen tiles.' },
+  rowpu:    { name: 'Water Purification Unit', group: 'power', w: 2, d: 2, cost: 340, up: 12, pw: -3, crew: 1, water: 160, cover: { wa: 9 }, atWater: true,
+              desc: 'A reverse-osmosis unit on a trailer, drawing from a river, lake or the sea (it must stand within two tiles of water). A hundred and sixty votes\' water a day.' },
+  lagoon:   { name: 'Sewage Lagoon', group: 'power', w: 3, d: 2, cost: 160, up: 4, sewer: 150, cover: { se: 8 }, smell: 4,
+              desc: 'A lined pit with a berm round it. Cheap and it works, but bunks within four tiles smell it, and a well within six tiles is contaminated.' },
+  treatment:{ stage: 1, name: 'Waste Treatment Plant', group: 'power', w: 3, d: 3, cost: 620, up: 16, pw: -4, crew: 1, sewer: 400, cover: { se: 12 },
+              desc: 'Clarifiers, aeration and a lab that tests the outflow. Four hundred votes\' waste a day, no smell, nothing in the water. Needs a Fort charter.' },
+  fuelfarm: { name: 'Fuel Farm', group: 'power', w: 3, d: 3, cost: 380, up: 12, store: { fuel: 300 }, cover: { fu: 9 },
+              desc: 'Bermed fuel bladders and a pump house. Holds three hundred fuel and pipes it to every generator, motor pool and vehicle bay within nine tiles, so the trucks only have to fill the farm.' },
   statue:   { name: 'Liberty Statue', group: 'propaganda', w: 2, d: 2, cost: 360, up: 10, prop: 16, mor: 4, needs: ['truth', 'parade'],
               desc: 'A hero in bronze on your crest. Inspectors love it.' },
 };
@@ -430,3 +445,17 @@ export const GROW = { reserve: 500, head: 0.25, shop: 10, fit: 1.05, pad: 6, pad
 // what disturbs housing nearby (tiles of reach): noise costs morale, hazards cost morale and worry the inspector
 export const NOISE = { range: 4, course: 3, parade: 3, motorpool: 3, gen: 3, vbay: 3, factory: 5, mine: 4, pad: 3 };
 export const HAZARD = { fueldepot: 3, gen: 2, armory: 3, extractor: 3 };
+
+// ---------------------------------------------------------------- utilities (0.15, design §9): coverage areas
+// What already covers ground: power sources carry the grid round themselves; the HQ has a water bladder and burn latrines
+// enough for the first tents. hq: what the HQ supplies. use: water (and sewage) a day per vote, and per building that needs
+// more. grace: days an old base gets to build its utilities before they count. relay: a tower reaches only if a source is
+// this close. outbreak: the daily chance, from what's missing, halved by a staffed Medical Bay
+export const UTIL = {
+  powCover: { gen: 9, solar: 5, hq: 8, eob: 8 },
+  hq: { wa: 6, se: 6, water: 24, sewer: 24 },
+  use: { vote: 1, eat: 8, ward: 4, dome: 6, potty: 0 },
+  relay: 14, grace: 7, badWell: 6,
+  outbreak: { base: 0.01, water: 0.22, sewer: 0.18, bad: 0.15, min: 10, medbay: 0.5, sick: [2, 6], hurt: 160 },
+  mor: { water: 10, sewer: 8, smell: 4, sick: 1 },
+};

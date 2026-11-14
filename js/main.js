@@ -1,5 +1,5 @@
 // The loop, the input, the HUD and the screens. The simulation is in sim.js, the people in life.js, the picture in view.js.
-import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB, ZONES, ZKEYS, GROWS, CHAINS, GROW } from './config.js';
+import { C, B, MIN, GROUPS, FACTION_DEFAULT, PLANETS, VERSION, GOODS, GKEYS, ROADS, TRAIN, TECH, VEHICLES, DESIGNS, PARTS, PARTS_FOR, LOANS, DIFF, FOUNDATION, MARKET, COMMIT, STD, SCRUB, ZONES, ZKEYS, GROWS, CHAINS, GROW, UTIL } from './config.js';
 import { Sim, MKEYS, rankOf, dims, LOOSE } from './sim.js';
 import { REQUESTS, GRADES, fileOf, CALLS } from './desk.js';
 import { Life } from './life.js';
@@ -207,6 +207,9 @@ function whyOf(k) {
   if (d.beds) m.push(`houses ${cp(d.beds)}`);
   if (d.eat) m.push(`feeds ${cp(d.eat)}`);
   if (d.pw > 0) m.push(`+${d.pw} power`);
+  if (d.water) m.push(`${d.water} water a day`);
+  if (d.sewer) m.push(`takes ${d.sewer} waste a day`);
+  if (d.cover) m.push(`covers ${Math.max(...Object.values(d.cover))} tiles`);
   if (d.store) m.push(`stores ${Math.floor(Object.values(d.store).reduce((a, b) => a + b, 0) * cf)} goods`);
   if (d.trucks) m.push(`${d.trucks} supply trucks`);
   if (d.ward) m.push(`${cp(d.ward)} beds for the wounded`);
@@ -231,7 +234,8 @@ function buildBar() {
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
-  const head = `<div class="bi-head"><b>${G[1]}</b><span>${esc(G[2])}</span><span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
+  const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A DAY${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
+  const head = `<div class="bi-head"><b>${G[1]}</b><span>${group === 'power' ? '' : esc(G[2])}</span>${utilLine}<span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
   $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
     + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
@@ -347,6 +351,8 @@ function selPanel() {
   if (sim.hasStd(b.type)) { const k = sim.stdOf(b); bits.push(`<div class="kv"><span>STANDARD</span><b>${STD[k].name} <small>(${STD[k].doctrine.toLowerCase()})</small></b></div>`); }
   if (!b.done || b.upg) { const pr = b.done ? b.upg.prog : b.prog; bits.push(`<div class="kv"><span>${b.done ? 'UPGRADE TO ' + STD[b.upg.to].name.toUpperCase() : 'CONSTRUCTION'}</span><b>${Math.round(pr * 100)}%</b></div><div class="meter"><i style="width:${pr * 100}%;background:var(--yellow)"></i></div><div class="kv"><span>ENGINEERS</span><b>${esc(buildState(b))}</b></div>`); }
   { const notes = []; if (b.grown) notes.push(`Grew in ${ZONES[b.grown].name}`); if (B[b.type].beds && b.noisy) notes.push('<span class="warn">Noisy neighbours: morale suffers</span>'); if (B[b.type].beds && b.hazard) notes.push('<span class="warn">Fuel or a generator next door: a hazard</span>'); if (b.nearPad) notes.push(`Near a landing pad: holds ${Math.round((GROW.padBonus - 1) * 100)}% more`); if (sim.zoneFit(b) > 1) notes.push('In its own zone: works 5% better'); if (notes.length) bits.push(`<div class="kv"><span>ZONE</span><b>${notes.join('<br>')}</b></div>`); }
+  if (b.done && (d.pw < 0 || sim.needsWater(b) || sim.needsSewer(b))) { const sv = []; if (d.pw < 0) sv.push(b.dark ? '<span class="down">no power: outside the grid</span>' : 'power'); if (sim.needsWater(b)) sv.push(b.dry ? '<span class="warn">no water</span>' : 'water'); if (sim.needsSewer(b)) sv.push(b.foul ? '<span class="warn">no sewage</span>' : 'sewage'); if (b.smelly) sv.push('<span class="warn">smells the lagoon</span>'); bits.push(`<div class="kv"><span>SERVICES</span><b>${sv.join(' · ')}</b></div>`); }
+  if (B[b.type].water && b.done) bits.push(`<div class="kv"><span>WATER</span><b>${B[b.type].water} a day${b.bad ? ' · <span class="down">contaminated: a lagoon is too close</span>' : ''}</b></div>`);
   if (b.type === 'yard') { const cs = sim.crews.filter(c => c.yard === b.id); bits.push(`<div class="kv"><span>CREW</span><b>${cs.length ? cs.map(c => `${c.name}: ${crewState(c)}`).join('; ') : b.done ? `waiting for ${3} recruits` : 'none yet'}</b></div>`); }
   if (!b.done) { /* construction shown above */ }
   else {
@@ -380,7 +386,7 @@ function selPanel() {
   // one line on how it is doing, and what it earns or costs, like a city builder's building card
   const out = d.need && Object.keys(d.need).find(g => (b.stock[g] || 0) < 0.5);
   const st = !b.done ? ['warn', `Under construction: ${buildState(b)}`] : b.upg ? ['warn', `Upgrading, half pace: ${buildState(b)}`] : b.off ? ['warn', 'Switched off'] : out ? ['bad', `Out of ${GOODS[out].name.toLowerCase()}`]
-    : d.crew && b.crew < 1 ? ['bad', 'No crew'] : d.pw < 0 && sim.power.ratio < 1 ? ['bad', 'Short of power'] : d.crew && b.crew < d.crew ? ['warn', `Short of crew, ${b.crew} of ${d.crew}`]
+    : b.dark ? ['bad', 'Dark: outside power coverage. Build a Substation (UTILITIES)'] : d.crew && b.crew < 1 ? ['bad', 'No crew'] : d.pw < 0 && sim.power.ratio < 1 ? ['bad', 'Short of power'] : d.crew && b.crew < d.crew ? ['warn', `Short of crew, ${b.crew} of ${d.crew}`]
     : b.cond < 40 ? ['bad', 'Falling apart: repair it'] : ['ok', d.store ? 'Stocked and running' : 'Running'];
   const mv = b.done ? moneyOf(b) : 0;
   const top = `<div class="sp-status ${st[0]}">${st[1]}</div><div class="sp-money"><span>UPKEEP <b class="down">−${fmt(perDay(sim.upkeepOf(b)))}</b>/d</span><span>NET <b class="${mv < 0 ? 'down' : 'up'}">${mv >= 0 ? '+' : '−'}${fmt(Math.abs(mv))}</b> SUP/d</span><span class="role" style="color:${ROLE_COL[roleOf(b.type)]}">${GROUPS.find(g => g[0] === roleOf(b.type))?.[1] || 'COMMAND'}</span></div>`;
@@ -422,6 +428,8 @@ const ORDERS = [
   ['Build an Engineer Yard (LOGISTICS): a third crew means three jobs at once', s => s.crews.some(c => c.yard)],
   ['Close a wall round the base (DEFENCE, Wall), with a road through it for a gate', s => !s.open && s.gates.length > 0],
   ['Paint a Civic and Commerce zone and pick a franchise: shops grow as the base fills up', s => s.zoneCount('comm') > 0],
+  ['Give the bunks water and sewage beyond the HQ: a Water Well and a Sewage Lagoon (UTILITIES). Keep the well away from the lagoon', s => s.has('well') && s.has('lagoon')],
+  ['Carry the grid with a Substation so nothing goes dark (UTILITIES; the UTILITIES view shows coverage)', s => s.has('substation')],
   ['Upgrade a tent to a prefab: select it and press UPGRADE', s => s.b.some(b => b.done && s.hasStd(b.type) && b.type !== 'hq' && s.stdOf(b) >= 1)],
   ['Ship trained troopers to the front: transports leave the pad at 16:00', s => s.stats.deployed > 0],
   ['Deal with the desk: answer a request or grade a trooper\'s file (here, or DESK)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
@@ -449,6 +457,7 @@ const IVIEWS = [
   ['supply', 'SUPPLY', 'Goods a building runs on, full (green) to empty (red). Storage is blue, deeper the fuller.'],
   ['cond', 'CONDITION', 'Repair: green is sound, red is falling apart. Upkeep keeps it up.'],
   ['crew', 'CREW', 'Crew at their posts: green full, amber short, red none. Grey needs no crew.'],
+  ['util', 'UTILITIES', 'Coverage: power (yellow), water (blue), sewage (brown) and fuel pipes (violet). Buildings are green when served, amber missing water or sewage, red dark (outside power).'],
   ['zone', 'ZONING', 'Zones painted on the ground, and buildings in the colour of the zone they grew in or stand in. Red outline: bunks next to noise or fuel.'],
 ];
 let iview = 'none', ivT = 0, ivT2 = 0;
@@ -473,6 +482,7 @@ function ivColor(b, mode) {
   if (mode === 'power') return d.pw > 0 ? '#ffd23a' : d.pw < 0 ? (s.power.ratio >= 1 && !b.off ? '#7fe9e0' : '#ff4d3a') : '#5a625e';
   if (mode === 'supply') { if (d.need) return ramp(Math.min(...Object.keys(d.need).map(g => (b.stock[g] || 0) / d.need[g]))); if (d.store) { const cap = Object.values(d.store).reduce((a, x) => a + x, 0), n = Object.keys(d.store).reduce((a, g) => a + (b.stock[g] || 0), 0); return mix('#24364a', '#5aa8ff', n / cap); } return '#5a625e'; }
   if (mode === 'cond') return ramp(b.cond / 100);
+  if (mode === 'util') { if (b.dark) return '#ff4d3a'; if (b.dry || b.foul) return '#f5c447'; if (B[b.type].cover || UTIL.powCover[b.type]) return '#ffffff'; return d.pw < 0 || sim.needsWater(b) ? '#3fe07a' : '#5a625e'; }
   if (mode === 'zone') { if ((b.noisy || b.hazard) && B[b.type].beds) return '#ff4d3a'; const k = b.grown || sim.zoneKey(sim.zoneAt(Math.floor(b.x + b.w / 2), Math.floor(b.z + b.d / 2))); return k ? ZONES[k].col : '#5a625e'; }
   if (mode === 'crew') return d.crew ? (b.crew >= d.crew ? '#3fe07a' : b.crew > 0 ? '#f5c447' : '#ff4d3a') : '#5a625e';
   return null;
@@ -482,6 +492,7 @@ function ivLegend() {
   if (iview === 'none') { el.classList.add('hidden'); return; }
   let keys = '';
   if (iview === 'res') keys = [['#aa50ff', 'E-710 SEEP'], ['#e6783c', 'ORE'], ['#4696ff', 'WATER'], ['#3a3a40', 'ROCK']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
+  if (iview === 'util') { const u = sim.util || sim.utilities(); keys = [['#ffd23a', 'POWER'], ['#4fb4ff', 'WATER'], ['#b08a4a', 'SEWAGE'], ['#c98bff', 'FUEL']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('') + `<p>Water ${u.water.made} made, ${u.water.use} used a day${u.water.bad > 0.05 ? ` (${Math.round(u.water.bad * 100)}% from wells by a lagoon)` : ''}. Sewage ${u.sewer.cap} taken, ${u.sewer.use} made. ${u.dark ? `${u.dark} building${u.dark > 1 ? 's' : ''} dark. ` : ''}${sim.graceOn() ? `The inspectorate arrives in ${sim.utilGrace} days.` : `Outbreak risk ${Math.round((sim.risk || 0) * 100)}% a day.`}</p>`; }
   if (iview === 'zone') keys = ZKEYS.map(k => `<span><i style="background:${ZONES[k].col}"></i>${ZONES[k].short}</span>`).join('') + `<span><i style="background:#ff4d3a"></i>NOISY OR HAZARDOUS BUNKS</span><p>Demand: ${esc(sim.demandText())}.</p>`;
   if (iview === 'routes') keys = GKEYS.map(g => `<span><i style="background:${GOODS[g].color}"></i>${GOODS[g].name.toUpperCase()}</span>`).join('');
   if (iview === 'role') keys = GROUPS.filter(g => g[0] !== 'roads').map(g => `<span><i style="background:${ROLE_COL[g[0]]}"></i>${g[1]}</span>`).join('');
@@ -504,10 +515,16 @@ function routesNow() {
   for (const v of s.veh) if (v.job) { const a = s.byId(v.job.src), b = s.byId(v.job.dst); if (a && b) add(a, b, v.job.g, true); }
   return [...out.values()];
 }
+function coverList() {
+  const out = [], col = { pw: '#ffd23a', wa: '#4fb4ff', se: '#b08a4a', fu: '#c98bff' };
+  for (const b of sim.b) if (b.done && !b.off) for (const [k, r] of Object.entries(sim.coverOf(b))) out.push({ x: b.x + b.w / 2, z: b.z + b.d / 2, r, col: col[k] });
+  return out;
+}
 function ivApply() {
   const ghost = iview === 'res' || iview === 'routes';
   view.setInfo(iview === 'none' ? null : new Map(sim.b.map(b => [b.id, ghost ? '#c8d0cc' : ivColor(b, iview)])), ghost);
   view.showResources(iview === 'res');
+  view.setCover(iview === 'util' ? coverList() : null);
   view.setRoutes(iview === 'routes' ? routesNow() : null);
 }
 function setIview(k) {
@@ -582,6 +599,7 @@ function taskBoard() {
   const use = s.usage();
   for (const g of GKEYS) if (use[g] > 0 && s.amount(g) < use[g] * 0.5) warn(`${GOODS[g].name} running low`, `${Math.floor(s.amount(g))} left, ${Math.round(use[g])} used a day. More storage brings bigger deliveries; or buy on the market.`, 'eco:market');
   for (const m of MKEYS) if ((s.commit?.[m] || 0) && (s.commitLast?.[m] ?? 1) < 0.6) warn(`${COMMIT[m].ministry}: commitment short`, `Only ${Math.round(s.commitLast[m] * 100)}% paid yesterday. Trade for the goods, or lower the level.`, 'eco:commit');
+  { const u = s.util; if (u && !s.graceOn()) { if (u.dark) warn('Buildings dark', `${u.dark} building${u.dark > 1 ? 's are' : ' is'} outside power coverage. Build a Substation near ${u.dark > 1 ? 'them' : 'it'} (UTILITIES).`); if (s.waterEff() < 0.75) warn('Short of water', `Bunks without water lose morale and fall sick. Wells, a purification unit, or a tower to carry it (UTILITIES).`); if (s.sewerEff() < 0.75) warn('Sewage backing up', 'Bunks without sewage lose morale and fall sick. A lagoon, or a treatment plant at Fort (UTILITIES).'); } }
   if (s.power.ratio < 1) warn('Short of power', `${s.power.made} made, ${s.power.used} wanted: buildings run slow. Build a Generator or a Solar Array.`);
   if (s.hunger > 0.15) warn('Votes going hungry', 'Not enough seats at meals, or not enough rations. A Mess Hall feeds 24.');
   if (s.troops.length > s.beds) warn('Not enough bunks', `${s.troops.length} votes, ${s.beds} bunks. Build a Barracks or a Prefab Hab.`);

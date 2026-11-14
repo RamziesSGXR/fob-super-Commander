@@ -39,6 +39,7 @@ export function makeMats(f) {
   // construction standards and engineers (0.13)
   m.canvas = std('#7d7556', { roughness: 0.95 }); m.canvasDark = std('#5a5440', { roughness: 0.95 }); m.gravel = std('#857c6a', { roughness: 1 });
   m.ply = std('#a08560', { roughness: 0.9 }); m.hesco = std('#a89470', { roughness: 1 }); m.box1 = std('#5f6e7a', { metalness: 0.4, roughness: 0.55 }); m.box2 = std('#7a5a3a', { metalness: 0.4, roughness: 0.55 });
+  m.lagoonW = std('#4a4a2a', { metalness: 0.3, roughness: 0.2 });
   m.engSuit = std('#5d6046'); m.hardhat = std('#e8b81a', { roughness: 0.5 }); m.vest = std('#ff7a1a', { emissive: '#ff5a00', emissiveIntensity: 0.15 }); m.cross = std('#c8241e');
   return m;
 }
@@ -641,6 +642,48 @@ const MAKE = {
     cyl(g, 0.35, 0.35, 0.7, m.e710, -1.6, 0.43, 1.0, { seg: 14 }); cyl(g, 0.36, 0.36, 0.05, m.red, -1.6, 0.8, 1.0, { seg: 14 });
     box(g, 0.7, 0.55, 0.04, m.dark, -0.6, 0.36, 0.56);
     g.userData.blink = [ball(g, 0.05, m.glowR, 1.5, 2.55, -1.0)];
+  },
+  substation(g, m) {   // transformers on a pad behind a fence, a pole with insulators
+    box(g, 0.94, 0.05, 0.94, m.concrete, 0, 0.025, 0, { cast: false });
+    for (const x of [-0.18, 0.18]) { box(g, 0.24, 0.32, 0.22, m.olive, x, 0.21, -0.12); for (let i = 0; i < 3; i++) box(g, 0.25, 0.02, 0.23, m.dark, x, 0.1 + i * 0.09, -0.12); cyl(g, 0.025, 0.025, 0.12, m.white, x, 0.43, -0.12, { seg: 6 }); }
+    cyl(g, 0.03, 0.035, 1.3, m.steel, 0.3, 0.65, 0.25, { seg: 6 }); box(g, 0.4, 0.03, 0.03, m.steel, 0.3, 1.2, 0.25); for (const x of [-0.15, 0, 0.15]) cyl(g, 0.02, 0.02, 0.06, m.white, 0.3 + x, 1.24, 0.25, { seg: 6 });
+    for (const [x, z, w, d] of [[0, -0.44, 0.9, 0.02], [0, 0.44, 0.9, 0.02], [-0.44, 0, 0.02, 0.9], [0.44, 0, 0.02, 0.9]]) box(g, w, 0.35, d, m.steel, x, 0.2, z, { cast: false });
+    box(g, 0.2, 0.12, 0.012, m.hazard, -0.2, 0.25, 0.45, { cast: false });
+  },
+  well(g, m) {   // a borehole head, a pump and a blue chlorine drum
+    box(g, 0.8, 0.05, 0.8, m.concrete, 0, 0.025, 0, { cast: false });
+    cyl(g, 0.12, 0.14, 0.32, m.steel, -0.12, 0.2, -0.05, { seg: 10 }); box(g, 0.26, 0.2, 0.18, m.prim, 0.18, 0.15, -0.05);
+    cyl(g, 0.1, 0.1, 0.28, m.panel, 0.2, 0.16, 0.25, { seg: 10 }); cyl(g, 0.02, 0.02, 0.5, m.steel, -0.12, 0.6, -0.05, { seg: 6 }); box(g, 0.3, 0.02, 0.02, m.steel, -0.02, 0.84, -0.05);
+  },
+  tower(g, m) {   // a water tank on four legs, faction trim, a ladder
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { box(g, 0.05, 1.6, 0.05, m.steel, sx * 0.28, 0.8, sz * 0.28); }
+    box(g, 0.6, 0.03, 0.03, m.steel, 0, 0.7, 0.28); box(g, 0.6, 0.03, 0.03, m.steel, 0, 0.7, -0.28);
+    cyl(g, 0.4, 0.4, 0.5, m.white, 0, 1.85, 0, { seg: 16 }); cyl(g, 0.41, 0.41, 0.07, m.prim, 0, 1.75, 0, { seg: 16 }); cyl(g, 0.05, 0.42, 0.14, m.metal, 0, 2.17, 0, { seg: 16 });
+    for (let i = 0; i < 8; i++) box(g, 0.12, 0.012, 0.012, m.steel, 0.3, 0.2 + i * 0.2, 0.32);
+  },
+  rowpu(g, m) {   // a purification trailer, filter columns, a bladder of clean water and hoses
+    slab(g, m, 2, 2, m.gravel || m.concrete);
+    container(g, m, -0.15, -0.45, 0, m.box1, 0, 1.3); for (let i = 0; i < 3; i++) cyl(g, 0.08, 0.08, 0.6, m.white, -0.55 + i * 0.25, 0.3, 0.1, { seg: 10 });
+    const bl = cyl(g, 0.42, 0.46, 0.16, m.panel, 0.45, 0.09, 0.45, { seg: 16 }); bl.scale.z = 0.75;
+    box(g, 0.04, 0.04, 1.2, m.rubber, 0.8, 0.03, -0.1, { cast: false });
+  },
+  lagoon(g, m) {   // a lined pit in a berm, murky water, a warning sign
+    for (const [x, z, w, d] of [[0, -0.88, 2.9, 0.2], [0, 0.88, 2.9, 0.2], [-1.38, 0, 0.2, 1.6], [1.38, 0, 0.2, 1.6]]) box(g, w, 0.2, d, m.sandDark, x, 0.1, z);
+    box(g, 2.55, 0.03, 1.55, m.lagoonW || m.dark, 0, 0.06, 0, { cast: false });
+    box(g, 0.03, 0.4, 0.03, m.steel, 1.2, 0.2, 1.0); box(g, 0.3, 0.18, 0.02, m.hazard, 1.2, 0.38, 1.0);
+  },
+  treatment(g, m) {   // two round clarifiers, an aeration basin and a lab block
+    slab(g, m, 3, 3);
+    for (const x of [-0.7, 0.7]) { cyl(g, 0.55, 0.55, 0.32, m.concrete, x, 0.16, -0.65, { seg: 20 }); cyl(g, 0.48, 0.48, 0.02, m.water, x, 0.31, -0.65, { seg: 20, cast: false }); box(g, 1.0, 0.03, 0.04, m.steel, x, 0.36, -0.65); }
+    box(g, 1.3, 0.25, 0.7, m.concrete, -0.55, 0.13, 0.65); box(g, 1.2, 0.02, 0.6, m.lagoonW || m.water, -0.55, 0.255, 0.65, { cast: false });
+    block(g, m, 0.9, 0.6, 0.7, 0.75, 0, 0.65, m.prim, 2);
+  },
+  fuelfarm(g, m) {   // fuel bladders in a berm, a pump house and pipes
+    slab(g, m, 3, 3, m.gravel || m.concrete);
+    for (const [x, z, w, d] of [[0, -1.35, 2.8, 0.18], [-1.35, 0, 0.18, 2.8], [1.35, -0.3, 0.18, 2.2]]) box(g, w, 0.22, d, m.sandDark, x, 0.11, z);
+    for (const [x, z] of [[-0.6, -0.65], [0.6, -0.65], [-0.6, 0.45]]) { const b = cyl(g, 0.48, 0.52, 0.2, m.rubber, x, 0.11, z, { seg: 16 }); b.scale.z = 0.7; }
+    box(g, 0.6, 0.45, 0.5, m.olive, 0.65, 0.23, 0.6); box(g, 0.64, 0.05, 0.54, m.prim, 0.65, 0.47, 0.6);
+    for (const z of [-0.65, 0.45]) box(g, 0.05, 0.05, 1.3, m.steel, 0.25, 0.06, z * 0.5 + 0.1, { cast: false });
   },
   yard(g, m) {   // an engineer yard: a vehicle shed with a roll door, HESCO, a bulldozer and stacked materials
     slab(g, m, 3, 2, m.asphalt);

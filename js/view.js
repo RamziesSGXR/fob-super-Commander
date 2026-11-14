@@ -1,6 +1,6 @@
 // The 3D view: a near-isometric camera you can rotate, the ground, the wire, every building and everyone walking about.
 import * as THREE from './vendor/three.js';
-import { B, ZONES, ZKEYS } from './config.js';
+import { B, ZONES, ZKEYS, UTIL } from './config.js';
 import { dims, wingOf } from './sim.js';
 import { BIOMES } from './site.js';
 import { SCRUB_COL, makeMats, mergeStatic, buildModel, makePerson, makeForklift, makeTruck, makeFRV, makeTank, makeCrate, makePelican, wrap } from './models.js';
@@ -515,7 +515,9 @@ export class View {
     this.ghostMat.color.set(ok ? '#59ff8a' : '#ff4a4a');
     this.foot.visible = true; this.foot.scale.set(w, d, 1); this.foot.position.set(this.wx(x + w / 2), 0.04, this.wx(z + d / 2)); this.foot.material.color.set(ok ? '#59ff8a' : '#ff4a4a');
     this.grid.visible = true;
-    const nr = B[type].noise; this.range.visible = !!nr;
+    const cv = { ...(B[type].cover || {}) }; if (UTIL.powCover[type]) cv.pw = UTIL.powCover[type];
+    const nr = B[type].noise || Math.max(0, ...Object.values(cv)); this.range.visible = !!nr;
+    this.range.material.color.set(B[type].noise ? '#ff4a4a' : cv.pw ? '#ffd23a' : cv.wa ? '#4fb4ff' : cv.se ? '#b08a4a' : '#c98bff');
     if (nr) { this.range.scale.setScalar(nr); this.range.position.set(this.wx(x + w / 2), 0.05, this.wx(z + d / 2)); }
   }
   select(b) {
@@ -616,7 +618,7 @@ export class View {
       if (!g.userData.ck && !this.noBatch) this.batch(g);
       const w = s.work(b);
       if (g.userData.lamp) {
-        const d = B[b.type], noCrew = d.crew && b.crew < d.crew, noPow = d.pw < 0 && s.power.ratio < 1;
+        const d = B[b.type], noCrew = d.crew && b.crew < d.crew, noPow = d.pw < 0 && (s.power.ratio < 1 || b.dark);
         g.userData.lamp.material = b.off ? this.m.glowR : noPow ? ((t * 2) % 1 < 0.5 ? this.m.glowR : this.m.glowY) : noCrew ? this.m.glowY : this.m.glowG;
         g.userData.lamp.position.y = g.userData.top + 0.25 + Math.sin(t * 2 + b.id) * 0.03;
       }
@@ -822,6 +824,19 @@ export class View {
     e.set(-Math.PI / 2, 0, 0); q.setFromEuler(e); sc.setScalar(1);
     ord.forEach((i, n) => { M.compose(v.set(this.wx(i % N + 0.5), 0.025, this.wx(((i / N) | 0) + 0.5)), q, sc); om.setMatrixAt(n, M); });
     om.count = ord.length; om.instanceMatrix.needsUpdate = true;
+  }
+  // utility coverage: a see-through disc and a ring for every circle, coloured by what it carries (the Utilities view)
+  setCover(list) {
+    if (this.coverG) { this.world.remove(this.coverG); this.coverG.traverse(o => { o.geometry?.dispose(); }); this.coverG = null; }
+    if (!list || !list.length) return;
+    const G = this.coverG = new THREE.Group(), mats = {};
+    const mat = (c, o) => mats[c + o] ||= new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, side: THREE.DoubleSide });
+    list.forEach(({ x, z, r, col }, i) => {
+      const y = 0.03 + (i % 7) * 0.002;
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 48), mat(col, 0.08)); disc.rotation.x = -Math.PI / 2; disc.position.set(this.wx(x), y, this.wx(z)); G.add(disc);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.08, r, 64), mat(col, 0.6)); ring.rotation.x = -Math.PI / 2; ring.position.set(this.wx(x), y + 0.001, this.wx(z)); G.add(ring);
+    });
+    this.world.add(G);
   }
   // painted zones: a faint wash of colour on every zoned tile nothing stands on, stronger while zoning or in the Zoning view
   syncZones() {

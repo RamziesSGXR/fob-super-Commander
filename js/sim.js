@@ -6,7 +6,7 @@
 // to the front. Rations, fuel and ammo arrive by pelican every morning, billed automatically, and forklifts and trucks
 // carry them along your roads to where they are used. Nothing needs a click to keep moving.
 import { FOUNDATION, EARLY } from './config.js';
-import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW } from './config.js';
+import { C, B, MIN, CREW_ORDER, MISSIONS, OP_A, OP_B, RIVALS, SURNAMES, RANKS, PLANETS, FACTION_DEFAULT, GOODS, GKEYS, ROADS, VEHICLES, TRAIN, TECH, DESIGNS, PARTS, PARTS_FOR, LOANS, DEBT_MAX, DIFF, STD, ZONES, GROWS, GROW, UTIL } from './config.js';
 import { RNG } from './rng.js';
 import { findPath } from './path.js';
 import { REQUESTS, GRADES, trueGrade, CALLS } from './desk.js';
@@ -14,6 +14,7 @@ import { makeSite, biomeOf, GROUND, RW, RH, survey, regionKind, placeName } from
 import { writeReport } from './reports.js';
 import { Build } from './build.js';
 import { Zones } from './zones.js';
+import { Utilities } from './utils.js';
 import { Market, bindMarket } from './market.js';
 import { emptyNet, raster, addLine, snap, nearestSeg, removeSeg, segLen, lineTiles, node, KINDS } from './net.js';
 
@@ -42,7 +43,7 @@ export function bestSite(seed, biome, N, all = false) {
   return all ? list.sort((a, b) => b.score - a.score) : best;
 }
 // small things that go anywhere inside the wall; everything else is built on a roadside plot, door to the street
-export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar', 'lookout']);
+export const LOOSE = new Set(['flag', 'banner', 'hdbanner', 'potty', 'vend', 'speaker', 'solar', 'lookout', 'substation', 'well', 'tower']);
 
 export class Sim {
   constructor(opts = {}) {
@@ -298,6 +299,7 @@ export class Sim {
     if (d.atGate && !(this.gates || []).some(g => Math.hypot(g.x - x - 1, g.z - z - 0.5) < 4.5)) return { ok: false, why: 'Stands at a gate: within four tiles of one' };
     const dz = spec?.design || 0, f = this.fits(type, x, z, rot, dz); if (!f.ok) return f;
     if (this.inBuffer(type, x, z, rot, dz)) return { ok: false, why: 'Buffer zone: kept clear' };
+    if (d.atWater) { const [w, dd] = dims(type, rot, dz); if (!this.nearWater(x, z, w, dd, 2)) return { ok: false, why: 'Must stand within two tiles of water' }; }
     if (d.deposit) { const [w, dd] = dims(type, rot, dz); let on = 0; for (let j = 0; j < dd; j++) for (let i = 0; i < w; i++) if (this.terr?.[(z + j) * this.N + x + i] === d.deposit) on++; if (on < 2) return { ok: false, why: d.deposit === 3 ? 'Must stand on an E-710 seep' : 'Must stand on an ore field' }; }
     if (d.atWall) { let near = false; for (let j = -2; j <= 2 && !near; j++) for (let i = -2; i <= 2; i++) { const tx = x + i, tz = z + j; if (tx >= 0 && tz >= 0 && tx < this.N && tz < this.N && this.walls[tz * this.N + tx]) { near = true; break; } } if (!near) return { ok: false, why: 'Stands at the wall: within two tiles of it' }; }
     if (!LOOSE.has(type) && !this.frontage(type, x, z, rot, dz)) return { ok: false, why: 'Needs a road out front: build along a road' };
@@ -454,13 +456,14 @@ export class Sim {
 
   // ---------------------------------------------------------------- the state of the base, worked out fresh each step
   recalc() {
+    this.utilities();   // coverage: who has power, water and sewage (js/utils.js)
     const done = this.b.filter(b => b.done);
     let made = 0, used = 0, beds = 0;
     for (const b of done) {
       const d = B[b.type];
       if (d.beds) beds += this.cap(b, 'beds');
       if (b.off) continue;
-      const pw = this.stat(b, 'pw'); if (pw < 0) used -= pw;
+      const pw = this.stat(b, 'pw'); if (pw < 0 && !b.dark) used -= pw;   // a building outside the grid draws nothing
     }
     // crew: keep troops where they are if they're still needed, then fill in priority order, trained troopers first,
     // so recruits stay free to train
@@ -505,7 +508,7 @@ export class Sim {
       const d = B[b.type], n = (seen[b.type] = (seen[b.type] || 0) + 1), dim = Math.pow(0.7, n - 1), cf = this.condF(b);
       const run = d.crew ? this.crewFrac(b) * (b.off ? 0 : 1) : 1;
       const dp = this.stat(b, 'prop'), dm = this.stat(b, 'mor');
-      if (dp) prop += dp * dim * cf * (d.crew ? 0.4 + 0.6 * run : 1) * (d.pw < 0 ? 0.5 + 0.5 * this.power.ratio : 1);
+      if (dp) prop += dp * dim * cf * (d.crew ? 0.4 + 0.6 * run : 1) * (d.pw < 0 ? 0.5 + 0.5 * (b.dark ? 0 : this.power.ratio) : 1);
       if (dm) comfort += dm * dim * cf * run * (d.potty ? (b.clean ?? 100) / 100 : 1) * (d.eat && b.stock.rations <= 0 ? 0.3 : 1);
     }
     this.prop = Math.round(100 * (1 - Math.exp(-prop / 55)));
@@ -530,6 +533,7 @@ export class Sim {
       latrine: -Math.min(12, Math.round(filthy * 4 + queue * 0.8)),
       noise: -Math.round(8 * (this.adj?.noise || 0)),
       hazard: -Math.min(6, 2 * (this.adj?.hazard || 0)),
+      ...this.utilMorale(),
     };
     if (this.commit) this.mor.commit = 2 * this.commitF('tru');
     this.moraleTarget = clamp(Object.values(this.mor).reduce((a, b) => a + b, 0), 0, 100);
@@ -539,7 +543,7 @@ export class Sim {
   condF(b) { return b.cond < 40 ? 0.5 : b.cond < 70 ? 0.85 : 1; }
   work(b) {   // how hard a building runs right now, 0..1+
     const d = B[b.type]; if (!b.done || b.off) return 0;
-    const pw = d.pw < 0 ? this.power.ratio : 1;
+    const pw = d.pw < 0 ? (b.dark ? 0 : this.power.ratio) : 1;
     const slow = this.slowF ?? 1;
     return this.crewFrac(b) * pw * this.condF(b) * (0.6 + 0.8 * this.morale / 100) * slow * (b.upg ? 0.5 : 1) * this.zoneFit(b);
   }
@@ -582,12 +586,13 @@ export class Sim {
     if (h === C.SUPPLY_AT) this.supplyRun();
     if (h === C.PATROL_AT) this.standingPatrols();
     if (h === C.DEPLOY_AT) this.deployRun();
-    if (h === 0) { this.checkOrders(); this.dayClose(); }
+    if (h === 0) { this.checkOrders(); this.dayClose(); this.utilDay(); }
     if (h === 20 && !this.unpaidDays) { let cr = 0; for (const b of this.b) if (b.done && !b.off) cr += (C.SALES[b.type] || 0) * this.capF(b) + this.stat(b, 'sales'); if (cr) this.earn('sales', 0, cr); }
     this.mood *= 0.985;
     this.deskHour(h);
     if (h === 10) this.callDay();
     this.adjacency(); this.growStep();   // zones (js/zones.js)
+    this.pipeFuel();   // utilities (js/utils.js)
     this.marketHour(h);
     this.fort = this.fortify();
   }
@@ -1346,7 +1351,7 @@ export class Sim {
   save() {
     const o = {};
     for (const k of Object.keys(this)) if (!['zone', 'scrub', 'rng', 'events', 'occ', 'mor', 'power', 'roads', 'walls', 'inMask', 'gates', 'terr', 'hgt', '_walk', '_walkV', '_paths', '_pathV', '_dpaths', '_dpathV'].includes(k)) o[k] = this[k];
-    o.rngS = this.rng.s; o.v = 8; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
+    o.rngS = this.rng.s; o.v = 9; o.scrubS = this.packScrub(); o.zoneS = this.packZones();
     return JSON.parse(JSON.stringify(o));
   }
   load(s) {
@@ -1367,6 +1372,7 @@ export class Sim {
     this.scrub = this.unpackScrub(s.scrubS); delete this.scrubS;   // bases from before 0.13 have none
     if (!this.crews) this.crewsInit();
     this.std ??= this.stage >= 1 ? 2 : 1;
+    if (!s.v || s.v < 9) { this.utilGrace = UTIL.grace; this.say('pro', `Notice: the Bureau's utilities inspectorate arrives in ${UTIL.grace} days. Build power substations, wells and a sewage lagoon (UTILITIES) so every building is covered.`); }   // bases from before 0.15
     this.zone = this.unpackZones(s.zoneS); delete this.zoneS; this.chain ??= this.b.find(b => B[b.type]?.chain)?.type || null;   // bases from before 0.14 have no zones
     this.rebuildNet();
     if (!this.b.some(b => b.type === 'seflag')) this.raiseFlag();
@@ -1429,4 +1435,4 @@ export class Sim {
     for (const x of [m, m + 1]) for (let z = this.N - 2; z > 2; z--) { if (this.occ[z * this.N + x]) break; this.roads[z * this.N + x] = 1; }
   }
 }
-Object.assign(Sim.prototype, Market, Build, Zones); bindMarket(B);
+Object.assign(Sim.prototype, Market, Build, Zones, Utilities); bindMarket(B);

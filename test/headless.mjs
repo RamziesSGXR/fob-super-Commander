@@ -39,8 +39,8 @@ function build(type, near) {
   }
   return !!s.place(type, p.x, p.z, p.rot);
 }
-const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'motorpool', 'fueldepot', 'gen', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
-  'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
+const plan = ['depot', 'mess', 'barracks', 'range', 'course', 'potty', 'yard', 'motorpool', 'fueldepot', 'gen', 'well', 'lagoon', 'patrol', 'lookout', 'medbay', 'comms', 'lookout', 'lab', 'parade', 'truth', 'pad', 'banner', 'hab', 'vend', 'vbay',
+  'memorial', 'speaker', 'hab', 'statue', 'lecture', 'pool', 'billboard', 'potty', 'barracks', 'dome', 'banner', 'flag', 'depot', 'mess', 'fuelfarm', 'tower', 'turret', 'flood', 'plaque', 'mart', 'eob', 'vault', 'brig', 'casino', 'cryo', 'halls', 'warroom'];
 let step = 0, roadN = 0;
 let founded = false;
 function found() {   // the bot's opening: a paved spine and cross streets, a pad, then a wall round it all with a gate
@@ -76,6 +76,13 @@ function bot() {
   if (!s.tech.cur) for (const k of ['drill', 'fortworks', 'radio', 'shelving', 'civic', 'archive', 'frv', 'cargo', 'highrise', 'warroom', 'trucks', 'broadcast', 'solar', 'asphalt', 'command', 'tank']) if (s.credits >= TECH[k].cost && s.research(k)) break;
   if (s.patrols.length < 3) for (const o of s.offers) { const kinds = ['frv', 'tank'].filter(k => s.armourFree(k)); if (s.chance({ ...o, veh: kinds }) >= 0.65) { s.send(o.id, kinds); break; } }
   for (const b of s.b) if (b.cond < 55 && s.supplies > 500) s.repair(b.id);
+  // utilities: a substation by anything dark, a well by bunks without water, a lagoon (downwind, a little off) for sewage
+  if (s.util && s.week >= 1 && !s.b.some(b => !b.done && ['substation', 'well', 'lagoon', 'tower'].includes(b.type))) {
+    const dark = s.b.find(b => b.done && b.dark), dry = s.b.find(b => b.done && b.dry), foul = s.b.find(b => b.done && b.foul);
+    if (dark) build('substation', [dark.x + 1, dark.z + 1]);
+    else if (dry || s.util.water.ratio < 0.9) { const h = dry || s.b.find(b => B[b.type].beds && b.type !== 'hq') || s.b[0]; build('well', [h.x - 2, h.z - 2]); }
+    else if (foul || s.util.sewer.ratio < 0.9) { const h = foul || s.b.find(b => B[b.type].beds && b.type !== 'hq') || s.b[0]; build('lagoon', [h.x - 7, h.z + 3]); }
+  }
   // construction standards: tents to found the base, prefabs once it pays, permanent at Fort; housing and food upgraded first
   if (s.founded() && s.week >= 2) s.setStd(s.stage >= 1 ? 2 : 1);
   if (!s.b.some(b => b.upg)) {
@@ -102,6 +109,7 @@ for (let i = 0; i < weeks * C.WEEK * 10; i++) {
       + ` ${pad(s.b.length, 4)} ${pad(s.stats.deployed, 7)} ${pad(s.stats.trained, 7)} ${pad(s.hunger.toFixed(2), 7)} ${pad(s.audit ? s.audit.lines : '-', 5)}  ${GKEYS.map(g => Math.round(s.amount(g))).join('/').padStart(13)} ${s.power.made}/${s.power.used}`);
   }
 }
+if (process.env.DUMP) console.log(JSON.stringify(s.util), 'risk', s.risk, 'sick', s.stats.sick, 'piped', Math.round(s.stats.piped || 0));
 if (process.env.DUMP) console.log(s.b.map(b => b.type + (b.done ? "" : "*") + (b.grown ? "@" + b.grown : "")).join(" "), JSON.stringify(s.growNote), JSON.stringify(s.dem));
 const j = JSON.stringify(s.save());
 if (process.env.SAVEOUT) (await import('node:fs')).writeFileSync(process.env.SAVEOUT, j);
