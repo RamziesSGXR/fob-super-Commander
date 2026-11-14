@@ -133,7 +133,7 @@ export class Sim {
   promote() {
     const n = this.nextStage(), ck = this.stageCheck(); if (!n || ck.some(c => !c.ok)) return false;
     this.spend('charter', n.sup || 0, n.cr); this.stage++; this.rebuildNet(); this.gain('pro', 6); this.pride += 4;
-    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. You may now hold up to ${n.parcels >= 441 ? 'every grantable' : n.parcels} parcels of land (LAND), the weekly allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken: ${n.cr.toLocaleString('en-US')} credits and ${(n.sup || 0).toLocaleString('en-US')} supplies.`);
+    this.say('bur', `The Bureau grants a new charter: ${this.faction.base} is now a ${n.name}. You may now hold up to ${n.parcels >= 441 ? 'every grantable' : n.parcels} parcels of land (LAND), the daily allocation rises, and new buildings may be raised. Congratulations, and the fee has been taken: ${n.cr.toLocaleString('en-US')} credits and ${(n.sup || 0).toLocaleString('en-US')} supplies.`);
     this.events.push({ t: 'stage', stage: this.stage }); return true;
   }
   inside(x, z) { return x >= 0 && z >= 0 && x < this.N && z < this.N && this.inMask[z * this.N + x] === 1; }
@@ -577,7 +577,7 @@ export class Sim {
     for (const p of this.patrols) { if (p.brief > 0) { p.brief -= dt; if (p.brief <= 0) this.patrolGo(p); } else p.t += dt / C.PATROL; }
     const before = this.time;
     this.tick();
-    if (before && Math.floor(before.hour) !== Math.floor(this.time.hour)) this.hourly(Math.floor(this.time.hour));
+    if (before && Math.floor(before.sh) !== Math.floor(this.time.sh)) this.hourly(Math.floor(this.time.sh));
     for (const p of this.patrols.filter(p => p.t >= p.dur)) this.resolve(p);
     if (!this.inspected && this.wt >= C.WEEK * C.INSPECT_AT) this.inspect();
     if (this.wt >= C.WEEK) this.endWeek();
@@ -598,14 +598,19 @@ export class Sim {
   }
 
   // ---------------------------------------------------------------- the clock: a week of seven days, starting at 06:00
+  // simulation seconds per real second at 1x: a calendar hour (C.WEEK / 24) in REAL_HOUR seconds
+  static rate() { return C.WEEK / 24 / C.REAL_HOUR; }
   tick() {
-    const days = this.wt / C.DAY + 0.25, d = Math.floor(days), tod = days - d, h = tod * 24;
+    // shifts: the simulation's own day, C.DAY long; its hours drive the hourly work and each shift closes the books
+    const sd = this.wt / C.DAY, d = Math.floor(sd), sh = (sd - d) * 24;
+    // the calendar: one day per cycle, starting at 06:00 First Call; troops, light and the clock go by this
+    const cd = this.wt / C.WEEK, tod = (cd + 0.25) % 1, h = tod * 24;
     // an Army-style duty day (AR 600-25 bugle calls): First Call 06:00, Reveille 06:30 as the flag goes up, PT, chow,
     // Work Call 09:00, lunch, Retreat 17:00 as the flag comes down, free time, Taps 21:00
     const phase = h < 6 || h >= 21 ? 'night' : h < 6.5 ? 'firstcall' : h < 7 ? 'reveille' : h < 8 ? 'pt' : h < 9 ? 'chow'
       : h < 11.5 ? 'work' : h < 13 ? 'mess' : h < 17 ? 'work' : h < 17.5 ? 'retreat' : 'evening';
     if (this.time && phase !== this.time.phase) this.events.push({ t: 'phase', phase });
-    this.time = { day: (this.week - 1) * 7 + d + 1, hour: h, tod, phase, weekday: d };
+    this.time = { day: (this.week - 1) * C.WEEK / C.DAY + d + 1, sh, hour: h, tod, phase, weekday: d, cday: this.week, rolled: cd + 0.25 >= 1 };
   }
 
   // ---------------------------------------------------------------- eating, burning, shooting: goods get used up
@@ -794,9 +799,9 @@ export class Sim {
   newOrder() {
     // the Ministry asks for a little more than you shipped last week, so a steady base can always keep up
     const last = this.stats.deployed - (this.shipMark ?? 0); this.shipMark = this.stats.deployed;
-    const n = clamp(Math.round(Math.max(5, last) * 1.15) + 2, 7, 40), dueDay = (this.week - 1) * 7 + 8;
+    const n = clamp(Math.round(Math.max(5, last) * 1.15) + 2, 7, 40), dueDay = (this.week - 1) * C.WEEK / C.DAY + C.WEEK / C.DAY + 1;
     this.orders.push({ id: this.nid++, n, sent: 0, due: dueDay, def: 8 + n, week: this.week });
-    this.say('def', `Deployment order: ${n} trained troopers to the front by day ${dueDay}. Transports leave from the landing pad at ${C.DEPLOY_AT}:00.`);
+    this.say('def', `Deployment order: ${n} trained troopers to the front by day ${Math.floor((dueDay - 1) * C.DAY / C.WEEK) + 1}. Transports leave from the landing pad at ${C.DEPLOY_AT}:00.`);
   }
   deployRun() {
     const pads = this.b.filter(b => b.done && B[b.type].pad), o = this.orders[0];
@@ -1022,7 +1027,7 @@ export class Sim {
       if (this.rng.chance(win ? 0.05 : v.kind === 'tank' ? 0.3 : 0.5)) {
         this.veh = this.veh.filter(x => x !== v);
         if (h) { h.wreck ||= {}; h.wreck[v.kind] = C.REBUILD; } lostVeh.push(VEHICLES[v.kind].name);
-        this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two days, billed to the base's gratitude.`);
+        this.say('def', `The ${VEHICLES[v.kind].name} did not come back from ${p.op}. Form V-9 filed; a replacement arrives in two watches, billed to the base's gratitude.`);
         continue;
       }
       v.mission = null; v.away = false; v.go = false; v.x = g.x; v.z = g.z; v.path = h ? this.drivePath(v.x, v.z, ...this.door(h)) : [];
@@ -1070,7 +1075,7 @@ export class Sim {
     const before = this.stand.pro;
     this.stand.pro = clamp(this.stand.pro + (score - this.stand.pro) * 0.6, 0, 100);
     const notes = [];
-    if (food < 80) notes.push('Votes went hungry this week. Rations must reach the mess.');
+    if (food < 80) notes.push('Votes went hungry today. Rations must reach the mess.');
     if (lines < 80) notes.push('Buildings ran dry of what they need. More trucks, shorter roads or more storage.');
     if (housing < 100) notes.push('Not every vote has a bunk.');
     if (growth < 90) notes.push(`The Ministry expected ${target} votes on the base by now. Build housing; recruits fill empty bunks.`);
@@ -1157,7 +1162,7 @@ export class Sim {
     for (const b of built) { if ((b.unpaid || 0) >= 4) { b.cond = Math.max(5, b.cond - C.UNPAID); unpaid++; } else b.cond = Math.min(100, b.cond + C.MAINT - wear(b)); b.unpaid = 0; }
     this.payLoans();
     const place = ['1st', '2nd', '3rd', '4th'][rank];
-    this.say('base', `Week ${this.week} closes. ${this.faction.name} ranks ${place} of 4: allocation ${amt} supplies. Upkeep ${bill}.`);
+    this.say('base', `Day ${this.week} closes. ${this.faction.name} ranks ${place} of 4: allocation ${amt} supplies. Upkeep ${bill}.`);
     if (unpaid) this.say('base', `Upkeep short: ${unpaid} building${unpaid > 1 ? 's' : ''} went unmaintained and are wearing down.`);
     if (rank < prev) this.say('riv', `Federation bulletin: ${this.faction.name} climbs to ${place}. Glory to the efficient.`);
     else if (rank > prev) this.say('riv', `Federation bulletin: ${this.table()[prev].name} overtakes ${this.faction.name}. Allocation reduced accordingly.`);
@@ -1193,7 +1198,7 @@ export class Sim {
   // ---------------------------------------------------------------- the daily round: upkeep and wages, then the books close
   dayClose() {
     // upkeep, a seventh of each building's week, in supplies; what can't be paid is marked against the building
-    for (const b of this.rng.shuffle(this.b.filter(b => b.done))) { const due = this.upkeepOf(b) / 7; if (this.supplies >= due) this.spend('upkeep', due); else b.unpaid = (b.unpaid || 0) + 1; }
+    for (const b of this.rng.shuffle(this.b.filter(b => b.done))) { const due = this.upkeepOf(b) / (C.WEEK / C.DAY); if (this.supplies >= due) this.spend('upkeep', due); else b.unpaid = (b.unpaid || 0) + 1; }
     // wages for the citizen staff, in credits. Into the overdraft if need be; past it, the staff go unpaid
     const wages = (this.citizens || 0) * C.WAGE;
     if (wages) { if (this.credits - wages >= -this.OD) { this.spend('wages', 0, wages); this.unpaidDays = 0; } else { this.unpaidDays = (this.unpaidDays || 0) + 1; if (this.unpaidDays === 1 || this.unpaidDays % 3 === 0) this.say('base', `The citizen staff were not paid today. The canteen is serving its opinion of you, cold.`); } }
@@ -1219,7 +1224,7 @@ export class Sim {
   borrow(k) {
     if (!this.canBorrow(k)) return false;
     this.loans.push({ k, bal: LOANS[k].amt }); this.earn('loans', 0, LOANS[k].amt);
-    this.say('bur', `${LOANS[k].name} approved: ${LOANS[k].amt} credits. The Bureau will be in touch every week, at ${Math.round(LOANS[k].rate * 1000) / 10}% interest.`); return true;
+    this.say('bur', `${LOANS[k].name} approved: ${LOANS[k].amt} credits. The Bureau will be in touch every day, at ${Math.round(LOANS[k].rate * 1000) / 10}% interest.`); return true;
   }
   repay(i, amt) {
     const l = this.loans[i]; if (!l) return false; amt = Math.min(amt, l.bal, Math.max(0, this.credits)); if (amt <= 0) return false;
@@ -1301,12 +1306,12 @@ export class Sim {
       const open = new Set(this.calls.map(c => c.k)), pool = CALLS.map((c, k) => k).filter(k => !open.has(k));
       const k = this.rng.pick(pool), C0 = CALLS[k], c = { id: this.nid++, k, g: C0.g, n: Math.round(C0.n(this)), due: day + C0.days, acc: false };
       this.calls.push(c); this.events.push({ t: 'call', id: c.id });
-      this.say(C0.m, `Call from the Ministry: "${C0.title}". ${c.n} ${c.g} by day ${c.due}. Answer it in the Ledger.`);
+      this.say(C0.m, `Call from the Ministry: "${C0.title}". ${c.n} ${c.g} by day ${Math.floor((c.due - 1) * C.DAY / C.WEEK) + 1}. Answer it in the Ledger.`);
     }
   }
   answer(id, yes) {
     const c = this.calls.find(c => c.id === id); if (!c) return false;
-    if (yes) { c.acc = true; this.stats.calls = (this.stats.calls || 0) + 1; this.say('base', `Set aside: ${c.n} ${c.g} for "${CALLS[c.k].title}", to go on day ${c.due}.`); }
+    if (yes) { c.acc = true; this.stats.calls = (this.stats.calls || 0) + 1; this.say('base', `Set aside: ${c.n} ${c.g} for "${CALLS[c.k].title}", to go on day ${Math.floor((c.due - 1) * C.DAY / C.WEEK) + 1}.`); }
     else { this.calls = this.calls.filter(x => x !== c); this.gain(CALLS[c.k].m, -2); this.say(CALLS[c.k].m, `You declined "${CALLS[c.k].title}". Honest, at least. -2 standing.`); }
     return true;
   }
@@ -1332,7 +1337,7 @@ export class Sim {
 
   memo() {   // the Bureau writes every week, always pleased, never quite clear
     const lines = [
-      `Memo: the Bureau congratulates ${this.faction.base} on a week of measurable progress. The measurements are classified.`,
+      `Memo: the Bureau congratulates ${this.faction.base} on a day of measurable progress. The measurements are classified.`,
       'Memo: a reminder that all supplies remain the property of the Bureau until consumed, and partly afterwards.',
       'Memo: the Presidential Office for Base Excellence thanks you for your continued participation in its funding.',
       `Memo: ${this.troops.length} votes on file. The Bureau is grateful for every one of them, especially on election day.`,

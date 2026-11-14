@@ -30,9 +30,15 @@ const CH = { def: ['DEFENCE', 'var(--def)'], pro: ['EXPANSION', 'var(--pro)'], t
 
 const view = new View($('view'));
 view.onBoom = (x, z, up) => { if (playing) audio.playAt(up ? 'gate' : 'gatedown', x, z); };
-let sim = null, life = null, playing = false, paused = false, speed = 1, tool = null, rot = 0, hover = null, group = 'roads', minTab = 'def', speedI = 1;
+let sim = null, life = null, playing = false, paused = false, speed = 1, tool = null, rot = 0, hover = null, group = 'roads', minTab = 'def', speedI = 0;
 const gameSpeed = () => C.SPEEDS[speedI];
-const days = s => { const d = s / C.DAY; return d >= 1.5 ? `${Math.round(d)} days` : d >= 0.9 ? '1 day' : `${Math.max(1, Math.round(d * 24))} hours`; };
+// time as the player reads it, from simulation seconds: one calendar day is C.WEEK, a calendar hour C.WEEK / 24
+const CAL_H = () => C.WEEK / 24;
+function dur(simS) { const h = simS / CAL_H(); if (h >= 36) { const d = Math.round(h / 24); return `${d} day${d === 1 ? '' : 's'}`; } if (h >= 1) { const r = Math.round(h); return `${r} h`; } return `${Math.max(1, Math.round(h * 60))} min`; }
+// a rate per shift (the simulation's C.DAY) as a rate per calendar day
+const dayRate = v => v * C.WEEK / C.DAY;
+const days = s => dur(s);   // simulation seconds, as calendar time
+const calDay = d => Math.floor((d - 1) * C.DAY / C.WEEK) + 1;   // a shift number as the calendar day it falls in
 let acc = 0, hudT = 0, mmT = 0, saveT = 0, last = performance.now();
 for (const el of document.querySelectorAll('[data-version]')) el.textContent = 'v' + VERSION;
 const params = new URLSearchParams(location.search);
@@ -98,7 +104,7 @@ function openFaction(edit) {
 }
 function diffDraw() {
   $('fx-diff').innerHTML = Object.entries(DIFF).map(([k, d]) => `<button class="btn ${draft.diff === k ? 'on' : ''}" data-diff="${k}" type="button">${d.name.toUpperCase()}</button>`).join('');
-  const d = DIFF[draft.diff]; $('fx-diff-d').textContent = `${d.desc} Founding Charter ${d.charter.toLocaleString()} CR at ${Math.round(d.rate * 1000) / 10}% a week; you land with ${d.sup.toLocaleString()} supplies.`;
+  const d = DIFF[draft.diff]; $('fx-diff-d').textContent = `${d.desc} Founding Charter ${d.charter.toLocaleString()} CR at ${Math.round(d.rate * 1000) / 10}% a day; you land with ${d.sup.toLocaleString()} supplies.`;
 }
 $('fx-diff').onclick = e => { const b = e.target.closest('[data-diff]'); if (b) { draft.diff = b.dataset.diff; diffDraw(); } };
 function fxUpState() { $('fx-unup').classList.toggle('hidden', !draft.logo.img); for (const id of ['fx-shape', 'fx-symbol']) $(id).closest('.fx-row').style.opacity = draft.logo.img ? 0.4 : 1; }
@@ -271,15 +277,15 @@ function groupItems(g) { const subs = GROUPS.find(x => x[0] === g)[3]; return su
 function whyOf(k) {
   const d = B[k], m = [], cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
   if (d.pad) m.push('supplies and recruits in, troopers out');
-  if (C.SALES[k] || d.sales) m.push(`+${C.SALES[k] || d.sales} CR a day`);
-  if (d.make) m.push(`+${d.make} supplies a day`);
-  if (d.pump) m.push(`+${d.pump} fuel a day`);
+  if (C.SALES[k] || d.sales) m.push(`+${C.SALES[k] || d.sales} CR a watch`);
+  if (d.make) m.push(`+${d.make} supplies a watch`);
+  if (d.pump) m.push(`+${d.pump} fuel a watch`);
   if (d.slots) m.push(`trains ${cp(d.slots)} recruits`);
   if (d.beds) m.push(`houses ${cp(d.beds)}`);
   if (d.eat) m.push(`feeds ${cp(d.eat)}`);
   if (d.pw > 0) m.push(`+${d.pw} power`);
-  if (d.water) m.push(`${d.water} water a day`);
-  if (d.sewer) m.push(`takes ${d.sewer} waste a day`);
+  if (d.water) m.push(`${d.water} water a watch`);
+  if (d.sewer) m.push(`takes ${d.sewer} waste a watch`);
   if (d.cover) m.push(`covers ${Math.max(...Object.values(d.cover))} tiles`);
   if (d.store) m.push(`stores ${Math.floor(Object.values(d.store).reduce((a, b) => a + b, 0) * cf)} goods`);
   if (d.trucks) m.push(`${d.trucks} supply trucks`);
@@ -288,13 +294,13 @@ function whyOf(k) {
   if (d.guns) m.push(`arms ${d.guns} tiles of wall`);
   if (d.squads) m.push('sends standing patrols');
   if (d.lab) m.push('research');
-  if (d.weekly) m.push(Object.entries(d.weekly).map(([s, v]) => `${v > 0 ? '+' : ''}${v} ${{ def: 'Defence', pro: 'Expansion', tru: 'Truth' }[s]} a week`).join(', '));
+  if (d.weekly) m.push(Object.entries(d.weekly).map(([s, v]) => `${v > 0 ? '+' : ''}${v} ${{ def: 'Defence', pro: 'Expansion', tru: 'Truth' }[s]} a day`).join(', '));
   const sk = sim.hasStd(k) ? STD[sim.std] : null;
   if (d.prop) m.push(`+${Math.round(d.prop * (sk?.prop ?? 1))} propaganda`);
   if (d.mor) m.push(`+${Math.round(d.mor * (sk?.mor ?? 1))} morale`);
   return m.slice(0, 2).join(' · ') || d.desc.split('. ')[0];
 }
-const perDay = v => Math.round(v / 7 * 10) / 10;
+const perDay = v => Math.round(v / (C.WEEK / C.DAY) * 10) / 10;   // upkeep is set per day; shown per watch
 let buildOpen = true;
 function buildBar() {
   $('b-groups').innerHTML = GROUPS.map(([k, n]) => `<button class="bg ${k === group ? 'on' : ''} ${k === group && buildOpen ? 'open' : ''}" data-g="${k}" type="button" title="${esc(GROUPS.find(x => x[0] === k)[2])}">${icon(k)}<span>${n}</span></button>`).join('');
@@ -305,13 +311,13 @@ function buildBar() {
   const found = sim.founded(), fm = sim.foundMissing();
   if (group === 'zones') { zonesBar(G, found, fm); return; }
   const stdRow = items.some(([k]) => sim.hasStd(k)) ? `<span class="bi-std"><span>BUILD AS</span>${STD.map((t, i) => { const lk = sim.stdLock(i); return `<button class="btn ${sim.std === i ? 'on' : ''} ${lk ? 'lock' : ''}" data-std="${i}" type="button" title="${esc(t.doctrine + ' standard. ' + t.desc + (lk ? ' ' + lk + '.' : ''))}">${t.name.toUpperCase()}${lk ? ' 🔒' : ''}</button>`; }).join('')}</span>` : '';
-  const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A DAY${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
+  const u = sim.util, utilLine = group === 'power' && u ? `<span class="bi-crews">POWER ${sim.power.made}/${sim.power.used} · WATER ${u.water.made}/${u.water.use} · SEWAGE ${u.sewer.cap}/${u.sewer.use} A WATCH${u.dark ? ` · ${u.dark} DARK` : ''}</span>` : '';
   const head = `<div class="bi-head"><b>${G[1]}</b><span>${group === 'power' ? '' : esc(G[2])}</span>${utilLine}<span id="bi-crews" class="bi-crews"></span>${stdRow}${!found ? `<em>Foundation first: ${fm.map(t => B[t].name).join(', ')}. These bring the money in; the rest of the base opens once they are up.${fm.some(t => GROWS.has(t)) ? ` ${fm.filter(t => GROWS.has(t)).map(t => B[t].name).join(', ')} grow${fm.filter(t => GROWS.has(t)).length > 1 ? '' : 's'} in zones: paint them from the ZONES bar.` : ''}</em>` : ''}</div>`;
   $('b-items').innerHTML = head + `<div class="bi-row">` + (lines.length ? `<button class="bi road" data-snap="1" type="button" title="How line ends snap (G)"><span class="th ic-th">${icon('roads')}</span><b>SNAP</b><span class="why">${SNAPNAME[snapMode]}</span><span class="cost">G to switch</span></button>` : '')
     + lines.map(k => { const d = RTOOLS[k]; return `<button class="bi road ${tool === k ? 'on' : ''}" data-b="${k}" type="button"><span class="th ic-th">${icon(k === 'wall' ? 'defence' : k === 'unroad' ? 'none' : k === 'clear' ? 'cond' : k === 'land' ? 'zones' : 'roads')}</span><b>${d.name}</b><span class="why">${esc(d.why)}</span><span class="cost">${d.k ? lineCost(d.k) + ' SUP / TILE' : k === 'land' ? `${sim.held()} / ${Math.min(441, sim.allowance())} HELD` : k === 'clear' ? `+${SCRUB.yield} SUP / TILE` : 'HALF BACK'}</span></button>`; }).join('')
     + items.map(([k, d]) => {
       const lk = sim.locked(k), cost = sim.costOf(k, specOf(k)), poor = sim.supplies < cost, fnd = !found && FOUNDATION.includes(k) && fm.includes(k);
-      return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}" data-std="${sim.hasStd(k) ? sim.std : 2}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${cost} SUP${d.up ? ` · <i>−${perDay(d.up * (sim.hasStd(k) ? STD[sim.std].up : 1))}/d</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
+      return `<button class="bi ${lk ? 'lock' : ''} ${poor ? 'poor' : ''} ${tool === k ? 'on' : ''} ${fnd ? 'found' : ''}" data-b="${k}" type="button"><span class="th"><img alt="" data-th="${k}" data-std="${sim.hasStd(k) ? sim.std : 2}"></span><b>${d.name}</b><span class="why">${esc(lk ? 'Needs ' + lk.join(' and ') : whyOf(k))}</span><span class="cost">${sim.designable(k) ? 'FROM ' : ''}${cost} SUP${d.up ? ` · <i>−${perDay(d.up * (sim.hasStd(k) ? STD[sim.std].up : 1))}/watch</i>` : ''}${d.pw < 0 ? ` · <i>${d.pw} PWR</i>` : ''}</span></button>`;
     }).join('') + `</div>`;
   // pictures of the buildings, drawn once each by the 3D view
   for (const im of $('b-items').querySelectorAll('img[data-th]')) { const u = view.thumb(im.dataset.th, +im.dataset.std); if (u) im.src = u; }
@@ -333,14 +339,14 @@ $('b-items').addEventListener('pointermove', e => {
   const k = b.dataset.b; if (k.startsWith('zone:')) return tip(k === 'zone:' ? '<b>Unzone</b><br>Drag over the ground to clear zoning.' : `<b>${ZONES[k.slice(5)].name}</b><br>${esc(ZONES[k.slice(5)].desc)}`, e.clientX, e.clientY - 12, true);
   if (RTOOLS[k]) return tip(`<b>${RTOOLS[k].name}</b><br>${RTOOLS[k].desc}`, e.clientX, e.clientY - 12, true);
   const d = B[k], lk = sim.locked(k), cf = sim.hasStd(k) ? STD[sim.std].cap : 1, cp = v => Math.max(1, Math.round(v * cf));
-  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${cp(d.beds)} votes` : '', d.eat ? `feeds ${cp(d.eat)}` : '', d.slots ? `trains ${cp(d.slots)} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a day`].filter(Boolean);
+  const bits = [d.pw > 0 ? `+${d.pw} power` : d.pw < 0 ? `${d.pw} power` : '', d.crew ? `crew ${d.crew}` : '', d.beds ? `houses ${cp(d.beds)} votes` : '', d.eat ? `feeds ${cp(d.eat)}` : '', d.slots ? `trains ${cp(d.slots)} at ${TRAIN[d.train]}/h` : '', d.store ? 'stores ' + Object.entries(d.store).map(([g, n]) => `${n} ${GOODS[g].name.toLowerCase()}`).join(', ') : '', d.need ? 'uses ' + Object.keys(d.need).map(g => GOODS[g].name.toLowerCase()).join(', ') : '', `upkeep ${perDay(d.up)} supplies a watch`].filter(Boolean);
   tip(`<b>${d.name}</b><br>${d.desc}<br><span style="color:var(--g-dim)">${bits.join(' · ')}</span>` + (lk ? `<br><span class="warn">Needs ${lk.join(' and ')}</span>` : ''), e.clientX, e.clientY - 12, true);
 });
 $('b-items').addEventListener('pointerleave', hideTip);
 // ---------------------------------------------------------------- the design desk: large buildings are designed before placing
 const specs = {};   // the last design chosen for each building type
 const specOf = k => sim.designable(k) ? (specs[k] ||= { design: 0, parts: [] }) : sim.hasStd(k) ? { std: sim.std } : null;
-const PARTFX = { make: v => `+${v} supplies a day`, prop: v => `+${v} propaganda`, mor: v => `+${v} morale`, sales: v => `+${v} CR a day`, watch: v => `watches ${v} tiles`, guns: v => `arms ${v} tiles of wall`, odds: v => `+${Math.round(v * 100)}% operation odds`, lab: v => `+${Math.round(v * 100)}% research`, pw: v => `+${v} power`, pride: () => 'pride' };
+const PARTFX = { make: v => `+${v} supplies a watch`, prop: v => `+${v} propaganda`, mor: v => `+${v} morale`, sales: v => `+${v} CR a watch`, watch: v => `watches ${v} tiles`, guns: v => `arms ${v} tiles of wall`, odds: v => `+${Math.round(v * 100)}% operation odds`, lab: v => `+${Math.round(v * 100)}% research`, pw: v => `+${v} power`, pride: () => 'pride' };
 let refit = null;   // { id, sp }: refitting a building that is already up
 function refitShow() {
   const b = refit && sim.byId(refit.id);
@@ -357,7 +363,7 @@ function designPanel() {
       : `<div class="dz-h"><b>DESIGN · ${esc(B[k].name.toUpperCase())}</b><span>${fmt(sim.costOf(k, sp))} SUP</span></div>`)
     + `<div class="dz-row">` + DESIGNS.map((d, i) => `<button class="btn dz ${sp.design === i ? 'on' : ''}" data-dz="${i}" type="button"><b>${d.name}</b><span>${d.cost === 1 ? 'base price' : '×' + d.cost}</span><i>${esc(d.desc)}</i></button>`).join('') + `</div>`
     + `<div class="dz-row parts">` + Object.entries(pf).map(([p, fx]) => `<button class="btn dp ${sp.parts.includes(p) ? 'on' : ''}" data-dp="${p}" type="button"><b>${sp.parts.includes(p) ? '✓ ' : '+ '}${PARTS[p].name}</b><span>${PARTS[p].cost} SUP · ${Object.entries(fx).map(([q, v]) => PARTFX[q](v)).join(', ')}</span></button>`).join('') + `</div>`
-    + (rb ? `<div class="dz-go"><span class="${rc.ok ? 'c-ok' : 'c-bad'}">${esc(rc.ok ? 'It fits. The building closes for the refit, about half a day.' : rc.why)}</span><button class="btn" id="dz-cancel" type="button">CANCEL</button><button class="btn primary" id="dz-apply" type="button" ${rc.ok ? '' : 'disabled'}>REFIT ${rc.cost ? fmt(rc.cost) : ''}</button></div>`
+    + (rb ? `<div class="dz-go"><span class="${rc.ok ? 'c-ok' : 'c-bad'}">${esc(rc.ok ? 'It fits. The building closes for the refit, a couple of watches.' : rc.why)}</span><button class="btn" id="dz-cancel" type="button">CANCEL</button><button class="btn primary" id="dz-apply" type="button" ${rc.ok ? '' : 'disabled'}>REFIT ${rc.cost ? fmt(rc.cost) : ''}</button></div>`
       + `<p class="fine left">A refit pays the difference in price and a fee. Fortified and Monumental need a clear tile each side for their wings.</p>`
       : `<p class="fine left">Fortified and Monumental take a tile more each side for their wings. Parts sit on the building. Your choice is kept for the next one you place. Refit a building later from its panel.</p>`);
   el.classList.remove('hidden');
@@ -432,7 +438,7 @@ function selPanel() {
   if (!b.done || b.upg) { const pr = b.done ? b.upg.prog : b.prog; bits.push(`<div class="kv"><span>${b.done ? 'UPGRADE TO ' + STD[b.upg.to].name.toUpperCase() : 'CONSTRUCTION'}</span><b>${Math.round(pr * 100)}%</b></div><div class="meter"><i style="width:${pr * 100}%;background:var(--yellow)"></i></div><div class="kv"><span>ENGINEERS</span><b>${esc(buildState(b))}</b></div>`); }
   { const notes = []; if (b.grown) notes.push(`Grew in ${ZONES[b.grown].name}`); if (B[b.type].beds && b.noisy) notes.push('<span class="warn">Noisy neighbours: morale suffers</span>'); if (B[b.type].beds && b.hazard) notes.push('<span class="warn">Fuel or a generator next door: a hazard</span>'); if (b.nearPad) notes.push(`Near a landing pad: holds ${Math.round((GROW.padBonus - 1) * 100)}% more`); if (sim.zoneFit(b) > 1) notes.push('In its own zone: works 5% better'); if (notes.length) bits.push(`<div class="kv"><span>ZONE</span><b>${notes.join('<br>')}</b></div>`); }
   if (b.done && (d.pw < 0 || sim.needsWater(b) || sim.needsSewer(b))) { const sv = []; if (d.pw < 0) sv.push(b.dark ? '<span class="down">no power: outside the grid</span>' : 'power'); if (sim.needsWater(b)) sv.push(b.dry ? '<span class="warn">no water</span>' : 'water'); if (sim.needsSewer(b)) sv.push(b.foul ? '<span class="warn">no sewage</span>' : 'sewage'); if (b.smelly) sv.push('<span class="warn">smells the lagoon</span>'); bits.push(`<div class="kv"><span>SERVICES</span><b>${sv.join(' · ')}</b></div>`); }
-  if (B[b.type].water && b.done) bits.push(`<div class="kv"><span>WATER</span><b>${B[b.type].water} a day${b.bad ? ' · <span class="down">contaminated: a lagoon is too close</span>' : ''}</b></div>`);
+  if (B[b.type].water && b.done) bits.push(`<div class="kv"><span>WATER</span><b>${B[b.type].water} a watch${b.bad ? ' · <span class="down">contaminated: a lagoon is too close</span>' : ''}</b></div>`);
   if (b.type === 'yard') { const cs = sim.crews.filter(c => c.yard === b.id); bits.push(`<div class="kv"><span>CREW</span><b>${cs.length ? cs.map(c => `${c.name}: ${crewState(c)}`).join('; ') : b.done ? `waiting for ${3} recruits` : 'none yet'}</b></div>`); }
   if (!b.done) { /* construction shown above */ }
   else {
@@ -443,7 +449,7 @@ function selPanel() {
     if (d.store) for (const g in d.store) bits.push(bar(g, b.stock[g], sim.storeCap(b, g)));
     if (d.need) for (const g in d.need) bits.push(bar(g, b.stock[g], d.need[g], 'NEEDS ' + GOODS[g].name.toUpperCase()));
     if (d.pad) { const n = GKEYS.reduce((a, g) => a + b.stock[g], 0); bits.push(`<div class="kv"><span>WAITING TO BE MOVED</span><b>${Math.floor(n)}</b></div>`); }
-    if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${sim.cap(b, 'eat')} votes a day</b></div>`);
+    if (d.eat) bits.push(`<div class="kv"><span>FEEDS</span><b>${sim.cap(b, 'eat')} votes a watch</b></div>`);
     if (d.slots) { const n = sim.troops.filter(t => t.at === b.id).length; bits.push(`<div class="kv"><span>TRAINING NOW</span><b>${n} / ${sim.cap(b, 'slots')}</b></div>`); }
     if (d.trucks || d.lifts) { const vs = sim.veh.filter(v => v.home === b.id); bits.push(`<div class="kv"><span>${d.trucks ? 'TRUCKS' : 'FORKLIFT'}</span><b>${vs.filter(v => v.job).length} of ${vs.length} on a run</b></div>`); }
     if (d.ward) { const w = sim.troops.filter(t => t.hurt > 0); bits.push(`<div class="kv"><span>PATIENTS</span><b>${Math.min(w.length, d.ward)} of ${d.ward} beds</b></div>` + w.slice(0, 6).map(t => `<div class="kv"><span>${esc(t.name)}</span><b>${days(t.hurt)}</b></div>`).join('')); }
@@ -469,7 +475,7 @@ function selPanel() {
     : b.dark ? ['bad', 'Dark: outside power coverage. Build a Substation (UTILITIES)'] : d.crew && b.crew < 1 ? ['bad', 'No crew'] : d.pw < 0 && sim.power.ratio < 1 ? ['bad', 'Short of power'] : d.crew && b.crew < d.crew ? ['warn', `Short of crew, ${b.crew} of ${d.crew}`]
     : b.cond < 40 ? ['bad', 'Falling apart: repair it'] : ['ok', d.store ? 'Stocked and running' : 'Running'];
   const mv = b.done ? moneyOf(b) : 0;
-  const top = `<div class="sp-status ${st[0]}">${st[1]}</div><div class="sp-money"><span>UPKEEP <b class="down">−${fmt(perDay(sim.upkeepOf(b)))}</b>/d</span><span>NET <b class="${mv < 0 ? 'down' : 'up'}">${mv >= 0 ? '+' : '−'}${fmt(Math.abs(mv))}</b> SUP/d</span><span class="role" style="color:${ROLE_COL[roleOf(b.type)]}">${GROUPS.find(g => g[0] === roleOf(b.type))?.[1] || 'COMMAND'}</span></div>`;
+  const top = `<div class="sp-status ${st[0]}">${st[1]}</div><div class="sp-money"><span>UPKEEP <b class="down">−${fmt(perDay(sim.upkeepOf(b)))}</b>/watch</span><span>NET <b class="${mv < 0 ? 'down' : 'up'}">${mv >= 0 ? '+' : '−'}${fmt(Math.abs(mv))}</b> SUP/watch</span><span class="role" style="color:${ROLE_COL[roleOf(b.type)]}">${GROUPS.find(g => g[0] === roleOf(b.type))?.[1] || 'COMMAND'}</span></div>`;
   const html = `<div class="ph"><span>${d.name.toUpperCase()}</span><button class="x" id="sp-x" type="button">×</button></div>${top}<div class="sp-body">${bits.join('')}<p>${d.desc}</p>${crew ? `<p>On duty: ${crew}</p>` : ''}</div>
     <div class="sp-btns">${b.done && b.cond < 100 ? `<button class="btn" id="sp-rep" type="button">REPAIR ${sim.repairCost(b)}</button>` : ''}${b.done && (d.crew || d.pw < 0) ? `<button class="btn" id="sp-off" type="button">${b.off ? 'SWITCH ON' : 'SWITCH OFF'}</button>` : ''}${b.type === 'seflag' ? `<button class="btn" id="sp-move" type="button">MOVE FLAG ${C.FLAGMOVE}</button>` : ''}${b.type === 'hq' && sim.unsettled() ? `<button class="btn primary" id="sp-hq" type="button">MOVE HQ (free until your first road)</button>` : ''}${(() => { if (!sim.hasStd(b.type) || sim.stdOf(b) >= 2 || b.upg || !b.done) return ''; const u = sim.upgradeInfo(b); return `<button class="btn ${u.ok ? 'primary' : ''}" id="sp-upg" type="button" title="${esc(u.ok ? STD[u.to].desc : u.why)}" ${u.ok ? '' : 'disabled'}>UPGRADE TO ${STD[u.to].name.toUpperCase()} ${u.cost}</button>`; })()}${b.done && sim.designable(b.type) ? `<button class="btn" id="sp-refit" type="button">${refit?.id === b.id ? 'REFITTING…' : 'REFIT'}</button>` : ''}${d.fixed ? '' : `<button class="btn danger" id="sp-del" type="button">${b.done ? 'DEMOLISH +' + Math.round((b.cost ?? d.cost) * C.REFUND) : 'CANCEL +' + (b.cost ?? d.cost)}</button>`}</div>`;
   p.classList.remove('hidden');
@@ -513,9 +519,9 @@ const ORDERS = [
   ['Ship trained troopers to the front: transports leave the pad at 16:00', s => s.stats.deployed > 0],
   ['Deal with the desk: answer a request or grade a trooper\'s file (here, or DESK)', s => (s.stats.desk || 0) + (s.stats.graded || 0) > 0],
   ['Answer a Ministry call: set aside what they ask for', s => (s.stats.calls || 0) > 0],
-  ['Set your Ministry commitments (ECONOMY, COMMITMENTS): what you give each Ministry a day for standing', s => !!s.commitSet],
+  ['Set your Ministry commitments (ECONOMY, COMMITMENTS): what you give each Ministry a watch for standing', s => !!s.commitSet],
   ['Trade on the market or with a rival base: buy what you are short of, sell the surplus', s => (s.stats.trades || 0) + (s.stats.mkt || 0) > 0],
-  ['Keep supplies and credits rising: the net per day is under each at the top', s => { const r = s.rates(); return s.week >= 2 && r.supNet >= 0 && r.crNet >= 0; }],
+  ['Keep supplies and credits rising: the net per watch is under each at the top', s => { const r = s.rates(); return s.week >= 2 && r.supNet >= 0 && r.crNet >= 0; }],
   ['Build a Patrol Office for standing patrols', s => s.has('patrol')],
   ['Pay back the Founding Charter (ECONOMY, LOANS)', s => !s.loans.some(l => l.k === 'charter')],
   ['Be promoted to a Forward Operating Base (EXPANSION, CHARTER)', s => s.stage >= 1],
@@ -534,7 +540,7 @@ const IVIEWS = [
   ['res', 'RESOURCES', 'What the ground holds: E-710 seeps (violet) for an Extractor, ore (rust) for a Mine, water (blue) and rock (grey). Buildings go see-through.'],
   ['routes', 'SUPPLY ROUTES', 'Where goods go: from the pad to storage, and from storage to the buildings that use them. Brighter lines have a truck or forklift on them now.'],
   ['role', 'ROLES', 'What each building is for: the build menu section it comes from.'],
-  ['money', 'MONEY', 'What each building earns or costs a day, in supplies (a credit counts as the market price of supplies). Green earns, red costs. Pads earn what shipped troopers bring in.'],
+  ['money', 'MONEY', 'What each building earns or costs a watch, in supplies (a credit counts as the market price of supplies). Green earns, red costs. Pads earn what shipped troopers bring in.'],
   ['power', 'POWER', 'Yellow makes power, cyan is powered, red is short of power, grey needs none.'],
   ['supply', 'SUPPLY', 'Goods a building runs on, full (green) to empty (red). Storage is blue, deeper the fuller.'],
   ['cond', 'CONDITION', 'Repair: green is sound, red is falling apart. Upkeep keeps it up.'],
@@ -550,7 +556,7 @@ function moneyOf(b) {
   const s = sim, d = B[b.type], crp = 1 / Math.max(0.2, s.price('sup'));   // credits counted as supplies
   if (!b.done) return 0;
   const w = s.work(b);
-  let v = -s.upkeepOf(b) / 7 - (d.staff || 0) * C.WAGE * crp;
+  let v = -s.upkeepOf(b) / (C.WEEK / C.DAY) - (d.staff || 0) * C.WAGE * crp;
   v += ((C.SALES[b.type] || 0) * s.capF(b) + s.stat(b, 'sales')) * crp * (b.off ? 0 : 1);
   v += s.stat(b, 'make') * w + (d.pump || 0) * w * GOODS.fuel.cost;
   if (d.burn) for (const g in d.burn) v -= d.burn[g] * GOODS[g].cost;
@@ -574,12 +580,12 @@ function ivLegend() {
   if (iview === 'none') { el.classList.add('hidden'); return; }
   let keys = '';
   if (iview === 'res') keys = [['#aa50ff', 'E-710 SEEP'], ['#e6783c', 'ORE'], ['#4696ff', 'WATER'], ['#3a3a40', 'ROCK']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('');
-  if (iview === 'util') { const u = sim.util || sim.utilities(); keys = [['#ffd23a', 'POWER'], ['#4fb4ff', 'WATER'], ['#b08a4a', 'SEWAGE'], ['#c98bff', 'FUEL']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('') + `<p>Water ${u.water.made} made, ${u.water.use} used a day${u.water.bad > 0.05 ? ` (${Math.round(u.water.bad * 100)}% from wells by a lagoon)` : ''}. Sewage ${u.sewer.cap} taken, ${u.sewer.use} made. ${u.dark ? `${u.dark} building${u.dark > 1 ? 's' : ''} dark. ` : ''}${sim.graceOn() ? `The inspectorate arrives in ${sim.utilGrace} days.` : `Outbreak risk ${Math.round((sim.risk || 0) * 100)}% a day.`}</p>`; }
+  if (iview === 'util') { const u = sim.util || sim.utilities(); keys = [['#ffd23a', 'POWER'], ['#4fb4ff', 'WATER'], ['#b08a4a', 'SEWAGE'], ['#c98bff', 'FUEL']].map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join('') + `<p>Water ${u.water.made} made, ${u.water.use} used a watch${u.water.bad > 0.05 ? ` (${Math.round(u.water.bad * 100)}% from wells by a lagoon)` : ''}. Sewage ${u.sewer.cap} taken, ${u.sewer.use} made. ${u.dark ? `${u.dark} building${u.dark > 1 ? 's' : ''} dark. ` : ''}${sim.graceOn() ? `The inspectorate arrives in ${days(sim.utilGrace * C.DAY)}.` : `Outbreak risk ${Math.round((sim.risk || 0) * 100)}% a watch.`}</p>`; }
   if (iview === 'zone') keys = ZKEYS.map(k => `<span><i style="background:${ZONES[k].col}"></i>${ZONES[k].short}</span>`).join('') + `<span><i style="background:#ff4d3a"></i>NOISY OR HAZARDOUS BUNKS</span><p>Demand: ${esc(sim.demandText())}.</p>`;
   if (iview === 'routes') keys = GKEYS.map(g => `<span><i style="background:${GOODS[g].color}"></i>${GOODS[g].name.toUpperCase()}</span>`).join('');
   if (iview === 'role') keys = GROUPS.filter(g => g[0] !== 'roads').map(g => `<span><i style="background:${ROLE_COL[g[0]]}"></i>${g[1]}</span>`).join('');
   if (iview === 'money') { const list = sim.b.filter(b => b.done).map(b => [b, moneyOf(b)]).sort((a, b) => a[1] - b[1]); const top = list.slice(-3).reverse(), bot = list.slice(0, 3);
-    keys = `<span><i style="background:#3fe07a"></i>EARNS</span><span><i style="background:#ff4d3a"></i>COSTS</span><p>Best: ${top.map(([b, x]) => `${B[b.type].name} ${x >= 0 ? '+' : ''}${Math.round(x)}`).join(', ')}<br>Dearest: ${bot.map(([b, x]) => `${B[b.type].name} ${Math.round(x)}`).join(', ')} (supplies a day)</p>`; }
+    keys = `<span><i style="background:#3fe07a"></i>EARNS</span><span><i style="background:#ff4d3a"></i>COSTS</span><p>Best: ${top.map(([b, x]) => `${B[b.type].name} ${x >= 0 ? '+' : ''}${Math.round(x)}`).join(', ')}<br>Dearest: ${bot.map(([b, x]) => `${B[b.type].name} ${Math.round(x)}`).join(', ')} (supplies a watch)</p>`; }
   el.innerHTML = `<b>${v[1]}</b><p>${esc(v[2])}</p><div class="keys">${keys}</div>`; el.classList.remove('hidden');
 }
 // every route goods take round the base: pad to storage, storage to the buildings that use them, and the runs a vehicle is on now
@@ -673,19 +679,19 @@ function taskBoard() {
   if (todo.length) h += `<div class="tb-sec"><span>ORDERS · ${done.filter(Boolean).length} OF ${ORDERS.length} DONE</span></div>` + todo.slice(0, 3).map((i, n) => `<div class="tb-o ${n === 0 ? 'next' : ''}"><i>${i + 1}</i>${esc(ORDERS[i][0])}</div>`).join('');
   // calls from the Ministries
   for (const c of s.calls.filter(c => !c.acc)) { const q = CALLS[c.k], have = s.have(c.g);
-    items.push(`<div class="tb-i call"><em class="c-${q.m}">${MINI[q.m]} · DUE DAY ${c.due}</em><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><span class="${have < c.n ? 'warn' : 'up'}">You have ${fmt(have)}</span><div class="tb-b"><button class="btn" data-call="${c.id}:1" type="button">SET ASIDE</button><button class="btn" data-call="${c.id}:0" type="button">DECLINE</button></div></div>`); }
+    items.push(`<div class="tb-i call"><em class="c-${q.m}">${MINI[q.m]} · DUE DAY ${calDay(c.due)}</em><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><span class="${have < c.n ? 'warn' : 'up'}">You have ${fmt(have)}</span><div class="tb-b"><button class="btn" data-call="${c.id}:1" type="button">SET ASIDE</button><button class="btn" data-call="${c.id}:0" type="button">DECLINE</button></div></div>`); }
   // requests
   for (const r of s.desk) { const q = REQUESTS[r.k];
     items.push(`<div class="tb-i"><em>${esc(q.from.toUpperCase())} · ${days(Math.max(0, r.due - s.t))} LEFT</em><b>${esc(q.title)}</b><span class="tb-txt">${esc(q.text.replaceAll('NAME', r.name))}</span><div class="tb-b">${q.opts.map((o, i) => `<button class="btn" data-dec="${r.id}:${i}" ${s.canDecide(r, i) ? '' : 'disabled'} type="button" title="${esc(fxText(o.fx))}">${esc(o.label)}</button>`).join('')}</div></div>`); }
   // offers from the other bases
   for (const o of s.market.offers) { const M = MARKET.goods[o.g], mk = (o.buys ? s.sellAt(o.g) : s.buyAt(o.g)) * 10, ok = s.canTakeOffer(o);
-    items.push(`<div class="tb-i offer"><em>${esc(o.from.toUpperCase())} · UNTIL DAY ${o.until}</em><b>${o.buys ? 'WANTS' : 'SELLS'} ${o.n} ${M.short} at ${(o.p * 10).toFixed(1)} CR per 10</b><span>Market ${o.buys ? 'pays' : 'charges'} ${mk.toFixed(1)}. ${o.buys ? `You hold ${Math.floor(s.holding(o.g))}.` : ''}</span><div class="tb-b"><button class="btn" data-offer="${o.id}" ${ok.ok ? '' : 'disabled'} title="${esc(ok.why || '')}" type="button">${o.buys ? 'SELL' : 'BUY'} · ${o.buys ? '+' : '−'}${fmt(o.p * o.n)} CR</button></div></div>`); }
+    items.push(`<div class="tb-i offer"><em>${esc(o.from.toUpperCase())} · UNTIL DAY ${calDay(o.until)}</em><b>${o.buys ? 'WANTS' : 'SELLS'} ${o.n} ${M.short} at ${(o.p * 10).toFixed(1)} CR per 10</b><span>Market ${o.buys ? 'pays' : 'charges'} ${mk.toFixed(1)}. ${o.buys ? `You hold ${Math.floor(s.holding(o.g))}.` : ''}</span><div class="tb-b"><button class="btn" data-offer="${o.id}" ${ok.ok ? '' : 'disabled'} title="${esc(ok.why || '')}" type="button">${o.buys ? 'SELL' : 'BUY'} · ${o.buys ? '+' : '−'}${fmt(o.p * o.n)} CR</button></div></div>`); }
   // files to grade
   { const files = Math.min(s.reviewsLeft(), s.toReview().length); if (files) items.push(`<div class="tb-i"><em>ROSTER REVIEW</em><b>${files} trooper file${files > 1 ? 's' : ''} to grade</b><span>A fair grade pays 8 supplies and 3 credits.</span><div class="tb-b"><button class="btn" data-open="led" type="button">OPEN THE DESK</button></div></div>`); }
   // what needs fixing
   const warn = (t, why, open) => items.push(`<div class="tb-i alert"><b>${esc(t)}</b><span>${esc(why)}</span>${open ? `<div class="tb-b"><button class="btn" data-open="${open}" type="button">OPEN</button></div>` : ''}</div>`);
   const use = s.usage();
-  for (const g of GKEYS) if (use[g] > 0 && s.amount(g) < use[g] * 0.5) warn(`${GOODS[g].name} running low`, `${Math.floor(s.amount(g))} left, ${Math.round(use[g])} used a day. More storage brings bigger deliveries; or buy on the market.`, 'eco:market');
+  for (const g of GKEYS) if (use[g] > 0 && s.amount(g) < use[g] * 0.5) warn(`${GOODS[g].name} running low`, `${Math.floor(s.amount(g))} left, ${Math.round(use[g])} used a watch. More storage brings bigger deliveries; or buy on the market.`, 'eco:market');
   for (const m of MKEYS) if ((s.commit?.[m] || 0) && (s.commitLast?.[m] ?? 1) < 0.6) warn(`${COMMIT[m].ministry}: commitment short`, `Only ${Math.round(s.commitLast[m] * 100)}% paid yesterday. Trade for the goods, or lower the level.`, 'eco:commit');
   { const u = s.util; if (u && !s.graceOn()) { if (u.dark) warn('Buildings dark', `${u.dark} building${u.dark > 1 ? 's are' : ' is'} outside power coverage. Build a Substation near ${u.dark > 1 ? 'them' : 'it'} (UTILITIES).`); if (s.waterEff() < 0.75) warn('Short of water', `Bunks without water lose morale and fall sick. Wells, a purification unit, or a tower to carry it (UTILITIES).`); if (s.sewerEff() < 0.75) warn('Sewage backing up', 'Bunks without sewage lose morale and fall sick. A lagoon, or a treatment plant at Fort (UTILITIES).'); } }
   if (s.power.ratio < 1) warn('Short of power', `${s.power.made} made, ${s.power.used} wanted: buildings run slow. Build a Generator or a Solar Array.`);
@@ -717,20 +723,20 @@ function infoHtml(k) {
   const s = sim, r = s.rates(), sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v)), row = (n, v, cls) => `<tr><td>${esc(n)}</td><td class="${cls ?? (v < 0 ? 'down' : 'up')}">${typeof v === 'number' ? sg(v) : v}</td></tr>`;
   const flows = o => Object.entries(o).filter(([, v]) => Math.abs(v) >= 0.5).sort((a, b) => b[1] - a[1]).map(([c, v]) => row(CAT[c] || c, Math.round(v))).join('');
   const t = (title, body, foot) => `<b>${title}</b><table class="tipt">${body}</table>${foot ? `<span class="fine">${foot}</span>` : ''}`;
-  if (k === 'sup') return t(`SUPPLIES ${fmt(s.supplies)} · ${sg(Math.round(r.supNet))} A DAY`, flows(r.sup), 'Averaged over the last days. Click for the budget.');
-  if (k === 'cr') return t(`CREDITS ${fmt(s.credits)} · ${sg(Math.round(r.crNet))} A DAY`, flows(r.cr), 'Click for the budget.');
-  if (k === 'debt') return t(`OWED ${fmt(s.debt())}`, s.loans.map(l => row(LOANS[l.k].name, `${fmt(l.bal)} · −${Math.min(l.bal, LOANS[l.k].pay)}/wk`, '')).join('') + (s.credits < 0 ? row('Overdraft', fmt(-s.credits), 'down') : ''), 'Click for loans.');
+  if (k === 'sup') return t(`SUPPLIES ${fmt(s.supplies)} · ${sg(Math.round(r.supNet))} A WATCH`, flows(r.sup), 'Averaged over the last watches. Click for the budget.');
+  if (k === 'cr') return t(`CREDITS ${fmt(s.credits)} · ${sg(Math.round(r.crNet))} A WATCH`, flows(r.cr), 'Click for the budget.');
+  if (k === 'debt') return t(`OWED ${fmt(s.debt())}`, s.loans.map(l => row(LOANS[l.k].name, `${fmt(l.bal)} · −${Math.min(l.bal, LOANS[l.k].pay)}/day`, '')).join('') + (s.credits < 0 ? row('Overdraft', fmt(-s.credits), 'down') : ''), 'Click for loans.');
   if (k === 'votes') { const home = s.troops.filter(t => t.state !== 'patrol').length, out = s.troops.length - home, by = {};
     for (const b of s.b) if (b.done && B[b.type].beds) by[B[b.type].name] = (by[B[b.type].name] || 0) + s.cap(b, 'beds');
     const d = s.dem; return t(`VOTES ${home} HOME · ${s.troops.length} IN ALL · ${s.beds} BUNKS`, Object.entries(by).map(([n, v]) => row(n, v + ' bunks', '')).join('') + row('Out on patrol', out, '') + row('Engineers (at their yard)', s.engineers(), '') + (d ? row('Bunks wanted', d.bunks ? `${d.bunks} more` : 'enough', d.bunks ? 'warn' : 'up') : ''), 'Recruits fill empty bunks each morning. Click for zoning.'); }
   if (k === 'morale') return t(`MORALE ${Math.round(s.morale)} → ${Math.round(s.moraleTarget)}`, Object.entries(s.mor).filter(([, v]) => v).sort((a, b) => b[1] - a[1]).map(([n, v]) => row(MOR_NAMES[n] || n, v)).join(''), 'Morale moves slowly toward the target. Click for the Ministry of Truth.');
   if (k === 'power') { const u = s.util; const src = {}; for (const b of s.b) if (b.done && !b.off && B[b.type].pw > 0) src[B[b.type].name] = (src[B[b.type].name] || 0) + 1;
-    return t(`POWER ${s.power.made} MADE · ${s.power.used} USED`, Object.entries(src).map(([n, c]) => row(n, '×' + c, '')).join('') + (u ? row('Water a day', `${u.water.made} / ${u.water.use}`, u.water.ratio < 1 ? 'warn' : 'up') + row('Sewage a day', `${u.sewer.cap} / ${u.sewer.use}`, u.sewer.ratio < 1 ? 'warn' : 'up') + (u.dark ? row('Dark: outside coverage', u.dark, 'down') : '') : ''), 'Click for the Utilities view.'); }
+    return t(`POWER ${s.power.made} MADE · ${s.power.used} USED`, Object.entries(src).map(([n, c]) => row(n, '×' + c, '')).join('') + (u ? row('Water a watch', `${u.water.made} / ${u.water.use}`, u.water.ratio < 1 ? 'warn' : 'up') + row('Sewage a watch', `${u.sewer.cap} / ${u.sewer.use}`, u.sewer.ratio < 1 ? 'warn' : 'up') + (u.dark ? row('Dark: outside coverage', u.dark, 'down') : '') : ''), 'Click for the Utilities view.'); }
   if (['rations', 'fuel', 'ammo'].includes(k)) { const use = s.usage()[k] || 0, have = s.amount(k);
-    return t(`${GOODS[k].name.toUpperCase()} ${Math.floor(have)}`, row('In storage', Math.floor(s.stored(k)), '') + row('Room in storage', Math.floor(s.storage(k)), '') + row('Waiting on the pads', Math.floor(s.onPad(k)), '') + row('At the buildings using it', Math.floor(s.inUse(k)), '') + row('On trucks and forklifts', Math.floor(s.carried(k)), '') + row('Used a day', Math.round(use), '') + row('Lasts', use ? `${(have / use).toFixed(1)} days` : '—', use && have / use < 1.5 ? 'down' : 'up'), 'The 07:00 pelican refills storage. Click for the Supply view.'); }
+    return t(`${GOODS[k].name.toUpperCase()} ${Math.floor(have)}`, row('In storage', Math.floor(s.stored(k)), '') + row('Room in storage', Math.floor(s.storage(k)), '') + row('Waiting on the pads', Math.floor(s.onPad(k)), '') + row('At the buildings using it', Math.floor(s.inUse(k)), '') + row('On trucks and forklifts', Math.floor(s.carried(k)), '') + row('Used a watch', Math.round(use), '') + row('Lasts', use ? days(have / use * C.DAY) : '—', use && have / use < 1.5 ? 'down' : 'up'), 'The 07:00 pelican refills storage. Click for the Supply view.'); }
   if (k === 'ready') { const ready = s.troops.filter(t => t.train >= 100 && t.state !== 'patrol').length, rec = s.troops.filter(t => t.train < 100), o = s.orders[0];
-    return t(`READY ${ready} · IN TRAINING ${rec.length}`, row('Training places', s.b.filter(b => b.done && B[b.type].train).reduce((a, b) => a + s.cap(b, 'slots'), 0), '') + row('Average progress', rec.length ? Math.round(rec.reduce((a, t) => a + t.train, 0) / rec.length) + '%' : '—', '') + (o ? row('Deployment order', `${o.sent} of ${o.n}, by day ${o.due}`, o.sent < o.n && o.due - s.time.day <= 1 ? 'down' : '') : ''), 'Transports leave the pad at 16:00. Click for the Ministry of Defence.'); }
-  if (k === 'week') return t(`WEEK ${s.week} · ${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4`, row('Allocation at this rank', `~${fmt(C.ALLOC.base * C.ALLOC.mult[s.rank])} SUP`, '') + row('Inspection', s.inspected ? 'done this week' : 'later this week', '') + row('Charter', C.STAGES[s.stage || 0].name, ''), 'Click for the standings.');
+    return t(`READY ${ready} · IN TRAINING ${rec.length}`, row('Training places', s.b.filter(b => b.done && B[b.type].train).reduce((a, b) => a + s.cap(b, 'slots'), 0), '') + row('Average progress', rec.length ? Math.round(rec.reduce((a, t) => a + t.train, 0) / rec.length) + '%' : '—', '') + (o ? row('Deployment order', `${o.sent} of ${o.n}, by day ${calDay(o.due)}`, o.sent < o.n && o.due - s.time.day <= 1 ? 'down' : '') : ''), 'Transports leave the pad at 16:00. Click for the Ministry of Defence.'); }
+  if (k === 'week') return t(`DAY ${s.week} · ${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4`, row('Allocation at this rank', `~${fmt(C.ALLOC.base * C.ALLOC.mult[s.rank])} SUP`, '') + row('Inspection', s.inspected ? 'done today' : 'later today', '') + row('Charter', C.STAGES[s.stage || 0].name, ''), 'Click for the standings.');
   return '';
 }
 document.addEventListener('pointermove', e => { const el = e.target.closest?.('[data-info]'); if (!el || !playing) return; const h = infoHtml(el.dataset.info); if (h) { const r = el.getBoundingClientRect(); tip(h, r.left + r.width / 2, r.top < innerHeight / 2 ? r.bottom + 8 : r.top - 8, r.top >= innerHeight / 2); } });
@@ -791,11 +797,11 @@ function layout() {
 function hud() {
   const s = sim;
   { const r = s.rates(), sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
-    $('r-sup').textContent = fmt(s.supplies); $('r-sup-d').textContent = `${sg(r.supNet)}/d`; $('r-sup-d').className = r.supNet < 0 ? 'down' : 'up';
-    $('r-cr').textContent = fmt(s.credits); $('r-cr-d').textContent = `${sg(r.crNet)}/d`; $('r-cr-d').className = r.crNet < 0 ? 'down' : 'up';
+    $('r-sup').textContent = fmt(s.supplies); $('r-sup-d').textContent = `${sg(r.supNet)}/watch`; $('r-sup-d').className = r.supNet < 0 ? 'down' : 'up';
+    $('r-cr').textContent = fmt(s.credits); $('r-cr-d').textContent = `${sg(r.crNet)}/watch`; $('r-cr-d').className = r.crNet < 0 ? 'down' : 'up';
     $('r-cr').parentElement.classList.toggle('bad', s.credits < 0);
     const debt = s.debt(), pay = s.loans.reduce((a, l) => a + Math.min(l.bal, LOANS[l.k].pay), 0);
-    $('r-debt').textContent = fmt(debt); $('r-debt-d').textContent = pay ? `−${fmt(pay)}/wk` : debt ? 'overdraft' : 'clear'; $('r-debt').parentElement.classList.toggle('clear', debt <= 0); }
+    $('r-debt').textContent = fmt(debt); $('r-debt-d').textContent = pay ? `−${fmt(pay)}/day` : debt ? 'overdraft' : 'clear'; $('r-debt').parentElement.classList.toggle('clear', debt <= 0); }
   $('r-pw').textContent = `${s.power.made}/${s.power.used}`; $('r-pw').parentElement.classList.toggle('bad', s.power.ratio < 1);
   const home = s.troops.filter(t => t.state !== 'patrol').length;
   $('r-trp').textContent = `${home}/${s.troops.length}/${s.beds}`; $('r-trp').parentElement.classList.toggle('bad', s.troops.length > s.beds);
@@ -806,11 +812,10 @@ function hud() {
   const readyN = s.troops.filter(t => t.train >= 100 && t.state !== 'patrol').length, rec = s.troops.filter(t => t.train < 100).length;
   $('r-ready').textContent = `${readyN}/${rec}`;
   { const el = document.getElementById('bi-crews'); if (el) { const cs = s.crews || [], busy = cs.filter(c => c.job != null && !c.wait).length, q = s.jobQueue().length; el.textContent = `CREWS ${busy}/${cs.length} AT WORK · ${q} JOB${q === 1 ? '' : 'S'} OPEN${!s.secure() ? ' · SWEEP UNDER WAY' : ''}`; el.classList.toggle('bad', q > cs.length + 2); el.title = `Engineer crews do every building job, one each. ${cs.some(c => c.wait) ? 'A crew is in training. ' : ''}More crews: an Engineer Yard (Logistics).`; } }
-  $('w-title').textContent = `WEEK ${s.week}`; $('w-fill').style.width = (s.wt / C.WEEK * 100) + '%'; $('w-insp').style.left = (C.INSPECT_AT * 100) + '%';
-  const left = Math.ceil((C.WEEK - s.wt) / C.DAY);
-  $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${left} DAY${left === 1 ? '' : 'S'}`;
-  const hh = Math.floor(s.time.hour), mm = Math.floor((s.time.hour - hh) * 60 / 10) * 10;
-  $('ck-day').textContent = `DAY ${s.time.day}`; $('ck-time').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  $('w-title').textContent = `DAY ${s.week}`; $('w-fill').style.width = (s.wt / C.WEEK * 100) + '%'; $('w-insp').style.left = (C.INSPECT_AT * 100) + '%';
+  $('w-rank').textContent = `${['1ST', '2ND', '3RD', '4TH'][s.rank]} OF 4 · ALLOCATION IN ${dur(C.WEEK - s.wt).toUpperCase()}`;
+  const hh = Math.floor(s.time.hour), mm = Math.floor((s.time.hour - hh) * 60);
+  $('ck-day').textContent = `DAY ${s.time.cday}`; $('ck-time').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   $('ck-phase').textContent = { night: 'LIGHTS OUT', firstcall: 'FIRST CALL', reveille: 'REVEILLE', pt: 'PT', chow: 'CHOW', mess: 'MESS', work: 'DUTY', retreat: 'RETREAT', evening: 'FREE TIME' }[s.time.phase];
   // standings, with each Ministry's market index beside the bars
   const rows = s.table();
@@ -834,7 +839,7 @@ function hud() {
   $('md-eco').textContent = s.market.offers.length ? `${s.market.offers.length} offer${s.market.offers.length > 1 ? 's' : ''}` : `SUP ${(s.price('sup') * 10).toFixed(1)}`;
   $('md-def').textContent = o ? `${o.sent}/${o.n} shipped` : `${s.patrols.length} patrols out`;
   $('md-pro').textContent = low.length ? `${low.map(g => GOODS[g].short).join(', ')} low` : s.hunger > 0.15 ? 'votes hungry' : 'supplies OK';
-  $('md-tru').textContent = s.inspected ? 'inspected' : `inspects in ${days(C.WEEK * C.INSPECT_AT - s.wt)}`.replace(' days', 'd').replace(' hours', 'h');
+  $('md-tru').textContent = s.inspected ? 'inspected' : `inspects in ${days(C.WEEK * C.INSPECT_AT - s.wt)}`.replace(' days', 'd').replace(' day', 'd').replace(' min', 'm');
   $('md-st').textContent = `${['1st', '2nd', '3rd', '4th'][s.rank]} of 4`;
   { const files = Math.min(s.reviewsLeft(), s.toReview().length), calls = s.calls.filter(c => !c.acc).length; $('md-led').textContent = calls ? `${calls} call${calls > 1 ? 's' : ''}` : s.desk.length ? `${s.desk.length} request${s.desk.length > 1 ? 's' : ''}` : files ? `${files} file${files > 1 ? 's' : ''}` : 'clear'; }
   $('md-sci').textContent = s.tech.cur ? `${Math.floor(s.tech.pts / TECH[s.tech.cur].hrs * 100)}%` : s.has('lab') ? 'idle' : `${s.tech.done.length}/${Object.keys(TECH).length}`;
@@ -870,7 +875,7 @@ let deskT = 0;
 function callPop(id) {
   if (!$('mins').classList.contains('hidden')) return;   // a window is open: the task board has it
   const c = sim.calls.find(c => c.id === id); if (!c) return; const q = CALLS[c.k];
-  $('deskpop').innerHTML = `<i>CALL FROM THE MINISTRY · DUE DAY ${c.due}</i><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><p>${esc(q.text)}</p><button class="btn" data-open-led="1" type="button">OPEN THE DESK</button><button class="btn" data-later="1" type="button">LATER</button>`;
+  $('deskpop').innerHTML = `<i>CALL FROM THE MINISTRY · DUE DAY ${calDay(c.due)}</i><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><p>${esc(q.text)}</p><button class="btn" data-open-led="1" type="button">OPEN THE DESK</button><button class="btn" data-later="1" type="button">LATER</button>`;
   $('deskpop').classList.remove('hidden'); deskT = 16; audio.play('ping', q.m);
 }
 function deskPop(id) {
@@ -908,12 +913,12 @@ function drawOpMap(cv) {
 function reportPop(id) {
   if (!$('mins').classList.contains('hidden')) return;
   const r = sim.reports?.find(r => r.id === id); if (!r) return;
-  $('deskpop').innerHTML = `<i>AFTER-ACTION REPORT · DAY ${r.day}</i><b>${esc(r.op)}: <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><p>${r.lines.map(esc).join(' ')}</p><button class="btn" data-open-def="${r.id}" type="button">OPEN IN DEFENCE</button><button class="btn" data-later="1" type="button">FILE IT</button>`;
+  $('deskpop').innerHTML = `<i>AFTER-ACTION REPORT · DAY ${calDay(r.day)}</i><b>${esc(r.op)}: <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><p>${r.lines.map(esc).join(' ')}</p><button class="btn" data-open-def="${r.id}" type="button">OPEN IN DEFENCE</button><button class="btn" data-later="1" type="button">FILE IT</button>`;
   $('deskpop').classList.remove('hidden'); deskT = 18;
 }
 // ---------------------------------------------------------------- the economy window: budget, market, commitments, loans, production
 let ecoTab = 'budget', tradeQ = 50;
-const CAT = { industry: 'Industry', calls: 'Calls answered', alloc: 'Weekly allocation', deploy: 'Troopers shipped', ops: 'Operations and patrols', roster: 'Roster review', sales: 'Franchise sales', ledger: 'Desk decisions',
+const CAT = { industry: 'Industry', calls: 'Calls answered', alloc: 'Daily allocation', deploy: 'Troopers shipped', ops: 'Operations and patrols', roster: 'Roster review', sales: 'Franchise sales', ledger: 'Desk decisions',
   deliveries: 'Morning deliveries', upkeep: 'Upkeep', build: 'Building and roads', refund: 'Demolition refunds', repair: 'Repairs', research: 'Research', wages: 'Citizen wages', loans: 'Loans and repayments', interest: 'Overdraft fees',
   bought: 'Bought', sold: 'Sold', fees: 'Fees', salvage: 'Salvage and clearing', market: 'Market trades', trade: 'Trades with other bases', commit: 'Ministry commitments' };
 // a 14-day line, for the tickers
@@ -932,19 +937,19 @@ function budgetBlock(o, net, label) {
   const row = (k, i, cols) => `<tr><td><i class="sw" style="background:${cols[i % 5]}"></i>${CAT[k] || k}</td><td class="${o[k] < 0 ? 'down' : 'up'}">${o[k] > 0 ? '+' : ''}${fmt(o[k])}</td></tr>`;
   return `<div class="budget"><div class="bchart">${bar(inc, G)}${bar(out, R)}</div><table class="acct"><tr><td><b>${label} IN</b></td><td class="up"><b>+${fmt(tin)}</b></td></tr>${inc.map((k, i) => row(k, i, G)).join('')}
     <tr><td><b>${label} OUT</b></td><td class="down"><b>−${fmt(tout)}</b></td></tr>${out.map((k, i) => row(k, i, R)).join('')}
-    <tr class="net"><td><b>NET A DAY</b></td><td class="${net < 0 ? 'down' : 'up'}"><b>${net >= 0 ? '+' : ''}${fmt(net)}</b></td></tr></table></div>`;
+    <tr class="net"><td><b>NET A WATCH</b></td><td class="${net < 0 ? 'down' : 'up'}"><b>${net >= 0 ? '+' : ''}${fmt(net)}</b></td></tr></table></div>`;
 }
 function renderEco(s) {
   const tabs = [['budget', 'BUDGET'], ['market', 'MARKET'], ['commit', 'COMMITMENTS'], ['loans', 'LOANS'], ['prod', 'PRODUCTION']];
   let h = `<div class="subtabs">${tabs.map(([k, n]) => `<button class="btn ${ecoTab === k ? 'on' : ''}" data-et="${k}" type="button">${n}</button>`).join('')}</div>`;
   if (ecoTab === 'budget') {
     const r = s.rates();
-    h += `<p class="fine left">Per day, averaged over the last ${r.days} day${r.days > 1 ? 's' : ''}. Weekly items (the allocation, loan payments) are spread across the week.</p>`;
+    h += `<p class="fine left">Per watch, averaged over the last ${r.days} watch${r.days > 1 ? 'es' : ''}. Daily items (the allocation, loan payments) are spread across the day's watches.</p>`;
     h += `<h3>SUPPLIES</h3>` + budgetBlock(r.sup, r.supNet, 'SUPPLIES') + `<h3>CREDITS</h3>` + budgetBlock(r.cr, r.crNet, 'CREDITS');
-    h += `<p class="fine left"><b>More supplies:</b> rank higher for a bigger allocation (${fmt(s.lastAlloc || 0)} last week), ship trained troopers (${C.DEPLOY_PAY} each), win operations, grade files, mine ore, or buy on the market. <b>More credits:</b> ship troopers (${C.DEPLOY_CR} each, half again for grade A), run operations, open franchises, and sell surplus on the market. <b>Spending less:</b> the MONEY info view (by the minimap) colours every building by what it earns or costs.</p>`;
+    h += `<p class="fine left"><b>More supplies:</b> rank higher for a bigger allocation (${fmt(s.lastAlloc || 0)} yesterday), ship trained troopers (${C.DEPLOY_PAY} each), win operations, grade files, mine ore, or buy on the market. <b>More credits:</b> ship troopers (${C.DEPLOY_CR} each, half again for grade A), run operations, open franchises, and sell surplus on the market. <b>Spending less:</b> the MONEY info view (by the minimap) colours every building by what it earns or costs.</p>`;
   } else if (ecoTab === 'market') {
     const M = s.market;
-    h += `<p class="fine left">Every base on ${esc(s.planet)} trades through this market. Prices move each day with the three Ministry indices (how hard every base is chasing each Ministry's favour) and with what you buy and sell: the more you trade at once, the more the price moves against you. Buy at the higher price, sell at the lower.</p>`;
+    h += `<p class="fine left">Every base on ${esc(s.planet)} trades through this market. Prices move each watch with the three Ministry indices (how hard every base is chasing each Ministry's favour) and with what you buy and sell: the more you trade at once, the more the price moves against you. Buy at the higher price, sell at the lower.</p>`;
     h += `<div class="tickers">${MKEYS.map(m => { const I = M.idx[m]; return `<div class="tk"><b class="c-${m}">${{ def: 'DEFENCE', pro: 'EXPANSION', tru: 'TRUTH' }[m]} INDEX</b><span class="v">${Math.round(I.v)} ${chg(I.hist)}</span>${spark(I.hist, `var(--${m})`)}<span class="fine">${{ def: 'moves ammo and rations', pro: 'moves supplies and fuel', tru: 'moves the price of Truth favour' }[m]}</span></div>`; }).join('')}</div>`;
     if (M.shocks.length) h += `<p class="warn">${M.shocks.map(x => `Until day ${x.until}: ${esc(x.text)}`).join('<br>')}</p>`;
     h += `<div class="qsel"><span>TRADE IN LOTS OF</span>${[10, 50, 100, 250].map(q => `<button class="btn ${tradeQ === q ? 'on' : ''}" data-tq="${q}" type="button">${q}</button>`).join('')}</div>`;
@@ -954,37 +959,37 @@ function renderEco(s) {
         <td class="tbtn"><button class="btn" data-trade="${g}:1" ${buy.ok ? '' : 'disabled'} title="${esc(buy.ok ? `Buy ${tradeQ} for ${fmt(buy.cr)} CR` : buy.why)}" type="button">BUY −${fmt(s.quote(g, tradeQ, true))}</button><button class="btn" data-trade="${g}:0" ${sell.ok ? '' : 'disabled'} title="${esc(sell.ok ? `Sell ${tradeQ} for ${fmt(sell.cr)} CR` : sell.why)}" type="button">SELL +${fmt(s.quote(g, tradeQ, false))}</button></td></tr>`;
     }).join('') + `</table>`;
     h += `<h3>OFFERS FROM OTHER BASES</h3>`;
-    if (!M.offers.length) h += `<p class="fine left">None right now. Rival bases post offers at 10:00 and 15:00: what they are short of, they pay over the market for; what they have too much of, they sell under it. Offers last two days.</p>`;
+    if (!M.offers.length) h += `<p class="fine left">None right now. Rival bases post offers at 10:00 and 15:00: what they are short of, they pay over the market for; what they have too much of, they sell under it. Offers last two watches.</p>`;
     for (const o of M.offers) { const d = MARKET.goods[o.g], ok = s.canTakeOffer(o), mk = (o.buys ? s.sellAt(o.g) : s.buyAt(o.g)) * 10;
-      h += `<div class="card2"><div class="l"><b><img src="${logoImg(o.logo)}" width="18" height="18" alt=""> ${esc(o.from)} ${o.buys ? 'WANTS' : 'SELLS'} ${o.n} ${d.name.toUpperCase()}</b><span>${(o.p * 10).toFixed(1)} CR per 10 (the market ${o.buys ? 'pays' : 'charges'} ${mk.toFixed(1)}) · ${fmt(o.p * o.n)} CR in all · until day ${o.until}${ok.ok ? '' : ` · <span class="warn">${esc(ok.why)}</span>`}</span></div><button class="btn" data-offer="${o.id}" ${ok.ok ? '' : 'disabled'} type="button">${o.buys ? 'SELL TO THEM' : 'BUY FROM THEM'}</button></div>`; }
+      h += `<div class="card2"><div class="l"><b><img src="${logoImg(o.logo)}" width="18" height="18" alt=""> ${esc(o.from)} ${o.buys ? 'WANTS' : 'SELLS'} ${o.n} ${d.name.toUpperCase()}</b><span>${(o.p * 10).toFixed(1)} CR per 10 (the market ${o.buys ? 'pays' : 'charges'} ${mk.toFixed(1)}) · ${fmt(o.p * o.n)} CR in all · until day ${calDay(o.until)}${ok.ok ? '' : ` · <span class="warn">${esc(ok.why)}</span>`}</span></div><button class="btn" data-offer="${o.id}" ${ok.ok ? '' : 'disabled'} type="button">${o.buys ? 'SELL TO THEM' : 'BUY FROM THEM'}</button></div>`; }
   } else if (ecoTab === 'commit') {
-    h += `<p class="fine left">What the base gives each Ministry every day, paid at midnight from your stores. Each level buys standing at today's index: when a Ministry's index is low its favour is cheap; when every base is chasing it, dear. No base can afford ALL OUT on everything: pick what to chase, and trade for what you are short of.</p>`;
+    h += `<p class="fine left">What the base gives each Ministry every watch, paid as the watch changes from your stores. Each level buys standing at today's index: when a Ministry's index is low its favour is cheap; when every base is chasing it, dear. No base can afford ALL OUT on everything: pick what to chase, and trade for what you are short of.</p>`;
     for (const m of MKEYS) {
       const lvl = s.commit[m] || 0, I = s.market.idx[m], cost = s.commitCost(m, lvl), gain = s.commitGain(m, lvl), paid = s.commitLast[m] ?? 1;
       const cval = Object.entries(cost).reduce((a, [g, n]) => a + (g === 'cr' ? n : n * s.price(g)), 0);
       h += `<div class="cmt"><div class="cmt-h"><div class="big c-${m}">${Math.round(s.stand[m])}</div><div><b class="c-${m}">${COMMIT[m].ministry.toUpperCase()}</b><span>Index ${Math.round(I.v)} ${chg(I.hist)} · ${esc(COMMIT[m].perk)}</span></div></div>
         <div class="lv">${COMMIT.levels.map((n, i) => `<button class="btn ${i === lvl ? 'on' : ''}" data-commit="${m}:${i}" type="button">${n}</button>`).join('')}</div>
-        <div class="kv"><span>COSTS A DAY</span><b>${lvl ? Object.entries(cost).map(([g, n]) => `${fmt(n)} ${g === 'cr' ? 'CR' : g === 'sup' ? 'SUP' : MARKET.goods[g].short}`).join(' + ') + ` <span class="fine">(about ${fmt(cval)} CR at market)</span>` : 'nothing'}</b></div>
-        <div class="kv"><span>BUYS A DAY</span><b class="c-${m}">${lvl ? `+${gain.toFixed(1)} standing, less near the top` : 'no standing; it drifts back toward ' + C.STAND.rest}</b></div>
+        <div class="kv"><span>COSTS A WATCH</span><b>${lvl ? Object.entries(cost).map(([g, n]) => `${fmt(n)} ${g === 'cr' ? 'CR' : g === 'sup' ? 'SUP' : MARKET.goods[g].short}`).join(' + ') + ` <span class="fine">(about ${fmt(cval)} CR at market)</span>` : 'nothing'}</b></div>
+        <div class="kv"><span>BUYS A WATCH</span><b class="c-${m}">${lvl ? `+${gain.toFixed(1)} standing, less near the top` : 'no standing; it drifts back toward ' + C.STAND.rest}</b></div>
         ${lvl && paid < 1 ? `<p class="${paid < 0.6 ? 'down' : 'warn'}">Yesterday only ${Math.round(paid * 100)}% was paid: short of ${Object.keys(cost).filter(g => (g === 'cr' ? s.credits + s.OD : s.holding(g)) < cost[g]).map(g => CAT[g] || (g === 'cr' ? 'credits' : g === 'sup' ? 'supplies' : MARKET.goods[g].name.toLowerCase())).join(', ') || 'stock'}.</p>` : ''}</div>`;
     }
     const tot = {}; for (const m of MKEYS) for (const [g, n] of Object.entries(s.commitCost(m))) tot[g] = (tot[g] || 0) + n;
-    h += `<div class="kv"><span>ALL COMMITMENTS, A DAY</span><b>${Object.entries(tot).filter(([, n]) => n).map(([g, n]) => `${fmt(n)} ${g === 'cr' ? 'CR' : g === 'sup' ? 'SUP' : MARKET.goods[g].short}`).join(' + ') || 'nothing'}</b></div>`;
+    h += `<div class="kv"><span>ALL COMMITMENTS, A WATCH</span><b>${Object.entries(tot).filter(([, n]) => n).map(([g, n]) => `${fmt(n)} ${g === 'cr' ? 'CR' : g === 'sup' ? 'SUP' : MARKET.goods[g].short}`).join(' + ') || 'nothing'}</b></div>`;
   } else if (ecoTab === 'loans') {
     const debt = s.debt();
     h += `<h3>DEBT</h3><div class="kv"><span>OWED TO THE BUREAU</span><b class="${debt > 0 ? 'warn' : 'up'}">${fmt(debt)} CR</b></div>`;
     s.loans.forEach((l, i) => { const L = LOANS[l.k];
-      h += `<div class="card2"><div class="l"><b>${L.name.toUpperCase()}</b><span>${fmt(l.bal)} CR owed · ${Math.round((l.k === 'charter' ? s.D.rate : L.rate) * 1000) / 10}% a week · at least ${L.pay} CR taken each week${l.int ? ` · ${fmt(l.int)} CR interest so far` : ''}</span></div><div style="text-align:right"><button class="btn" data-repay="${i}:100" ${s.credits >= 1 ? '' : 'disabled'} type="button">REPAY 100</button> <button class="btn" data-repay="${i}:${Math.ceil(l.bal)}" ${s.credits >= l.bal ? '' : 'disabled'} type="button">REPAY ALL</button></div></div>`; });
-    if (s.credits < 0) h += `<p class="${s.credits < -s.OD ? 'down' : 'warn'}">Overdrawn by ${fmt(-s.credits)} CR: a ${Math.round(C.ODFEE * 100)}% fee each week. Past ${fmt(s.OD)} CR the staff go unpaid, franchises stop trading and morale falls.</p>`;
-    h += `<p class="fine left">You landed on the Founding Charter: the Bureau paid for your start and takes its money back a little every week. Credits may run ${fmt(s.OD)} CR into overdraft. Repaying a loan in full earns Expansion standing.</p>`;
-    for (const k of ['dev', 'quick']) { const L = LOANS[k]; h += `<div class="card2"><div class="l"><b>${L.name.toUpperCase()}: ${fmt(L.amt)} CR</b><span>${esc(L.desc)} ${Math.round(L.rate * 1000) / 10}% a week, at least ${L.pay} CR a week.</span></div><button class="btn" data-borrow="${k}" ${s.canBorrow(k) ? '' : 'disabled'} type="button">BORROW</button></div>`; }
+      h += `<div class="card2"><div class="l"><b>${L.name.toUpperCase()}</b><span>${fmt(l.bal)} CR owed · ${Math.round((l.k === 'charter' ? s.D.rate : L.rate) * 1000) / 10}% a day · at least ${L.pay} CR taken each day${l.int ? ` · ${fmt(l.int)} CR interest so far` : ''}</span></div><div style="text-align:right"><button class="btn" data-repay="${i}:100" ${s.credits >= 1 ? '' : 'disabled'} type="button">REPAY 100</button> <button class="btn" data-repay="${i}:${Math.ceil(l.bal)}" ${s.credits >= l.bal ? '' : 'disabled'} type="button">REPAY ALL</button></div></div>`; });
+    if (s.credits < 0) h += `<p class="${s.credits < -s.OD ? 'down' : 'warn'}">Overdrawn by ${fmt(-s.credits)} CR: a ${Math.round(C.ODFEE * 100)}% fee each day. Past ${fmt(s.OD)} CR the staff go unpaid, franchises stop trading and morale falls.</p>`;
+    h += `<p class="fine left">You landed on the Founding Charter: the Bureau paid for your start and takes its money back a little every day. Credits may run ${fmt(s.OD)} CR into overdraft. Repaying a loan in full earns Expansion standing.</p>`;
+    for (const k of ['dev', 'quick']) { const L = LOANS[k]; h += `<div class="card2"><div class="l"><b>${L.name.toUpperCase()}: ${fmt(L.amt)} CR</b><span>${esc(L.desc)} ${Math.round(L.rate * 1000) / 10}% a day, at least ${L.pay} CR a day.</span></div><button class="btn" data-borrow="${k}" ${s.canBorrow(k) ? '' : 'disabled'} type="button">BORROW</button></div>`; }
   } else if (ecoTab === 'prod') {
     const by = {}; for (const b of s.b) { if (B[b.type].fixed && b.type !== 'hq') continue; const k = b.type; by[k] ||= { n: 0, v: 0, up: 0 }; by[k].n++; by[k].v += moneyOf(b); by[k].up += (B[k].up || 0) / 7; }
     const list = Object.entries(by).sort((a, b) => b[1].v - a[1].v);
-    h += `<p class="fine left">Each kind of building on the base and what it earns or costs a day, counted in supplies (a credit at the market price of supplies). Training and housing show as costs: what they bring in arrives through the pad, as troopers shipped.</p>`;
+    h += `<p class="fine left">Each kind of building on the base and what it earns or costs a watch, counted in supplies (a credit at the market price of supplies). Training and housing show as costs: what they bring in arrives through the pad, as troopers shipped.</p>`;
     h += `<table class="acct"><tr><td><b>BUILDING</b></td><td><b>HOW MANY</b></td><td><b>UPKEEP /D</b></td><td><b>NET /D</b></td></tr>` + list.map(([k, o]) => `<tr><td><i class="sw" style="background:${ROLE_COL[roleOf(k)]}"></i>${B[k].name}</td><td>${o.n}</td><td>${fmt(o.up)}</td><td class="${o.v < 0 ? 'down' : 'up'}">${o.v >= 0 ? '+' : ''}${fmt(o.v)}</td></tr>`).join('') + `</table>`;
     const u = s.usage();
-    h += `<h3>GOODS</h3><table class="st"><tr><th></th><th>GOOD</th><th>IN STORE</th><th>ON THE PAD</th><th>AT USE</th><th>USED A DAY</th></tr>`
+    h += `<h3>GOODS</h3><table class="st"><tr><th></th><th>GOOD</th><th>IN STORE</th><th>ON THE PAD</th><th>AT USE</th><th>USED A WATCH</th></tr>`
       + GKEYS.map(g => `<tr><td></td><td>${GOODS[g].name}</td><td>${Math.floor(s.stored(g))} / ${s.storage(g)}</td><td>${Math.floor(s.onPad(g))}</td><td>${Math.floor(s.inUse(g))}</td><td>${Math.round(u[g])}</td></tr>`).join('') + `</table>`;
   }
   return h;
@@ -994,14 +999,14 @@ function renderMins(force) {
   const tabs = [['eco', 'ECONOMY'], ['led', 'DESK'], ['def', 'DEFENCE'], ['pro', 'EXPANSION'], ['tru', 'TRUTH'], ['sci', 'SCIENCE'], ['st', 'STANDINGS']].map(([k, n]) => `<button class="btn ${minTab === k ? 'on' : ''}" data-t="${k}" type="button">${n}</button>`).join('');
   if ($('mi-tabs')._html !== tabs) $('mi-tabs').innerHTML = $('mi-tabs')._html = tabs;
   let h = '';
-  const head = m => `<div class="mi-head"><div class="big c-${m}">${Math.round(s.stand[m])}</div><div><b class="c-${m}">${MIN[m].name.toUpperCase()}</b><p>${MIN[m].wants} Standing drifts back toward ${C.STAND.rest} every week.</p></div></div>`;
+  const head = m => `<div class="mi-head"><div class="big c-${m}">${Math.round(s.stand[m])}</div><div><b class="c-${m}">${MIN[m].name.toUpperCase()}</b><p>${MIN[m].wants} Standing drifts back toward ${C.STAND.rest} every day.</p></div></div>`;
   if (minTab === 'eco') h += renderEco(s);
   else if (minTab === 'def') {
     const home = s.troops.filter(t => t.state !== 'patrol'), ready = home.filter(t => t.train >= 100).length, rec = s.troops.filter(t => t.train < 100), training = rec.filter(t => t.at).length;
     h += head('def') + `<h3>DEPLOYMENT ORDERS</h3>`;
-    if (!s.orders.length) h += `<p>No orders open. The next comes with the week.</p>`;
-    for (const o of s.orders) h += `<div class="card2"><div class="l"><b>${o.n} TRAINED TROOPERS TO THE FRONT</b><span>${o.sent} shipped · due day ${o.due} (${Math.max(0, o.due - s.time.day)} days left) · +${C.DEPLOY_PAY} SUP each, +${o.def} DEF when complete</span><div class="prog"><i style="width:${o.sent / o.n * 100}%"></i></div></div></div>`;
-    h += `<p>Transports leave from the landing pad at ${C.DEPLOY_AT}:00 every day, ${s.padSeats() * s.b.filter(b => b.done && B[b.type].pad).length} seats a day across your pads. They take trained troopers who aren't crewing a building; the Patrol Office keeps its own squads back.</p>`;
+    if (!s.orders.length) h += `<p>No orders open. The next comes with the day.</p>`;
+    for (const o of s.orders) h += `<div class="card2"><div class="l"><b>${o.n} TRAINED TROOPERS TO THE FRONT</b><span>${o.sent} shipped · due day ${calDay(o.due)} (${days(Math.max(0, o.due - s.time.day) * C.DAY)} left) · +${C.DEPLOY_PAY} SUP each, +${o.def} DEF when complete</span><div class="prog"><i style="width:${o.sent / o.n * 100}%"></i></div></div></div>`;
+    h += `<p>Transports leave from the landing pad at ${C.DEPLOY_AT}:00 every watch, ${s.padSeats() * s.b.filter(b => b.done && B[b.type].pad).length} seats a watch across your pads. They take trained troopers who aren't crewing a building; the Patrol Office keeps its own squads back.</p>`;
     { const w = s.troops.filter(t => t.hurt > 0).length; if (w || s.has('medbay')) h += `<div class="kv"><span>WOUNDED</span><b class="${w > s.wardBeds ? 'warn' : ''}">${w}${s.wardBeds ? ` · ${s.wardBeds} ward beds` : ' · no Medical Bay'}</b></div>`; }
     h += `<h3>TRAINING</h3><div class="kv"><span>READY TO SHIP</span><b>${ready}</b></div><div class="kv"><span>RECRUITS</span><b>${rec.length}</b></div><div class="kv"><span>IN TRAINING RIGHT NOW</span><b>${training}</b></div>`;
     const places = s.b.filter(b => b.done && B[b.type].slots);
@@ -1011,7 +1016,7 @@ function renderMins(force) {
     { const f = s.fort || s.fortify(), pc = v => Math.round(v * 100) + '%';
       h += `<h3>BASE DEFENCE</h3><div class="kv"><span>DEFENSIBILITY</span><b class="${f.score >= 60 ? 'up' : f.score < 40 ? 'down' : 'warn'}">${f.score} / 100</b></div>`
         + `<div class="kv"><span>WALL WATCHED</span><b>${pc(f.cover)}</b></div><div class="kv"><span>WALL ARMED</span><b>${pc(f.armed || 0)}</b></div><div class="kv"><span>GATES MANNED</span><b>${f.manned} of ${f.gates}</b></div><div class="kv"><span>HQ AND FUEL FROM THE WALL</span><b>${pc(f.depth)}</b></div>`
-        + `<p class="fine left">${f.closed ? '' : '<span class="down">No closed wall yet. </span>'}Reviewed every week: above 45 earns Defence standing, below loses it. Lookout Towers watch the wall, every gate takes one trained trooper, and more than two gates is asking for trouble.</p>`; }
+        + `<p class="fine left">${f.closed ? '' : '<span class="down">No closed wall yet. </span>'}Reviewed every day: above 45 earns Defence standing, below loses it. Lookout Towers watch the wall, every gate takes one trained trooper, and more than two gates is asking for trouble.</p>`; }
     h += `<h3>STANDING PATROLS</h3>` + (offices.length ? offices.map(b => `<div class="kv"><span>Patrol Office</span><b>${s.patrols.filter(p => p.office === b.id).length} of ${b.squads} squads out · ammo ${Math.floor(b.stock.ammo)}</b></div>`).join('') : `<p>Build a Patrol Office and it sends squads of three trained troopers out every morning at ${C.PATROL_AT}:00, on its own.</p>`);
     h += `<h3>SPECIAL OPERATIONS (OPTIONAL)</h3><canvas id="opmap" width="560" height="240" title="Operations map: the base, the operations on offer and the squads in the field"></canvas>`;
     for (const [oi, o] of s.offers.entries()) {
@@ -1028,10 +1033,10 @@ function renderMins(force) {
       h += `<h3>AFTER-ACTION REPORTS</h3>`;
       for (const r of s.reports.slice(-8).reverse()) {
         const open = repOpen === r.id;
-        h += `<div class="card2 rep ${r.win ? '' : 'lost'}" data-rep="${r.id}"><div class="l"><b>${esc(r.op)} <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><span>Day ${r.day} · ${esc(r.kind)}${r.place ? ` · the ${esc(r.place)}, ${r.km} km ${r.dir}` : ''} · ${r.n} troopers under ${esc(r.leader || '—')}${r.veh.length ? ' · ' + r.veh.join(', ') : ''} · ${r.def >= 0 ? '+' : ''}${r.def} DEF${r.sup ? `, +${r.sup} SUP` : ''}</span>${open ? `<p class="rep-t">${r.lines.map(esc).join(' ')}</p>` : ''}</div><div style="text-align:right"><button class="btn" type="button">${open ? 'CLOSE' : 'READ'}</button></div></div>`;
+        h += `<div class="card2 rep ${r.win ? '' : 'lost'}" data-rep="${r.id}"><div class="l"><b>${esc(r.op)} <span class="${r.win ? 'up' : 'down'}">${r.win ? 'SUCCESS' : 'FAILED'}</span></b><span>Day ${calDay(r.day)} · ${esc(r.kind)}${r.place ? ` · the ${esc(r.place)}, ${r.km} km ${r.dir}` : ''} · ${r.n} troopers under ${esc(r.leader || '—')}${r.veh.length ? ' · ' + r.veh.join(', ') : ''} · ${r.def >= 0 ? '+' : ''}${r.def} DEF${r.sup ? `, +${r.sup} SUP` : ''}</span>${open ? `<p class="rep-t">${r.lines.map(esc).join(' ')}</p>` : ''}</div><div style="text-align:right"><button class="btn" type="button">${open ? 'CLOSE' : 'READ'}</button></div></div>`;
       }
     }
-    if (s.honours.length) h += `<h3>MEDALS OF VALOUR</h3><div class="list2">${s.honours.slice(-12).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, week ${x.week}</div>`).join('')}</div>`;
+    if (s.honours.length) h += `<h3>MEDALS OF VALOUR</h3><div class="list2">${s.honours.slice(-12).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, day ${x.week}</div>`).join('')}</div>`;
     if (s.fallen.length) h += `<h3>THE FALLEN</h3><div class="list2">${s.fallen.slice(-16).reverse().map(x => `<div>${x.rank} ${esc(x.name)}, ${esc(x.op)}</div>`).join('')}</div>`;
   } else if (minTab === 'pro') {
     { const st = C.STAGES[s.stage || 0], nx = s.nextStage(), ck = s.stageCheck();
@@ -1040,32 +1045,32 @@ function renderMins(force) {
         + `<button class="btn ${ck.every(c => c.ok) ? 'primary' : ''}" data-promote="1" ${ck.every(c => c.ok) ? '' : 'disabled'} type="button">APPLY FOR A ${nx.name.toUpperCase()} CHARTER</button>`;
       else h += `<p class="fine left">The largest charter the Bureau grants. Any parcel on the section can be bought, so long as it touches yours.</p>`; }
     const u = s.usage(), home = s.troops.filter(t => t.state !== 'patrol').length;
-    h += head('pro') + `<h3>SUPPLY LINES</h3><table class="st"><tr><th></th><th>GOOD</th><th>IN STORE</th><th>ON THE PAD</th><th>AT USE</th><th>USED A DAY</th><th>COST A DAY</th></tr>`
+    h += head('pro') + `<h3>SUPPLY LINES</h3><table class="st"><tr><th></th><th>GOOD</th><th>IN STORE</th><th>ON THE PAD</th><th>AT USE</th><th>USED A WATCH</th><th>COST A WATCH</th></tr>`
       + GKEYS.map(g => `<tr><td></td><td>${GOODS[g].name}</td><td>${Math.floor(s.stored(g))} / ${s.storage(g)}</td><td>${Math.floor(s.onPad(g))}</td><td>${Math.floor(s.inUse(g))}</td><td>${Math.round(u[g])}</td><td>${Math.round(u[g] * GOODS[g].cost)}</td></tr>`).join('') + `</table>`;
-    if (s.bill) h += `<p>Last supply pelican, day ${s.bill.day}: ${GKEYS.map(g => `${s.bill.order[g]} ${GOODS[g].name.toLowerCase()}`).join(', ')}. Billed ${s.bill.cost} supplies. It lands at 0${C.SUPPLY_AT}:00 and brings what fills your storage, up to ${s.padLoad()} per pad.</p>`;
+    if (s.bill) h += `<p>Last supply pelican, day ${calDay(s.bill.day)}: ${GKEYS.map(g => `${s.bill.order[g]} ${GOODS[g].name.toLowerCase()}`).join(', ')}. Billed ${s.bill.cost} supplies. It lands at 0${C.SUPPLY_AT}:00 and brings what fills your storage, up to ${s.padLoad()} per pad.</p>`;
     const lifts = s.veh.filter(v => v.kind === 'lift'), trucks = s.veh.filter(v => v.kind === 'truck');
     h += `<h3>VEHICLES</h3><div class="kv"><span>FORKLIFTS</span><b>${lifts.filter(v => v.job).length} of ${lifts.length} on a run</b></div><div class="kv"><span>SUPPLY TRUCKS</span><b>${trucks.filter(v => v.job).length} of ${trucks.length} on a run</b></div>`;
     h += `<p class="fine left">Vehicles carry goods from the pad to storage, and from storage to the buildings that use them, without being told. They go 1.6 times as fast on dirt road and 2.4 times on paved. A Motor Pool adds two trucks.</p>`;
     h += `<h3>FOOD</h3><div class="kv"><span>SEATS AT MEALS</span><b class="${s.seats < home ? 'down' : ''}">${s.seats} for ${home} votes</b></div><div class="kv"><span>HUNGER</span><b class="${s.hunger > 0.15 ? 'down' : ''}">${Math.round(s.hunger * 100)}%</b></div>`;
-    if (s.audit) { const A = s.audit; h += `<h3>LAST AUDIT, WEEK ${A.week}: ${A.score}/100 (${A.delta >= 0 ? '+' : ''}${A.delta})</h3><div class="kv"><span>SUPPLY LINES</span><b>${A.lines}</b></div><div class="kv"><span>VOTES FED</span><b>${A.food}</b></div><div class="kv"><span>HOUSING</span><b>${A.housing}</b></div><div class="kv"><span>GROWTH (${A.target} expected)</span><b>${A.growth}</b></div><ul class="notes">${A.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`; }
-    h += `<p class="fine left">The audit at the end of each week scores supply lines that never run dry, votes fed, a bunk for everyone, and a base that keeps growing.</p>`;
+    if (s.audit) { const A = s.audit; h += `<h3>LAST AUDIT, DAY ${A.week}: ${A.score}/100 (${A.delta >= 0 ? '+' : ''}${A.delta})</h3><div class="kv"><span>SUPPLY LINES</span><b>${A.lines}</b></div><div class="kv"><span>VOTES FED</span><b>${A.food}</b></div><div class="kv"><span>HOUSING</span><b>${A.housing}</b></div><div class="kv"><span>GROWTH (${A.target} expected)</span><b>${A.growth}</b></div><ul class="notes">${A.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`; }
+    h += `<p class="fine left">The audit at the end of each day scores supply lines that never run dry, votes fed, a bunk for everyone, and a base that keeps growing.</p>`;
   } else if (minTab === 'led') {
-    h += `<p>The Commander's desk. Everything here also shows on the task board on the left. Requests wait two days, then file themselves and people notice.</p>`;
+    h += `<p>The Commander's desk. Everything here also shows on the task board on the left. Requests wait two watches, then file themselves and people notice.</p>`;
     h += `<h3>CALLS FROM THE MINISTRIES</h3>`;
-    if (!s.calls.length) h += `<p class="fine left">No calls open. The Ministries ask for goods, supplies or credits every few days. Set them aside and they go on the day; ignore them and standing and morale suffer.</p>`;
+    if (!s.calls.length) h += `<p class="fine left">No calls open. The Ministries ask for goods, supplies or credits every few watches. Set them aside and they go on the day; ignore them and standing and morale suffer.</p>`;
     for (const c of s.calls) { const q = CALLS[c.k], have = s.have(c.g), short = have < c.n;
-      h += `<div class="req"><i>${{ def: 'MINISTRY OF DEFENCE', pro: 'MINISTRY OF EXPANSION', tru: 'MINISTRY OF TRUTH' }[q.m]} · DUE DAY ${c.due} (${days(Math.max(0, (c.due - s.time.day) * C.DAY))})</i><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><p>${esc(q.text)}</p>`
+      h += `<div class="req"><i>${{ def: 'MINISTRY OF DEFENCE', pro: 'MINISTRY OF EXPANSION', tru: 'MINISTRY OF TRUTH' }[q.m]} · DUE DAY ${calDay(c.due)} (${days(Math.max(0, (c.due - s.time.day) * C.DAY))})</i><b>${esc(q.title)}: ${fmt(c.n)} ${c.g.toUpperCase()}</b><p>${esc(q.text)}</p>`
         + `<p class="${short ? 'warn' : 'up'}">You have ${fmt(have)}.${short ? ' Not enough yet.' : ''}</p>`
-        + (c.acc ? `<p class="up">SET ASIDE: it goes on day ${c.due} if you still have it then.</p>` : `<button class="btn" data-call="${c.id}:1" type="button">SET IT ASIDE</button><button class="btn" data-call="${c.id}:0" type="button">DECLINE (−2)</button>`) + `</div>`; }
+        + (c.acc ? `<p class="up">SET ASIDE: it goes on day ${calDay(c.due)} if you still have it then.</p>` : `<button class="btn" data-call="${c.id}:1" type="button">SET IT ASIDE</button><button class="btn" data-call="${c.id}:0" type="button">DECLINE (−2)</button>`) + `</div>`; }
     h += `<h3>REQUESTS</h3>`;
     if (!s.desk.length) h += `<p class="fine left">Nothing waiting. Requests arrive during duty hours.</p>`;
     for (const r of s.desk) { const q = REQUESTS[r.k];
       h += `<div class="req"><i>${q.from.toUpperCase()} · ${days(Math.max(0, r.due - s.t))} LEFT</i><b>${esc(q.title)}</b><p>${esc(q.text.replaceAll('NAME', r.name))}</p>`
         + q.opts.map((o, i) => `<button class="btn" data-dec="${r.id}:${i}" ${s.canDecide(r, i) ? '' : 'disabled'} type="button" title="${esc(fxText(o.fx))}">${esc(o.label)}</button>`).join('') + `</div>`; }
     const files = s.toReview(), left = s.reviewsLeft();
-    h += `<h3>ROSTER REVIEW</h3><p class="fine left">Read the file, give the grade the trooper has earned. A fair grade pays 8 supplies and 3 credits; a wild one is audited. A: outstanding on the range, the course and in conduct. B: solid. C: gets by. D: back to training. Missions and medals count for a lot. The Ministry takes ${C.REVIEWS_DAY} files a day: ${left} left today.</p>`;
+    h += `<h3>ROSTER REVIEW</h3><p class="fine left">Read the file, give the grade the trooper has earned. A fair grade pays 8 supplies and 3 credits; a wild one is audited. A: outstanding on the range, the course and in conduct. B: solid. C: gets by. D: back to training. Missions and medals count for a lot. The Ministry takes ${C.REVIEWS_DAY} files a watch: ${left} left this watch.</p>`;
     if (lastGrade) h += `<p class="${lastGrade.off ? 'warn' : 'up'}">${esc(lastGrade.text)}</p>`;
-    if (!files.length) h += `<p class="fine left">No files waiting. A file comes up when a trooper finishes training, and again every ${C.REVIEW} days.</p>`;
+    if (!files.length) h += `<p class="fine left">No files waiting. A file comes up when a trooper finishes training, and again every ${C.REVIEW} watches.</p>`;
     for (const t of files.slice(0, left > 0 ? 3 : 0)) { const f = fileOf(t);
       h += `<div class="file"><div><b>${rankOf(t.missions)} ${esc(t.name)}</b>${t.grade ? ` <span>last graded ${t.grade}</span>` : ''}<br><span>RANGE</span> ${f.range} · <span>COURSE</span> ${f.course} · <span>MISSIONS</span> ${f.missions}${f.medals ? ` · <span>MEDALS</span> ${f.medals}` : ''}<br><span>CONDUCT</span> ${esc(f.conduct)}<br><span>NEXT OF KIN</span> <i>${esc(f.kin)}</i></div>`
         + `<div class="g">${GRADES.map(g => `<button class="btn" data-grade="${t.id}:${g}" type="button">${g}</button>`).join('')}</div></div>`; }
@@ -1085,17 +1090,17 @@ function renderMins(force) {
     h += `<h3>LANDING PADS</h3><div class="kv"><span>PADS</span><b>${s.count('pad')} of ${s.padCap()} allowed</b></div><p class="fine left">Your first pad needs no Comms Tower. Each tower lets you run ${s.hasTech('radio') ? 3 : 2} more. Every pad gets its own pelican: ${s.padLoad()} goods and ${s.padSeats()} seats a flight.</p>`;
   } else if (minTab === 'tru') {
     const ins = s.inspection, at = C.WEEK * C.INSPECT_AT - s.wt;
-    h += head('tru') + `<p>${s.inspected ? 'This week\'s inspection is done.' : `Next inspection in ${days(at)}.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
+    h += head('tru') + `<p>${s.inspected ? 'Today\'s inspection is done.' : `Next inspection in ${days(at)}.`} The score is 35% morale, 45% propaganda and 20% condition. Truth standing moves most of the way to the score.</p>`;
     h += `<h3>RIGHT NOW</h3><div class="kv"><span>MORALE</span><b>${Math.round(s.morale)}</b></div><div class="kv"><span>PROPAGANDA</span><b>${s.prop}</b></div><div class="kv"><span>CONDITION</span><b>${Math.round(s.avgCond)}</b></div><div class="kv"><span>LIKELY SCORE</span><b>${Math.round(0.35 * s.morale + 0.45 * s.prop + 0.2 * s.avgCond)}</b></div>`;
     h += `<h3>MORALE, PIECE BY PIECE</h3>` + Object.entries(s.mor).filter(([, v]) => v).map(([k, v]) => `<div class="kv"><span>${(MOR_NAMES[k] || k)}</span><b class="${v < 0 ? 'down' : 'up'}">${v > 0 ? '+' : ''}${v}</b></div>`).join('');
-    if (ins) h += `<h3>LAST REPORT, WEEK ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+    if (ins) h += `<h3>LAST REPORT, DAY ${ins.week}: ${ins.score}/100 (${ins.delta >= 0 ? '+' : ''}${ins.delta})</h3><ul class="notes">${ins.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
     h += `<p class="fine left">Every kind of propaganda counts for less the more of it you have, so a flag, banners, a loudspeaker, a statue and a pool beat ten banners.</p>`;
   } else {
     const rows = s.table();
     h += `<p>Every week Super Earth ranks the four loyal factions on ${s.planet} by their total standing and splits the allocation: 1st gets ${C.ALLOC.mult[0]}×, 4th gets ${C.ALLOC.mult[3]}×, and the morning recruits fill more of your empty bunks the higher you rank.</p>`;
     h += `<table class="st"><tr><th>#</th><th>FACTION</th><th class="c-def">DEF</th><th class="c-pro">EXP</th><th class="c-tru">TRU</th><th>TOTAL</th><th>SHARE</th></tr>`
       + rows.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td><img src="${logoImg(r.logo)}" width="20" height="20" alt="" style="vertical-align:middle;margin-right:6px">${esc(r.name)}</td>${MKEYS.map(m => `<td>${Math.round(r.stand[m])}</td>`).join('')}<td><b>${s.total(r.stand)}</b></td><td>${fmt(C.ALLOC.base * C.ALLOC.mult[i])}</td></tr>`).join('') + `</table>`;
-    if (s.ledger) { const L = s.ledger; h += `<h3>BUREAU LEDGER, WEEK ${L.week}</h3><div class="kv"><span>Allocation approved by the Federation</span><b>${fmt(L.gross)}</b></div><div class="kv"><span>Bureau handling fee</span><b class="down">-${fmt(L.fee)}</b></div><div class="kv"><span>Presidential consulting</span><b class="down">-${fmt(L.consult)}</b></div><div class="kv"><span>Delivered to ${esc(s.faction.base)}</span><b>${fmt(L.net)}</b></div><p class="fine left">The numbers add up. The Bureau has checked.</p>`; }
+    if (s.ledger) { const L = s.ledger; h += `<h3>BUREAU LEDGER, DAY ${L.week}</h3><div class="kv"><span>Allocation approved by the Federation</span><b>${fmt(L.gross)}</b></div><div class="kv"><span>Bureau handling fee</span><b class="down">-${fmt(L.fee)}</b></div><div class="kv"><span>Presidential consulting</span><b class="down">-${fmt(L.consult)}</b></div><div class="kv"><span>Delivered to ${esc(s.faction.base)}</span><b>${fmt(L.net)}</b></div><p class="fine left">The numbers add up. The Bureau has checked.</p>`; }
     h += `<p class="fine left">Last allocation: ${fmt(s.lastAlloc)} supplies. Troopers shipped ${s.stats.deployed}. Patrols won ${s.stats.patrolsWon}, lost ${s.stats.patrolsLost}. Inspections ${s.stats.inspections}.</p>`;
   }
   // only redraw what changed, and never under the pointer, so buttons stay put while you click them
@@ -1149,7 +1154,7 @@ $('ph-pause').onclick = () => { photoFrozen = !photoFrozen; setPause(photoFrozen
 $('ph-shot').onclick = () => {   // render a frame and save it straight away, before the buffer is cleared
   view.r.render(view.scene, view.cam);
   const a = document.createElement('a'); a.href = $('view').toDataURL('image/png');
-  a.download = `${(sim.faction.base || 'fob').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-day-${sim.time.day}.png`; a.click();
+  a.download = `${(sim.faction.base || 'fob').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-day-${sim.time.cday}.png`; a.click();
   audio.play('built');
 };
 
@@ -1178,7 +1183,7 @@ function debugPanel(dt) {
   fpsS = fpsS * 0.95 + (dt > 0 ? 1 / dt : 60) * 0.05; if ((dbgT -= dt) > 0) return; dbgT = 0.25;
   const r = view.r?.info?.render || {}, s = sim, t = view.target, mem = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB' : 'n/a';
   const rows = [['VERSION', VERSION], ['FPS', Math.round(fpsS)], ['FRAME (RENDER)', frameMs.toFixed(1) + ' ms'], ['SIM STEP', (stepMs || 0).toFixed(2) + ' ms'], ['DRAW CALLS', r.calls ?? 'n/a'], ['TRIANGLES', r.triangles != null ? (r.triangles / 1000).toFixed(0) + 'k' : 'n/a'], ['JS HEAP', mem]];
-  if (s) rows.push(['MAP', `${s.N}×${s.N} tiles · ${s.held?.() ?? 0} parcels`], ['BUILDINGS', s.b.length], ['TROOPS', s.troops.length], ['ACTORS', life?.actors?.size ?? 0], ['DAY · HOUR', `${s.time?.day ?? '-'} · ${(s.time?.hour ?? 0).toFixed(2)}`], ['SPEED', paused ? 'paused' : gameSpeed() + '×'], ['CAMERA', `${Math.round(t.x + s.N / 2)}, ${Math.round(t.z + s.N / 2)} · zoom ${view.zoom.toFixed(1)}`], ['TOOL', tool || '-'], ['PARCEL', hover ? s.parcelName?.(...s.parcelAt(hover.tx, hover.tz)) : '-']);
+  if (s) rows.push(['MAP', `${s.N}×${s.N} tiles · ${s.held?.() ?? 0} parcels`], ['BUILDINGS', s.b.length], ['TROOPS', s.troops.length], ['ACTORS', life?.actors?.size ?? 0], ['DAY · HOUR', `${s.time?.cday ?? '-'} · ${(s.time?.hour ?? 0).toFixed(2)}`], ['SPEED', paused ? 'paused' : gameSpeed() + '×'], ['CAMERA', `${Math.round(t.x + s.N / 2)}, ${Math.round(t.z + s.N / 2)} · zoom ${view.zoom.toFixed(1)}`], ['TOOL', tool || '-'], ['PARCEL', hover ? s.parcelName?.(...s.parcelAt(hover.tx, hover.tz)) : '-']);
   $('debug').innerHTML = '<div class="ph"><span>DEBUG · F3</span></div>' + rows.map(([k, v]) => `<div class="kv"><span>${k}</span><b>${esc(String(v))}</b></div>`).join('');
 }
 // the menu stops the clock while it is open, and puts it back the way it was when it closes
@@ -1469,7 +1474,7 @@ function loopBody(now) {
     const fz = (held.has('w') || held.has('arrowup') ? 1 : 0) - (held.has('s') || held.has('arrowdown') ? 1 : 0);
     if (fx || fz) view.move(fx, fz, dt);
     if (!paused && !sim.callIn) {
-      acc += dt * gameSpeed();
+      acc += dt * gameSpeed() * Sim.rate();   // the simulation's pace: a calendar hour in C.REAL_HOUR seconds at 1x
       const st0 = performance.now(); let sn = 0; while (acc >= 0.1) { sim.step(0.1); acc -= 0.1; sn++; } if (sn) stepMs = stepMs * 0.9 + (performance.now() - st0) / sn * 0.1;
       for (const ev of sim.drain()) {
         life.event(ev); if (ev.t === 'built' || ev.t === 'week') buildBar();

@@ -9,7 +9,7 @@
 // costs more than a base makes, which is the point: pick what to chase, and trade for what you are short of.
 //
 // Mixed into Sim (see the end of sim.js); every function here runs with `this` as the Sim.
-import { MARKET, COMMIT, MKEYS_ALL } from './config.js';
+import { C, MARKET, COMMIT, MKEYS_ALL } from './config.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const GK = Object.keys(MARKET.goods);   // sup, rations, fuel, ammo
@@ -142,7 +142,7 @@ export const Market = {
   // and never the overdraft. Short of that, it pays in part and buys less standing; the base itself never goes without
   spare(g) {
     if (g === 'cr') return Math.max(0, this.credits);
-    if (g === 'sup') { const up = this.b.reduce((a, b) => a + (b.done ? B_up(b) : 0), 0) / 7; return Math.max(0, this.supplies - Math.max(300, up * 4 + 150)); }
+    if (g === 'sup') { const up = this.b.reduce((a, b) => a + (b.done ? B_up(b) : 0), 0) / (C.WEEK / C.DAY); return Math.max(0, this.supplies - Math.max(300, up * 4 + 150)); }
     const use = this.usage()[g] || 0; return Math.max(0, this.holding(g) - use * 2.5);
   },
   payCommitments() {

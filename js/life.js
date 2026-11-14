@@ -5,7 +5,11 @@
 import { B, ROADS } from './config.js';
 
 const WALK = 1.5, DRIVE = 2.4;
-const SHIFT = new Set(['gen', 'motorpool']);   // these run round the clock, so their crews skip the routine
+// these run round the clock, so their crews skip the routine: a base never fully sleeps
+const SHIFT = new Set(['gen', 'motorpool', 'pad', 'depot', 'medbay', 'mess', 'comms', 'hq', 'substation', 'rowpu', 'fuelfarm', 'treatment', 'tower', 'well']);
+// the day's routine by the clock (the same calls as the simulation's): the night watch lives it twelve hours out
+const phaseAt = h => h < 6 || h >= 21 ? 'night' : h < 6.5 ? 'firstcall' : h < 7 ? 'reveille' : h < 8 ? 'pt' : h < 9 ? 'chow' : h < 11.5 ? 'work' : h < 13 ? 'mess' : h < 17 ? 'work' : h < 17.5 ? 'retreat' : 'evening';
+const watchPhase = (s, n) => n % 4 === 0 ? phaseAt((s.time.hour + 12) % 24) : s.time.phase;   // one in four stands the night watch
 const HOUSING = ['hq', 'hab', 'barracks', 'block'];
 const HD_PER = 4;   // Helldivers thawed and walking about per Helldiver Barracks
 const EAT = ['mess', 'burger', 'chicken', 'cola'];
@@ -247,9 +251,9 @@ export class Life {
       if (t.state === 'sweep') { this.sweeper(a, t, dt); continue; }
       // the daily routine: a ceremony beats everything, then reveille, lights out and meals, then the job, then drill
       const jobB = t.state === 'job' && t.job ? s.byId(t.job) : null;   // a building can vanish between simulation steps
-      const ph = s.time.phase, shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
+      const ph = watchPhase(s, t.id), shift = jobB && SHIFT.has(jobB.type), flag = s.b.find(b => b.type === 'seflag');
       // Reveille and Retreat: everyone outdoors stops where they stand, faces the nearest flag and salutes; indoors carries on
-      const want = t.hurt > 0 ? 'ward' : this.ceremony ? 'cer' : (ph === 'reveille' || ph === 'retreat') && flag ? 'honors'
+      const cer = s.time.phase, want = t.hurt > 0 ? 'ward' : this.ceremony ? 'cer' : (cer === 'reveille' || cer === 'retreat') && flag && ph !== 'night' ? 'honors'
         : t.state === 'guard' ? 'guard' + t.gate
         : ph === 'firstcall' ? (shift ? 'job' + t.job : 'form')
         : ph === 'night' ? (shift ? 'job' + t.job : 'sleep')
@@ -363,7 +367,8 @@ export class Life {
   // where an engineer should be: a tile of scrub, a spot round a building, the yard, or home
   engWant(a, c) {
     const s = this.sim, ph = s.time.phase;
-    if (ph === 'night') return ['home'];
+    // a job on the go keeps half the crew at it through the night, under the floodlights
+    if (ph === 'night' && !(a.n % 2 === 0 && c.job != null && !c.wait && s.secure())) return ['home'];
     if (c.wait > 0) return ['train'];
     if ((ph === 'reveille' || ph === 'retreat') && s.b.some(b => b.type === 'seflag')) return ['honors'];
     if (ph === 'mess' || ph === 'chow') return ['mess'];
@@ -432,7 +437,7 @@ export class Life {
     for (const [id, a] of this.actors) if ((a.extra === 'hd' || a.extra === 'civ') && !want.has(id)) this.actors.delete(id);   // engineers are engineers()'s to keep
   }
   extra(a, dt) {
-    const s = this.sim, h = s.time.hour, ph = s.time.phase, b = s.byId(a.home); if (!b) return;
+    const s = this.sim, h = a.n % 4 === 0 ? (s.time.hour + 12) % 24 : s.time.hour, ph = watchPhase(s, a.n), b = s.byId(a.home); if (!b) return;
     const hd = a.extra === 'hd', flag = s.b.find(o => o.type === 'seflag');
     // Marines: reveille 05:30, PT, chow, Morning Colors at 08:00, training, Evening Colors, liberty, taps at 22:00
     // Citizens: in at 07:30, lunch, out at 17:30, the evening broadcast, home
