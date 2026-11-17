@@ -173,8 +173,10 @@ const MAKE = {
   },
   pad(g, m) {
     box(g, 2.9, 0.1, 2.9, m.asphalt, 0, 0.05, 0, { cast: false });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 40), m.hazard); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.105; g.add(ring);
-    box(g, 0.12, 0.01, 1.0, m.hazard, -0.32, 0.105, 0, { cast: false }); box(g, 0.12, 0.01, 1.0, m.hazard, 0.32, 0.105, 0, { cast: false }); box(g, 0.64, 0.01, 0.12, m.hazard, 0, 0.105, 0, { cast: false });
+    // the paint lies a hair above the asphalt: a depth offset keeps it from flickering against the pad at a distance
+    const hz = m.padPaint ||= Object.assign(m.hazard.clone(), { polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.08, 40), hz); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.112; g.add(ring);
+    box(g, 0.12, 0.01, 1.0, hz, -0.32, 0.11, 0, { cast: false }); box(g, 0.12, 0.01, 1.0, hz, 0.32, 0.11, 0, { cast: false }); box(g, 0.64, 0.01, 0.12, hz, 0, 0.11, 0, { cast: false });
     for (const [x, z] of [[-1.35, -1.35], [1.35, -1.35], [-1.35, 1.35], [1.35, 1.35]]) box(g, 0.1, 0.08, 0.1, m.glowY, x, 0.14, z);
   },
   depot(g, m) {

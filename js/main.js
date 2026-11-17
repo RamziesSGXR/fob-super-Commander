@@ -1471,7 +1471,7 @@ addEventListener('keydown', e => {
   if (k === 'f3') { e.preventDefault(); debugOn = !debugOn; $('debug').classList.toggle('hidden', !debugOn); return; }
   if (!playing) return;
   if (sim.callIn) { if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1); else if (k === 'r' && tool === 'starter') { rot = (rot + 1) % 4; if (hover) { view.setGhost('hq', hover.tx, hover.tz, rot, sim.canStarter(hover.tx, hover.tz, rot).ok); ciRead([hover.tx, hover.tz]); } } return; }   // nothing else until the HQ is down
-  if (k === 'p') { setPhoto(!photo); return; }
+  if (k === 'f4') { e.preventDefault(); setPhoto(!photo); return; }
   if (photo) {
     if (k === 'q') view.rotate(-1); else if (k === 'e') view.rotate(1);
     else if (k === 'r') view.tiltBy(0.1); else if (k === 'f') view.tiltBy(-0.1);
@@ -1481,22 +1481,33 @@ addEventListener('keydown', e => {
     return;
   }
   if (k === 'g') { snapMode = SNAPS[(SNAPS.indexOf(snapMode) + 1) % 3]; buildBar(); flash(`Snapping: ${SNAPNAME[snapMode]}`); return; }
-  if (k === 'q') view.rotate(-1);
-  else if (k === 'e') view.rotate(1);
+  // the keys follow Orbital Fury where the two games do the same thing: P or Space pauses, , and . change the speed,
+  // the number row picks from the bar, B is build, Q and E turn what you are placing, Tab or L is the map, F finds
+  // home, T and H are the map views, Y the ministries, F2 hides the interface
+  const placing = tool && B[tool] && !LOOSE.has(tool), turn = d => { rot = (rot + d + 4) % 4; if (hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); };
+  if (k === 'q') { if (placing) turn(-1); else view.rotate(-1); }
+  else if (k === 'e') { if (placing) turn(1); else view.rotate(1); }
   else if (k === 'r') { rot = (rot + 1) % 4; if (tool && hover) view.setGhost(tool, hover.tx, hover.tz, rot, false); }
-  else if (k === ' ') { e.preventDefault(); setPause(!paused); }
+  else if (k === ' ' || k === 'p') { e.preventDefault(); setPause(!paused); }
+  else if (k === ',') setSpeed(speedI - 1);
+  else if (k === '.') setSpeed(speedI + 1);
+  else if (k === 'f2') { e.preventDefault(); $('hud').classList.toggle('bare'); }
+  else if (k === 'f') { const hq = sim.b.find(b => b.type === 'hq'); if (hq) view.lookAt(hq.x + hq.w / 2, hq.z + hq.d / 2); }
+  else if (k === 't') setIview(IVIEWS[(IVIEWS.findIndex(v => v[0] === iview) + 1) % IVIEWS.length][0]);
+  else if (k === 'y') toggleMins('eco');
+  else if (k === 'n') toggleMins('int');
+  else if (/^[0-9]$/.test(k)) { const g = GROUPS[k === '0' ? 9 : +k - 1]; if (g) { if (!empOpen) setEmp(true); group = g[0]; buildOpen = true; buildBar(); } }
   else if (k === 'escape') { if (tool) { tool = null; view.setGhost(null); view.showPlaza(null); view.showRoadGhost(null); view.showPlots(null); buildBar(); designPanel(); } else if (!$('mins').classList.contains('hidden')) $('mins').classList.add('hidden'); else if (!$('menu').classList.contains('hidden')) $('menu').classList.add('hidden'); else select(null); }
   else if (k === 'm') toggleMins();
   else if (k === 'c') toggleComms();
-  else if (k === 'l') toggleMins('led');
-  else if (k === 'b') toggleMins('eco');
+  else if (k === 'l') $('md-map-b').click();
+  else if (k === 'b') { setEmp(!empOpen); audio.play('click'); }
   else if (k === 'i') setIview(IVIEWS[(IVIEWS.findIndex(v => v[0] === iview) + 1) % IVIEWS.length][0]);
-  else if (k === 'h') $('hud').classList.toggle('bare');
-  else if (k === 'tab') { e.preventDefault(); const i = GROUPS.findIndex(g => g[0] === group); group = GROUPS[(i + (e.shiftKey ? GROUPS.length - 1 : 1)) % GROUPS.length][0]; buildBar(); }
+  else if (k === 'h') setIview(iview === 'elev' ? 'none' : 'elev');
+  else if (k === 'tab') { e.preventDefault(); $('md-map-b').click(); }
   else if (k === 'delete' || k === 'backspace') { if (selId && !B[sim.byId(selId)?.type]?.fixed) { sim.demolish(selId); select(null); } }
   else if (k === '[') setSpeed(speedI - 1);
   else if (k === ']') setSpeed(speedI + 1);
-  else if (k === '1' || k === '2' || k === '3') setSpeed(C.SPEEDS.indexOf([1, 2, 4][+k - 1]));
 });
 addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
 addEventListener('blur', () => held.clear());

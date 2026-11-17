@@ -4,14 +4,14 @@ import * as THREE from './vendor/three.js';
 import { RW, RH, TPP } from './site.js';
 
 const nh = m => { m.defines = { ...(m.defines || {}), NO_HGT: '' }; return m; };   // the ground's height shader is not for these
-const TX = 4, TY = 2;   // the region map repeats (mirrored) this many times round and up the planet
+const TX = 4, TY = 2, SC = 3;   // SC: the planet texture is drawn this many times larger than the region map, smoothed   // the region map repeats (mirrored) this many times round and up the planet
 export class Globe {
   constructor(canvas, onPick) {
     this.cv = canvas; this.onPick = onPick;
     this.r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); this.r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.sc = new THREE.Scene(); this.cam = new THREE.PerspectiveCamera(34, 1, 0.05, 50);
     this.sc.add(new THREE.AmbientLight('#8fa3c8', 0.55)); this.sun = new THREE.DirectionalLight('#fff3dc', 2.1); this.sc.add(this.sun);
-    this.tex = new THREE.CanvasTexture(Object.assign(document.createElement('canvas'), { width: RW * TX, height: RH * TY })); this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.wrapS = THREE.RepeatWrapping; this.tex.anisotropy = 4;
+    this.tex = new THREE.CanvasTexture(Object.assign(document.createElement('canvas'), { width: RW * TX * SC, height: RH * TY * SC })); this.tex.colorSpace = THREE.SRGBColorSpace; this.tex.wrapS = THREE.RepeatWrapping; this.tex.anisotropy = 4;
     const mat = new THREE.MeshLambertMaterial({ map: this.tex }); mat.defines = { NO_HGT: '' };
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), mat); this.sc.add(this.ball);
     const air = new THREE.Mesh(new THREE.SphereGeometry(1.045, 64, 40), new THREE.ShaderMaterial({ transparent: true, side: THREE.BackSide, depthWrite: false, uniforms: { c: { value: new THREE.Color('#7fc8ff') } },
@@ -34,18 +34,24 @@ export class Globe {
     const b = this.cv.getBoundingClientRect(), ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2((e.clientX - b.left) / b.width * 2 - 1, -((e.clientY - b.top) / b.height * 2 - 1)), this.cam);
     const h = ray.intersectObject(this.ball)[0]; if (!h) return null;
     const X = h.uv.x * RW * TX, Y = (1 - h.uv.y) * RH * TY, tile = Math.floor(X / RW), fx = X - tile * RW; this.tile = tile;
-    // the map covers the middle half of the latitudes; above and below it the nearest edge is used
-    return [tile % 2 ? RW - fx : fx, Math.max(0, Math.min(RH, (Y - RH * TY * 0.25) / (RH * TY * 0.5) * RH))];
+        const v = (Y - RH * TY * 0.25) / (RH * TY * 0.5) * RH;   // past the top or bottom of the map the surface is the map mirrored
+    return [tile % 2 ? RW - fx : fx, Math.max(0, Math.min(RH, v < 0 ? -v : v > RH ? 2 * RH - v : v))];
   }
   setPlanet(pixels, sites) {
     const cv = this.tex.image, g = cv.getContext('2d'), src = Object.assign(document.createElement('canvas'), { width: RW, height: RH }), sg = src.getContext('2d'), im = sg.createImageData(RW, RH); im.data.set(pixels); sg.putImageData(im, 0, 0);
-    // the map sits in the middle half of the latitudes, mirrored round the planet; its top and bottom rows stretch to the poles and fade to ice
-    const H = RH * TY, band = H * 0.5, y0 = H * 0.25;
-    for (let t = 0; t < TX; t++) { g.save(); if (t % 2) { g.translate((t + 1) * RW, 0); g.scale(-1, 1); } else g.translate(t * RW, 0);
-      g.drawImage(src, 0, 0, RW, RH, 0, y0, RW, band); g.drawImage(src, 0, 0, RW, 1, 0, 0, RW, y0); g.drawImage(src, 0, RH - 1, RW, 1, 0, y0 + band, RW, H - y0 - band); g.restore(); }
-    for (const [a, b] of [[0, y0 * 0.9], [H, H - y0 * 0.9]]) { const gr = g.createLinearGradient(0, a, 0, b); gr.addColorStop(0, 'rgba(236,242,248,0.96)'); gr.addColorStop(1, 'rgba(236,242,248,0)'); g.fillStyle = gr; g.fillRect(0, Math.min(a, b), cv.width, Math.abs(b - a)); }
+    // the map sits in the middle half of the latitudes, mirrored round the planet. Above and below it the map carries on
+    // mirrored (not one row smeared to the pole, which drew streaks), and the caps are iced over where the sphere pinches
+    const W = RW * SC, H = cv.height, band = H * 0.5, y0 = H * 0.25; g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    for (let t = 0; t < TX; t++) { g.save(); if (t % 2) { g.translate((t + 1) * W, 0); g.scale(-1, 1); } else g.translate(t * W, 0);
+      g.drawImage(src, 0, 0, RW, RH, 0, y0, W, band);
+      g.save(); g.translate(0, y0); g.scale(1, -1); g.drawImage(src, 0, 0, RW, RH / 2, 0, 0, W, y0); g.restore();                       // north of the map: its top half, flipped
+      g.save(); g.translate(0, y0 + band + y0); g.scale(1, -1); g.drawImage(src, 0, RH / 2, RW, RH / 2, 0, 0, W, y0); g.restore();   // south: its bottom half, flipped
+      g.restore(); }
+    for (const [a, b2] of [[0, y0 * 0.95], [H, H - y0 * 0.95]]) { const gr = g.createLinearGradient(0, a, 0, b2); gr.addColorStop(0, 'rgba(236,242,248,1)'); gr.addColorStop(0.62, 'rgba(236,242,248,0.97)'); gr.addColorStop(1, 'rgba(236,242,248,0)'); g.fillStyle = gr; g.fillRect(0, Math.min(a, b2), cv.width, Math.abs(b2 - a)); }
     this.tex.needsUpdate = true;
-    this.marks.clear(); this.tile = 0;
+    this.marks.clear(); this.tile = 0; this.sel.clear();
+    // open with the best area facing the camera, from far out
+    if (sites[0]) { const n = this.at2(sites[0].u, sites[0].v, 0, 1).normalize(); this.lon = this.lonT = Math.atan2(n.x, n.z) - 0.35; this.lat = this.latT = 0.2; this.dist = this.distT = 3.6; this.idle = 0; }
     const gm = nh(new THREE.MeshBasicMaterial({ color: '#7fe9e0' })), gh = nh(new THREE.MeshBasicMaterial({ color: '#7fe9e0', transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
     for (const s of sites) { const p = this.at2(s.u, s.v, 0, 1.012); const pin = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 8), gm); pin.position.copy(p); this.marks.add(pin);
       const halo = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.028, 24), gh); halo.position.copy(p); halo.lookAt(p.clone().multiplyScalar(2)); this.marks.add(halo); }

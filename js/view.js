@@ -245,6 +245,8 @@ export class View {
     this.terrObjs = []; const add = o => { this.terrObjs.push(o); this.world.add(o); };
     if (!T || !bio) return;
     const wm = this.waterMat ||= new THREE.MeshStandardMaterial({ color: new THREE.Color(...bio.sea.map(c => c / 255)), roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.86, defines: { STANDARD: '', NO_HGT: '' } });
+    // the same depth offset as the ground: with the ground pushed back alone (0.20), the sea won the depth test over low shores, more the further out the camera was
+    wm.polygonOffset = true; wm.polygonOffsetFactor = 2; wm.polygonOffsetUnits = 6;
     const wg = new THREE.PlaneGeometry(N, N); wg.rotateX(-Math.PI / 2); const wi = new THREE.Mesh(wg, wm); wi.position.y = WL + 0.03; wi.receiveShadow = true; add(wi);
     const W = s.win ? s.win(LAND.PARCEL) : [0, 0, N, N], dp = [];
     for (let z = W[1]; z < W[3]; z++) for (let x = W[0]; x < W[2]; x++) { const i = z * N + x; if (T[i] === 3 && nz.v(i * 0.37, 5) > 0.72) dp.push(i); }
