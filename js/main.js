@@ -789,8 +789,9 @@ function infoHtml(k) {
   const s = sim, r = s.rates(), sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v)), row = (n, v, cls) => `<tr><td>${esc(n)}</td><td class="${cls ?? (v < 0 ? 'down' : 'up')}">${typeof v === 'number' ? sg(v) : v}</td></tr>`;
   const flows = o => Object.entries(o).filter(([, v]) => Math.abs(v) >= 0.5).sort((a, b) => b[1] - a[1]).map(([c, v]) => row(CAT[c] || c, Math.round(v))).join('');
   const t = (title, body, foot) => `<b>${title}</b><table class="tipt">${body}</table>${foot ? `<span class="fine">${foot}</span>` : ''}`;
-  if (k === 'sup') return t(`SUPPLIES ${fmt(s.supplies)} · ${sg(Math.round(r.supNet))} A WATCH`, flows(r.sup), 'Averaged over the last watches. Click for the budget.');
-  if (k === 'cr') return t(`CREDITS ${fmt(s.credits)} · ${sg(Math.round(r.crNet))} A WATCH`, flows(r.cr), 'Click for the budget.');
+  const once = o => { const f = flows(o); return f ? `<tr><td colspan="2" class="fine">ONE-OFF, not in the rate</td></tr>` + f : ''; };
+  if (k === 'sup') return t(`SUPPLIES ${fmt(s.supplies)} · ${sg(Math.round(r.supNet))} A WATCH`, flows(r.sup) + once(r.supOnce), 'The rate is what comes and goes every watch: deliveries, upkeep, pay. Building and trades are one-off and listed apart. Click for the budget.');
+  if (k === 'cr') return t(`CREDITS ${fmt(s.credits)} · ${sg(Math.round(r.crNet))} A WATCH`, flows(r.cr) + once(r.crOnce), 'The rate is what comes and goes every watch. One-off payments are listed apart. Click for the budget.');
   if (k === 'debt') return t(`OWED ${fmt(s.debt())}`, s.loans.map(l => row(LOANS[l.k].name, `${fmt(l.bal)} · −${Math.min(l.bal, LOANS[l.k].pay)}/day`, '')).join('') + (s.credits < 0 ? row('Overdraft', fmt(-s.credits), 'down') : ''), 'Click for loans.');
   if (k === 'votes') { const home = s.troops.filter(t => t.state !== 'patrol').length, out = s.troops.length - home, by = {};
     for (const b of s.b) if (b.done && B[b.type].beds) by[B[b.type].name] = (by[B[b.type].name] || 0) + s.cap(b, 'beds');
@@ -1012,7 +1013,8 @@ function renderEco(s) {
   if (ecoTab === 'budget') {
     const r = s.rates();
     h += `<p class="fine left">Per watch, averaged over the last ${r.days} watch${r.days > 1 ? 'es' : ''}. Daily items (the allocation, loan payments) are spread across the day's watches.</p>`;
-    h += `<h3>SUPPLIES</h3>` + budgetBlock(r.sup, r.supNet, 'SUPPLIES') + `<h3>CREDITS</h3>` + budgetBlock(r.cr, r.crNet, 'CREDITS');
+    const onceRows = o => { const ks = Object.keys(o).filter(k => Math.abs(o[k]) >= 0.5); return ks.length ? `<table class="acct"><tr><td><b>ONE-OFF (not in the rate)</b></td><td></td></tr>${ks.map(k => `<tr><td>${CAT[k] || k}</td><td class="${o[k] < 0 ? 'down' : 'up'}">${o[k] > 0 ? '+' : ''}${fmt(o[k])}</td></tr>`).join('')}</table>` : ''; };
+    h += `<h3>SUPPLIES</h3>` + budgetBlock(r.sup, r.supNet, 'SUPPLIES') + onceRows(r.supOnce) + `<h3>CREDITS</h3>` + budgetBlock(r.cr, r.crNet, 'CREDITS') + onceRows(r.crOnce);
     h += `<p class="fine left"><b>More supplies:</b> rank higher for a bigger allocation (${fmt(s.lastAlloc || 0)} yesterday), ship trained troopers (${C.DEPLOY_PAY} each), win operations, grade files, mine ore, or buy on the market. <b>More credits:</b> ship troopers (${C.DEPLOY_CR} each, half again for grade A), run operations, open franchises, and sell surplus on the market. <b>Spending less:</b> the MONEY info view (by the minimap) colours every building by what it earns or costs.</p>`;
   } else if (ecoTab === 'market') {
     const M = s.market;

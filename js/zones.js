@@ -92,6 +92,8 @@ export const Zones = {
     const seatsComing = this.b.filter(b => !b.done && B[b.type].eat).reduce((a, b) => a + this.cap(b, 'eat'), 0);
     const store = {};
     for (const g of GKEYS) { const want = Math.max(20, use[g] * 3), have = this.storage(g) + this.b.filter(b => !b.done && B[b.type].store?.[g]).reduce((a, b) => a + B[b.type].store[g] * 0.75, 0); store[g] = Math.max(0, Math.round(want - have)); }
+    // the next charter asks for a total of storage: the Logistics zone grows toward it even when today's stock would fit in less
+    { const need = this.nextStage()?.store || 0, short = need - this.storeAll() - Object.values(store).reduce((a, b) => a + b, 0); if (short > 0) store.rations += Math.round(short); }
     const shopsHave = this.b.reduce((a, b) => a + (b.type === 'vend' ? 1 : b.type === 'club' ? 2 : B[b.type].chain ? 3 : 0), 0);
     const d = {
       bunks: Math.max(0, Math.max(jobs + head, Math.min(12 + this.week * 8, votes + head)) - this.beds - bunksComing), jobs,   // and the Ministry's growth target, which the audit checks
@@ -162,7 +164,7 @@ export const Zones = {
       for (const t of want) {
         const lk = this.locked(t); if (lk) { why = lk.some(x => /foundation/.test(x)) ? 'waits for the foundation' : `${B[t].name} needs ${lk.join(' and ')}`; continue; }
         const cost = this.costOf(t, { std: this.std, grow: true });
-        if (this.supplies < cost + GROW.reserve) { why = `waiting for supplies (keeps ${GROW.reserve} in reserve)`; continue; }
+        if (cost > 0 && this.supplies < cost + GROW.reserve) { why = `waiting for supplies (keeps ${GROW.reserve} in reserve)`; continue; }
         const p = this.zonePlot(t, zk); if (!p) continue;
         const b = this.place(t, p.x, p.z, p.rot, false, { std: this.std, grow: true });
         if (b) { b.grown = zk; placed = true; this.stats.grown = (this.stats.grown || 0) + 1; this.events.push({ t: 'grown', id: b.id }); break; }

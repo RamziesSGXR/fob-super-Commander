@@ -28,6 +28,8 @@ const FAST = [1, ROADS[1].speed, ROADS[2].speed, ROADS[3].speed];
 // wheels belong on roads: off them a vehicle crawls, so routes follow the road network wherever there is one
 // people keep to the roads and paths: a route may be three times longer on a road before they cut across the ground
 const WPREF = [1, 2.6, 3.2, 3.2];
+// budget lines that are one-off choices or windfalls, not part of the running rate
+export const ONEOFF = new Set(['build', 'refund', 'repair', 'raid', 'salvage', 'bought', 'sold', 'market', 'trade', 'loans', 'research', 'ledger', 'calls']);
 // the flag plaza: this many cells round the Super Earth flag stay open, whatever is built
 export const PLAZA = 2;
 const VFAST = [0.3, ROADS[1].speed, ROADS[2].speed, 0.3];
@@ -536,7 +538,8 @@ export class Sim {
     return c;
   }
   costOf(type, spec) {
-    const d = B[type]; if (this.hasStd(type)) return Math.round(this.stdBase(type) * STD[this.stdFor(type, spec)].cost);
+    // what grows in a zone costs you nothing as tents; as prefab or permanent you pay only what that adds over the tent
+    const d = B[type]; if (this.hasStd(type)) { const full = Math.round(this.stdBase(type) * STD[this.stdFor(type, spec)].cost); return spec?.grow ? Math.max(0, full - Math.round(this.stdBase(type) * STD[0].cost)) : full; }
     if (!spec || !this.designable(type)) return d.cost;
     return Math.round(d.cost * DESIGNS[spec.design || 0].cost + (spec.parts || []).reduce((a, p) => a + (PARTS[p]?.cost || 0), 0));
   }
@@ -1317,8 +1320,10 @@ export class Sim {
   newDay() { return { sup: {}, cr: {} }; }
   // average over the last few days: per category and the net, for supplies and credits
   rates() {
-    const ds = this.flow.days.length ? this.flow.days : [this.flow.today], n = ds.length, out = { sup: {}, cr: {}, supNet: 0, crNet: 0, days: n };
-    for (const d of ds) for (const c of ['sup', 'cr']) for (const [k, v] of Object.entries(d[c])) out[c][k] = (out[c][k] || 0) + v / n;
+    // the running rate is what comes and goes every watch. What you chose to spend or were paid once (building, refunds,
+    // trades, loans, salvage) is kept apart in supOnce / crOnce, so a morning of building does not read as a leak
+    const ds = this.flow.days.length ? this.flow.days : [this.flow.today], n = ds.length, out = { sup: {}, cr: {}, supOnce: {}, crOnce: {}, supNet: 0, crNet: 0, days: n };
+    for (const d of ds) for (const c of ['sup', 'cr']) for (const [k, v] of Object.entries(d[c])) { const o = out[ONEOFF.has(k) ? c + 'Once' : c]; o[k] = (o[k] || 0) + v / n; }
     out.supNet = Object.values(out.sup).reduce((a, b) => a + b, 0); out.crNet = Object.values(out.cr).reduce((a, b) => a + b, 0);
     return out;
   }
